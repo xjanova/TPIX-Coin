@@ -1,0 +1,67 @@
+{
+    "name": "tpix-chain",
+    "genesis": {
+        "nonce": "0x0000000000000000",
+        "timestamp": "0x0",
+        "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "gasLimit": "0x1312D00",
+        "difficulty": "0x1",
+        "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "coinbase": "0x0000000000000000000000000000000000000000",
+        "alloc": {
+            "__COMMENT__": "Pre-mine 7B TPIX (7,000,000,000 * 10^18) ให้ genesis account",
+            "0x0000000000000000000000000000000000001001": {
+                "balance": "0x16345785D8A0000000000000000000000",
+                "comment": "Team & Advisors — 20% (1,400,000,000 TPIX)"
+            },
+            "0x0000000000000000000000000000000000001002": {
+                "balance": "0x0B1A2BC2EC500000000000000000000",
+                "comment": "Development — 10% (700,000,000 TPIX)"
+            },
+            "0x0000000000000000000000000000000000001003": {
+                "balance": "0x21E19E0C9BAB2400000000000000000000",
+                "comment": "Liquidity Pool — 30% (2,100,000,000 TPIX)"
+            },
+            "0x0000000000000000000000000000000000001004": {
+                "balance": "0x16345785D8A0000000000000000000000",
+                "comment": "Staking Rewards — 20% (1,400,000,000 TPIX)"
+            },
+            "0x0000000000000000000000000000000000001005": {
+                "balance": "0x0B1A2BC2EC500000000000000000000",
+                "comment": "Ecosystem Fund — 10% (700,000,000 TPIX)"
+            },
+            "0x0000000000000000000000000000000000001006": {
+                "balance": "0x0B1A2BC2EC500000000000000000000",
+                "comment": "Public Sale (ICO) — 10% (700,000,000 TPIX)"
+            }
+        }
+    },
+    "params": {
+        "chainID": 4289,
+        "forks": {
+            "homestead": 0,
+            "byzantium": 0,
+            "constantinople": 0,
+            "petersburg": 0,
+            "istanbul": 0,
+            "EIP150": 0,
+            "EIP158": 0,
+            "EIP155": 0
+        },
+        "engine": {
+            "ibft": {
+                "params": {
+                    "blockTime": 2,
+                    "epochLength": 100000,
+                    "requestTimeout": 10
+                }
+            }
+        },
+        "gasLimit": {
+            "value": "0x1312D00"
+        },
+        "baseFee": "0x0",
+        "gasPrice": "0x0"
+    },
+    "bootnodes": []
+}
