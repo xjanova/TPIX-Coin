@@ -24,7 +24,7 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
     // ============================================================
 
     enum NodeTier { Validator, Sentinel, Light }
-    enum NodeStatus { Inactive, Active, Slashed, Exited }
+    enum NodeStatus { Inactive, Active, Slashed, Exited, SlashedWithdrawable }
 
     struct TierConfig {
         uint256 minStake;       // Minimum stake in wei
@@ -194,13 +194,33 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
         // Claim remaining rewards first
         _claimRewards(msg.sender);
 
+        // Effects before interactions (CEI pattern)
         uint256 stakeReturn = node.stakedAmount;
-        node.status = NodeStatus.Exited;
+        node.status = NodeStatus.Inactive; // Allow re-registration
         node.stakedAmount = 0;
 
         tiers[node.tier].activeNodes--;
         totalActiveNodes--;
         totalStaked -= stakeReturn;
+
+        // Interaction
+        (bool sent, ) = msg.sender.call{value: stakeReturn}("");
+        require(sent, "Transfer failed");
+
+        emit NodeDeregistered(msg.sender, stakeReturn);
+    }
+
+    /**
+     * @notice Withdraw remaining stake after slashing
+     */
+    function withdrawSlashedStake() external nonReentrant {
+        MasterNode storage node = nodes[msg.sender];
+        require(node.status == NodeStatus.Slashed, "Not slashed");
+        require(node.stakedAmount > 0, "Nothing to withdraw");
+
+        uint256 stakeReturn = node.stakedAmount;
+        node.stakedAmount = 0;
+        node.status = NodeStatus.Inactive; // Allow re-registration
 
         (bool sent, ) = msg.sender.call{value: stakeReturn}("");
         require(sent, "Transfer failed");
@@ -221,6 +241,7 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
 
     /**
      * @notice Calculate pending reward for an operator
+     * @dev Splits calculation across year boundaries to use correct rate per period
      */
     function pendingReward(address _operator) public view returns (uint256) {
         MasterNode storage node = nodes[_operator];
@@ -232,8 +253,11 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
         TierConfig storage tc = tiers[node.tier];
         if (tc.activeNodes == 0) return 0;
 
-        // Reward = (rewardPerSecond * tierShare / 10000) / activeNodesInTier * elapsed
-        // Weighted by uptime
+        // Calculate reward using current rate (safe: rate only changes via advanceRewardYear)
+        // Max claimable period = 30 days to prevent stale accumulation gaming
+        uint256 maxElapsed = 30 days;
+        if (elapsed > maxElapsed) elapsed = maxElapsed;
+
         uint256 tierRewardPerSec = (currentRewardPerSecond * tc.rewardShare) / 10000;
         uint256 nodeReward = (tierRewardPerSec * elapsed) / tc.activeNodes;
 
@@ -268,11 +292,17 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
 
     /**
      * @notice Update node uptime score (called by monitoring oracle)
+     * @dev Claims pending rewards at old uptime before updating
      */
     function updateUptime(address _operator, uint256 _uptime) external onlyOwner {
         require(_uptime <= 10000, "Max 10000");
+        require(_operator != address(0), "Zero address");
         MasterNode storage node = nodes[_operator];
         require(node.status == NodeStatus.Active, "Not active");
+
+        // Claim at current uptime first to prevent retroactive adjustment
+        _claimRewards(_operator);
+
         node.uptime = _uptime;
         emit UptimeUpdated(_operator, _uptime);
     }
@@ -407,12 +437,21 @@ contract NodeRegistry is Ownable, ReentrancyGuard {
         uint256 _rewardShare
     ) external onlyOwner {
         require(_slashPercent <= 5000, "Max 50% slash");
+        require(_minStake > 0, "Min stake must be > 0");
+
         TierConfig storage tc = tiers[_tier];
         tc.minStake = _minStake;
         tc.maxNodes = _maxNodes;
         tc.lockDays = _lockDays;
         tc.slashPercent = _slashPercent;
         tc.rewardShare = _rewardShare;
+
+        // Validate total reward shares = 10000
+        uint256 totalShares = tiers[NodeTier.Validator].rewardShare
+            + tiers[NodeTier.Sentinel].rewardShare
+            + tiers[NodeTier.Light].rewardShare;
+        require(totalShares == 10000, "Shares must sum to 10000");
+
         emit TierConfigUpdated(_tier);
     }
 

@@ -26,20 +26,6 @@ DATA_DIR="$HOME/.tpix-node"
 SERVICE_NAME="tpix-node"
 GITHUB_REPO="xjanova/TPIX-Coin"
 
-# Parse arguments
-TIER="light"
-WALLET=""
-NODE_NAME=""
-
-for arg in "$@"; do
-    case $arg in
-        --tier=*) TIER="${arg#*=}" ;;
-        --wallet=*) WALLET="${arg#*=}" ;;
-        --name=*) NODE_NAME="${arg#*=}" ;;
-        --help) show_help; exit 0 ;;
-    esac
-done
-
 show_help() {
     echo "TPIX Master Node Installer v${TPIX_VERSION}"
     echo ""
@@ -56,6 +42,20 @@ show_help() {
     echo "  sentinel     100,000 TPIX stake   7-10% APY  (max 500 nodes)"
     echo "  light         10,000 TPIX stake    4-6% APY  (unlimited)"
 }
+
+# Parse arguments
+TIER="light"
+WALLET=""
+NODE_NAME=""
+
+for arg in "$@"; do
+    case $arg in
+        --tier=*) TIER="${arg#*=}" ;;
+        --wallet=*) WALLET="${arg#*=}" ;;
+        --name=*) NODE_NAME="${arg#*=}" ;;
+        --help) show_help; exit 0 ;;
+    esac
+done
 
 banner() {
     echo -e "${CYAN}"

@@ -103,10 +103,11 @@ func (m *Monitor) collect() {
 	}
 
 	// Disk
-	diskInfo, err := disk.Usage("/")
+	diskPath := "/"
 	if runtime.GOOS == "windows" {
-		diskInfo, err = disk.Usage("C:")
+		diskPath = "C:"
 	}
+	diskInfo, err := disk.Usage(diskPath)
 	if err == nil {
 		m.metrics.DiskPercent = diskInfo.UsedPercent
 		m.metrics.DiskUsedGB = diskInfo.Used / 1024 / 1024 / 1024

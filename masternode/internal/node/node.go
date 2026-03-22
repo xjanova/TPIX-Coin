@@ -177,6 +177,13 @@ func (n *Node) GetInfo() *NodeInfo {
 		uptimeSeconds = int64(time.Since(n.startedAt).Seconds())
 	}
 
+	// Copy network stats to avoid data race (pointer escape)
+	var netStats *NetworkStats
+	if n.networkStats != nil {
+		statsCopy := *n.networkStats
+		netStats = &statsCopy
+	}
+
 	return &NodeInfo{
 		Name:           n.cfg.NodeName,
 		Tier:           n.cfg.GetTier().String(),
@@ -194,7 +201,7 @@ func (n *Node) GetInfo() *NodeInfo {
 		StartedAt:      n.startedAt,
 		LastRewardAt:   n.lastRewardAt,
 		RegisteredAt:   n.registeredAt,
-		Network:        n.networkStats,
+		Network:        netStats,
 	}
 }
 

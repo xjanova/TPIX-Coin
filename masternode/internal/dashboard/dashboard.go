@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -24,8 +26,21 @@ var staticFS embed.FS
 var templateFS embed.FS
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		// Allow localhost origins only
+		return origin == "" ||
+			origin == "http://localhost" ||
+			origin == "http://127.0.0.1" ||
+			strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1:")
+	},
 }
+
+// Max concurrent WebSocket connections
+const maxWSConnections = 10
+
+var activeWSConnections int32
 
 // Dashboard serves the web UI and WebSocket for real-time updates
 type Dashboard struct {
@@ -67,12 +82,15 @@ func (d *Dashboard) setupRoutes() {
 	d.router.HandleFunc("/", d.handleIndex).Methods("GET")
 }
 
-// Start begins serving the dashboard
+// Start begins serving the dashboard (localhost only for security)
 func (d *Dashboard) Start(ctx context.Context) {
-	addr := fmt.Sprintf(":%d", d.cfg.DashboardPort)
+	addr := fmt.Sprintf("127.0.0.1:%d", d.cfg.DashboardPort)
 	server := &http.Server{
-		Addr:    addr,
-		Handler: d.router,
+		Addr:         addr,
+		Handler:      d.router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
@@ -122,19 +140,43 @@ func (d *Dashboard) handleNetwork(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Dashboard) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Limit concurrent WebSocket connections
+	if atomic.LoadInt32(&activeWSConnections) >= maxWSConnections {
+		http.Error(w, "Too many connections", http.StatusServiceUnavailable)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		d.log.Errorf("WebSocket upgrade error: %v", err)
 		return
 	}
-	defer conn.Close()
+	atomic.AddInt32(&activeWSConnections, 1)
+	defer func() {
+		conn.Close()
+		atomic.AddInt32(&activeWSConnections, -1)
+	}()
+
+	// Read pump to detect client disconnect
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-done:
+			return
 		case <-ticker.C:
+			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			data := map[string]interface{}{
 				"status":  d.node.GetInfo(),
 				"metrics": d.monitor.GetMetrics(),

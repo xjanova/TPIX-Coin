@@ -182,7 +182,7 @@ function Install-Service {
         binPath= "`"$exePath`" --config=`"$configPath`"" `
         DisplayName= "TPIX Master Node" `
         start= auto `
-        obj= "LocalSystem" | Out-Null
+        obj= "NT AUTHORITY\NetworkService" | Out-Null
 
     sc.exe description $SERVICE_NAME "TPIX Blockchain Master Node - Validates transactions and earns rewards" | Out-Null
 
