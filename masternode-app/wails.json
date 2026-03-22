@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "TPIX Master Node",
+  "outputfilename": "tpix-node",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "author": {
+    "name": "Xman Studio",
+    "email": "dev@xmanstudio.com"
+  },
+  "info": {
+    "companyName": "Xman Studio",
+    "productName": "TPIX Master Node",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright 2026 Xman Studio",
+    "comments": "TPIX Blockchain Master Node - Earn rewards by securing the network"
+  }
+}

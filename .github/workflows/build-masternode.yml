@@ -1,0 +1,176 @@
+name: Build TPIX Master Node
+
+on:
+  push:
+    tags:
+      - 'masternode-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: '1.22'
+  NODE_VERSION: '20'
+  APP_NAME: 'tpix-node'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows/amd64
+            output: tpix-node.exe
+            artifact: tpix-node-windows-amd64
+          - os: ubuntu-latest
+            platform: linux/amd64
+            output: tpix-node
+            artifact: tpix-node-linux-amd64
+          - os: macos-latest
+            platform: darwin/universal
+            output: tpix-node
+            artifact: tpix-node-macos-universal
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/masternode-v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build
+        working-directory: masternode-app
+        shell: bash
+        run: |
+          wails build -platform ${{ matrix.platform }} \
+            -ldflags "-s -w -X main.Version=${{ steps.version.outputs.version }}"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd masternode-app/build/bin
+          7z a -tzip ../../../${{ matrix.artifact }}.zip ${{ matrix.output }}
+
+      - name: Package (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd masternode-app/build/bin
+          chmod +x ${{ matrix.output }}
+          tar -czf ../../../${{ matrix.artifact }}.tar.gz ${{ matrix.output }}
+
+      - name: Generate checksum
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            sha256sum ${{ matrix.artifact }}.zip > ${{ matrix.artifact }}.sha256
+          else
+            sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.sha256
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd artifacts
+          sha256sum *.zip *.tar.gz 2>/dev/null > SHA256SUMS || true
+
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/masternode-v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "TPIX Master Node v${{ steps.version.outputs.version }}"
+          body: |
+            ## TPIX Master Node v${{ steps.version.outputs.version }}
+
+            ### Downloads
+
+            | Platform | File | SHA256 |
+            |----------|------|--------|
+            | **Windows (x64)** | `tpix-node-windows-amd64.zip` | See SHA256SUMS |
+            | **Linux (x64)** | `tpix-node-linux-amd64.tar.gz` | See SHA256SUMS |
+            | **macOS (Universal)** | `tpix-node-macos-universal.tar.gz` | See SHA256SUMS |
+
+            ### Quick Start
+
+            **Windows:**
+            1. Download and extract `tpix-node-windows-amd64.zip`
+            2. Double-click `tpix-node.exe`
+            3. Set your wallet address in Settings
+            4. Click **Start**
+
+            **Linux:**
+            ```bash
+            tar -xzf tpix-node-linux-amd64.tar.gz
+            chmod +x tpix-node
+            ./tpix-node
+            ```
+
+            ### Node Tiers
+
+            | Tier | Min Stake | APY | Lock |
+            |------|-----------|-----|------|
+            | Validator | 1,000,000 TPIX | 12-15% | 90 days |
+            | Sentinel | 100,000 TPIX | 7-10% | 30 days |
+            | Light | 10,000 TPIX | 4-6% | 7 days |
+
+            ---
+            **Full docs:** [masternode/README.md](https://github.com/xjanova/TPIX-Coin/blob/main/masternode/README.md)
+          files: |
+            artifacts/*
+          draft: false
+          prerelease: false
