@@ -138,38 +138,56 @@ TPIX powers 12+ real-world applications in the Thaiprompt ecosystem:
 | **Staking Pools** | Earn APY on TPIX | 5%-200% APY based on lock period |
 | **Affiliate Program** | Multi-level referral system | Commission payouts |
 
-## Staking Rewards
+## Master Node Program
 
-| Lock Period | APY | Unlock |
-|-------------|-----|--------|
-| Flexible | 5% | Anytime |
-| 30 Days | 25% | After 30 days |
-| 90 Days | 60% | After 90 days |
-| 180 Days | 100% | After 180 days |
-| 365 Days | 200% | After 365 days |
+TPIX uses a **3-tier master node system** with sustainable rewards from a 1.4B TPIX pool over 5 years.
 
-## Run a Node
+| Tier | Min Stake | APY | Lock | Max Nodes | Block Reward Share |
+|------|-----------|-----|------|-----------|-------------------|
+| **Validator** | 1,000,000 TPIX | 12-15% | 90 days | 100 | 50% |
+| **Sentinel** | 100,000 TPIX | 7-10% | 30 days | 500 | 30% |
+| **Light** | 10,000 TPIX | 4-6% | 7 days | Unlimited | 20% |
 
-### Prerequisites
-- Docker & Docker Compose
-- 4+ CPU cores, 8+ GB RAM
+### Emission Schedule (Decreasing)
 
-### Quick Start
+| Year | Reward | Per Block | % of Pool |
+|------|--------|-----------|-----------|
+| Year 1 | 400M TPIX | ~25.5 TPIX | 28.6% |
+| Year 2 | 350M TPIX | ~22.3 TPIX | 25.0% |
+| Year 3 | 300M TPIX | ~19.1 TPIX | 21.4% |
+| Year 4 | 200M TPIX | ~12.7 TPIX | 14.3% |
+| Year 5 | 150M TPIX | ~9.6 TPIX | 10.7% |
 
+> See full details: [masternode/README.md](masternode/README.md)
+
+## Run a Master Node
+
+### Quick Install (Linux)
 ```bash
-# Clone this repo
-git clone https://github.com/xjanova/TPIX-Coin.git
-cd TPIX-Coin/infrastructure
-
-# Start TPIX Chain node
-docker compose up -d
-
-# Verify
-curl -s http://localhost:8545 \
-  -X POST -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
-# Expected: {"jsonrpc":"2.0","id":1,"result":"0x10c1"}
+curl -fsSL https://raw.githubusercontent.com/xjanova/TPIX-Coin/main/masternode/scripts/install.sh | bash
 ```
+
+### Quick Install (Windows PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/xjanova/TPIX-Coin/main/masternode/scripts/install.ps1 | iex
+```
+
+### Docker
+```bash
+docker run -d --name tpix-node -p 30303:30303 -p 3847:3847 -e TPIX_TIER=light -e TPIX_WALLET=0xYourAddress tpix-node:latest
+```
+
+### Build from Source
+```bash
+git clone https://github.com/xjanova/TPIX-Coin.git
+cd TPIX-Coin/masternode
+go build -o tpix-node ./cmd/tpix-node/
+./tpix-node init --tier=light --wallet=0xYourAddress
+./tpix-node
+```
+
+Dashboard: `http://localhost:3847` | Full docs: [masternode/README.md](masternode/README.md)
+
 
 ## Roadmap
 

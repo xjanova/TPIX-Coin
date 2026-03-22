@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPIX Master Node Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.8);
+            --border: rgba(59, 130, 246, 0.2);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+            --accent-yellow: #f59e0b;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(59, 130, 246, 0.15));
+            border-bottom: 1px solid var(--border);
+            padding: 16px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(20px);
+        }
+
+        .header-left { display: flex; align-items: center; gap: 16px; }
+
+        .logo {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 18px;
+        }
+
+        .header-title h1 { font-size: 20px; font-weight: 700; }
+        .header-title span { font-size: 12px; color: var(--text-secondary); }
+
+        .status-badge {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px; font-weight: 600;
+        }
+
+        .status-badge.online {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main Layout */
+        .main { padding: 24px 32px; max-width: 1600px; margin: 0 auto; }
+
+        /* Cards Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-cyan);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-value.green { background: linear-gradient(135deg, var(--accent-green), #34d399); -webkit-background-clip: text; }
+        .stat-value.purple { background: linear-gradient(135deg, var(--accent-purple), #a78bfa); -webkit-background-clip: text; }
+        .stat-value.yellow { background: linear-gradient(135deg, var(--accent-yellow), #fbbf24); -webkit-background-clip: text; }
+
+        .stat-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+        /* Panels */
+        .panels {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .panel-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Node Tier Badge */
+        .tier-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .tier-validator { background: rgba(245, 158, 11, 0.15); color: var(--accent-yellow); border: 1px solid rgba(245, 158, 11, 0.3); }
+        .tier-sentinel { background: rgba(139, 92, 246, 0.15); color: var(--accent-purple); border: 1px solid rgba(139, 92, 246, 0.3); }
+        .tier-light { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); border: 1px solid rgba(6, 182, 212, 0.3); }
+
+        /* Progress Bar */
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s;
+        }
+
+        .progress-fill.blue { background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)); }
+        .progress-fill.green { background: linear-gradient(90deg, var(--accent-green), #34d399); }
+
+        /* Resource Meter */
+        .resource-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .resource-label { font-size: 13px; color: var(--text-secondary); }
+        .resource-value { font-size: 13px; font-weight: 600; }
+
+        /* Reward History Table */
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; font-size: 12px; color: var(--text-secondary); padding: 8px; border-bottom: 1px solid var(--border); }
+        td { padding: 8px; font-size: 13px; border-bottom: 1px solid rgba(59, 130, 246, 0.1); }
+        tr:hover { background: rgba(59, 130, 246, 0.05); }
+
+        /* Network Node List */
+        .node-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+        }
+
+        .node-addr { font-family: monospace; font-size: 12px; color: var(--accent-cyan); }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .panels { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .main { padding: 16px; }
+            .header { padding: 12px 16px; }
+        }
+
+        /* Animated Gradient Border */
+        .glow-border {
+            position: relative;
+        }
+        .glow-border::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 13px;
+            padding: 1px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue), var(--accent-purple));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .glow-border:hover::before { opacity: 1; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">T</div>
+            <div class="header-title">
+                <h1>TPIX Master Node</h1>
+                <span id="node-name">{{.NodeName}} &middot; v{{.Version}}</span>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span id="tier-badge" class="tier-badge tier-{{.Tier | lower}}">{{.Tier}}</span>
+            <div id="status-badge" class="status-badge online">
+                <div class="status-dot"></div>
+                <span id="node-state">Connecting...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main">
+        <!-- Stats Row 1: Node Info -->
+        <div class="stats-grid">
+            <div class="stat-card glow-border">
+                <div class="stat-label">Staked Amount</div>
+                <div class="stat-value" id="staked-amount">—</div>
+                <div class="stat-sub">TPIX</div>
+            </div>
+            <div class="stat-card glow-border">
+                <div class="stat-label">Pending Reward</div>
+                <div class="stat-value green" id="pending-reward">—</div>
+                <div class="stat-sub">TPIX (claimable)</div>
+            </div>
+            <div class="stat-card glow-border">
+                <div class="stat-label">Total Earned</div>
+                <div class="stat-value purple" id="total-rewards">—</div>
+                <div class="stat-sub">TPIX (all time)</div>
+            </div>
+            <div class="stat-card glow-border">
+                <div class="stat-label">Uptime</div>
+                <div class="stat-value yellow" id="uptime">—</div>
+                <div class="stat-sub" id="uptime-duration">—</div>
+            </div>
+        </div>
+
+        <!-- Stats Row 2: Network -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Block Height</div>
+                <div class="stat-value" id="block-height">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Connected Peers</div>
+                <div class="stat-value" id="peers">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Network Nodes</div>
+                <div class="stat-value" id="total-nodes">—</div>
+                <div class="stat-sub" id="nodes-breakdown">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Network Staked</div>
+                <div class="stat-value green" id="network-staked">—</div>
+                <div class="stat-sub">TPIX</div>
+            </div>
+        </div>
+
+        <!-- Panels -->
+        <div class="panels">
+            <!-- System Resources -->
+            <div class="panel">
+                <div class="panel-title">System Resources</div>
+
+                <div class="resource-item">
+                    <span class="resource-label">CPU</span>
+                    <span class="resource-value" id="cpu-pct">—</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill blue" id="cpu-bar" style="width: 0%"></div></div>
+
+                <div class="resource-item" style="margin-top: 16px;">
+                    <span class="resource-label">Memory</span>
+                    <span class="resource-value" id="mem-pct">—</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill green" id="mem-bar" style="width: 0%"></div></div>
+
+                <div class="resource-item" style="margin-top: 16px;">
+                    <span class="resource-label">Disk</span>
+                    <span class="resource-value" id="disk-pct">—</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill blue" id="disk-bar" style="width: 0%"></div></div>
+
+                <div class="resource-item" style="margin-top: 16px;">
+                    <span class="resource-label">Network In</span>
+                    <span class="resource-value" id="net-in">—</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-label">Network Out</span>
+                    <span class="resource-value" id="net-out">—</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-label">OS / Arch</span>
+                    <span class="resource-value" id="os-info">—</span>
+                </div>
+            </div>
+
+            <!-- Reward Economics -->
+            <div class="panel">
+                <div class="panel-title">Reward Economics</div>
+
+                <div class="resource-item">
+                    <span class="resource-label">Reward Pool</span>
+                    <span class="resource-value">1,400,000,000 TPIX</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-label">Distributed</span>
+                    <span class="resource-value" id="total-distributed">—</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-label">Remaining</span>
+                    <span class="resource-value" id="remaining-rewards" style="color: var(--accent-green);">—</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill green" id="reward-bar" style="width: 0%"></div></div>
+
+                <div style="margin-top: 20px;">
+                    <div class="resource-item">
+                        <span class="resource-label">Current Year</span>
+                        <span class="resource-value" id="reward-year">—</span>
+                    </div>
+                    <div class="resource-item">
+                        <span class="resource-label">Block Reward</span>
+                        <span class="resource-value" id="block-reward">—</span>
+                    </div>
+                </div>
+
+                <div style="margin-top: 16px; padding: 12px; background: rgba(6, 182, 212, 0.1); border-radius: 8px; border: 1px solid rgba(6, 182, 212, 0.2);">
+                    <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">EMISSION SCHEDULE</div>
+                    <div style="font-size: 12px; line-height: 1.8;">
+                        Year 1: 400M TPIX (~25.5/block)<br>
+                        Year 2: 350M TPIX (~22.3/block)<br>
+                        Year 3: 300M TPIX (~19.1/block)<br>
+                        Year 4: 200M TPIX (~12.7/block)<br>
+                        Year 5: 150M TPIX (~9.6/block)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reward History -->
+        <div class="panel" style="margin-bottom: 24px;">
+            <div class="panel-title">Recent Rewards</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Amount (TPIX)</th>
+                        <th>Block</th>
+                        <th>Transaction</th>
+                    </tr>
+                </thead>
+                <tbody id="reward-table">
+                    <tr><td colspan="4" style="text-align: center; color: var(--text-secondary);">Waiting for first reward...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        TPIX Master Node v{{.Version}} &middot; TPIX Chain (ID: 4289) &middot; Powered by Xman Studio &middot;
+        <a href="https://tpix.online" style="color: var(--accent-cyan); text-decoration: none;">tpix.online</a>
+    </div>
+
+    <script>
+        // WebSocket connection for real-time updates
+        const port = {{.Port}};
+        let ws;
+
+        function connect() {
+            ws = new WebSocket(`ws://localhost:${port}/ws`);
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updateDashboard(data);
+            };
+
+            ws.onclose = () => {
+                document.getElementById('node-state').textContent = 'Disconnected';
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = () => ws.close();
+        }
+
+        function updateDashboard(data) {
+            const s = data.status;
+            const m = data.metrics;
+
+            // Node state
+            document.getElementById('node-state').textContent = s.state;
+
+            // Stats
+            setText('staked-amount', s.staked_amount);
+            setText('pending-reward', s.pending_reward);
+            setText('total-rewards', s.total_rewards);
+            setText('uptime', s.uptime_percent.toFixed(1) + '%');
+            setText('uptime-duration', formatDuration(s.uptime_seconds));
+            setText('block-height', s.block_height?.toLocaleString() || '—');
+            setText('peers', s.connected_peers);
+
+            // Network
+            if (s.network) {
+                setText('total-nodes', s.network.total_nodes);
+                setText('nodes-breakdown',
+                    `V:${s.network.validator_nodes} S:${s.network.sentinel_nodes} L:${s.network.light_nodes}`);
+                setText('network-staked', s.network.total_staked);
+                setText('total-distributed', s.network.total_rewards_distributed);
+                setText('remaining-rewards', s.network.remaining_rewards);
+                setText('reward-year', `Year ${s.network.current_year + 1}`);
+                setText('block-reward', s.network.current_block_reward + ' TPIX');
+            }
+
+            // System metrics
+            if (m) {
+                setText('cpu-pct', m.cpu_percent.toFixed(1) + '%');
+                setBar('cpu-bar', m.cpu_percent);
+                setText('mem-pct', `${m.memory_used_mb}MB / ${m.memory_total_mb}MB (${m.memory_percent.toFixed(1)}%)`);
+                setBar('mem-bar', m.memory_percent);
+                setText('disk-pct', `${m.disk_used_gb}GB / ${m.disk_total_gb}GB (${m.disk_percent.toFixed(1)}%)`);
+                setBar('disk-bar', m.disk_percent);
+                setText('net-in', m.network_in_mb.toFixed(1) + ' MB');
+                setText('net-out', m.network_out_mb.toFixed(1) + ' MB');
+                setText('os-info', `${m.os} / ${m.arch}`);
+            }
+        }
+
+        function setText(id, val) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = val ?? '—';
+        }
+
+        function setBar(id, pct) {
+            const el = document.getElementById(id);
+            if (el) el.style.width = Math.min(pct, 100) + '%';
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return '—';
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            if (d > 0) return `${d}d ${h}h ${m}m`;
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m}m`;
+        }
+
+        // Initial load via REST, then switch to WebSocket
+        fetch(`/api/status`).then(r => r.json()).then(s => {
+            updateDashboard({ status: s, metrics: null });
+        }).catch(() => {});
+
+        fetch(`/api/metrics`).then(r => r.json()).then(m => {
+            updateDashboard({ status: { uptime_percent: 100 }, metrics: m });
+        }).catch(() => {});
+
+        connect();
+    </script>
+</body>
+</html>
