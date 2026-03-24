@@ -66,11 +66,11 @@ class ReceiveScreen extends StatelessWidget {
                     version: QrVersions.auto,
                     size: 220,
                     eyeStyle: const QrEyeStyle(
-                      eyeShape: QrEyeShape.roundedOuter,
+                      eyeShape: QrEyeShape.square,
                       color: AppTheme.bgDark,
                     ),
                     dataModuleStyle: const QrDataModuleStyle(
-                      dataModuleShape: QrDataModuleShape.roundedOutsideCorners,
+                      dataModuleShape: QrDataModuleShape.square,
                       color: AppTheme.bgDark,
                     ),
                     embeddedImage: const AssetImage('assets/images/tpixlogo.webp'),
