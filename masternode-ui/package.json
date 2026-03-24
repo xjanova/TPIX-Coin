@@ -1,0 +1,73 @@
+{
+  "name": "tpix-masternode",
+  "version": "1.0.0",
+  "description": "TPIX Chain Master Node — Easy Windows GUI",
+  "main": "electron/main.js",
+  "author": "Xman Studio",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "cross-env NODE_ENV=development electron .",
+    "build": "electron-builder --win",
+    "build:portable": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.xmanstudio.tpix-masternode",
+    "productName": "TPIX Master Node",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "forceCodeSigning": false,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "xjanova",
+        "repo": "TPIX-Coin",
+        "releaseType": "release"
+      }
+    ],
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/",
+        "to": "bin/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3",
+    "ethers": "^6.11.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^29.0.0",
+    "electron-builder": "^24.13.0"
+  }
+}
