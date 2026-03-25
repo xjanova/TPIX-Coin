@@ -189,8 +189,8 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
               ),
 
               if (_isError)
-                const Padding(
-                  padding: EdgeInsets.only(top: 16),
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
                   child: Text(l.t('pin.wrong'), style: const TextStyle(color: AppTheme.danger, fontSize: 14)),
                 ),
 

@@ -118,7 +118,7 @@ class ReceiveScreen extends StatelessWidget {
                             borderRadius: BorderRadius.circular(10),
                             color: AppTheme.primary.withValues(alpha: 0.15),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               const Icon(Icons.copy, size: 16, color: AppTheme.primary),
@@ -142,10 +142,10 @@ class ReceiveScreen extends StatelessWidget {
                     color: AppTheme.warm.withValues(alpha: 0.06),
                     border: Border.all(color: AppTheme.warm.withValues(alpha: 0.15)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.info_outline, color: AppTheme.warm, size: 18),
-                      SizedBox(width: 8),
+                      const Icon(Icons.info_outline, color: AppTheme.warm, size: 18),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           l.t('receive.warning'),

@@ -57,10 +57,10 @@ class BackupScreen extends StatelessWidget {
                     color: AppTheme.warm.withValues(alpha: 0.1),
                     border: Border.all(color: AppTheme.warm.withValues(alpha: 0.3)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.warning_amber_rounded, color: AppTheme.warm, size: 28),
-                      SizedBox(width: 12),
+                      const Icon(Icons.warning_amber_rounded, color: AppTheme.warm, size: 28),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           l.t('backup.warning'),
