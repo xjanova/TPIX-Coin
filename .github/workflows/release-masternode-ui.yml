@@ -1,14 +1,6 @@
 # TPIX Master Node — Release Workflow
 # Builds Windows portable + installer and publishes to GitHub Releases
-# Repo: xjanova/TPIX-Coin
-#
-# Trigger: Push a version tag like v1.1.2, v1.2.0, etc.
-# Usage:
-#   git tag v1.2.0
-#   git push origin v1.2.0
-#
-# electron-updater will automatically detect the new release
-# and notify users to update via latest.yml.
+# Only builds when masternode-ui/ files actually changed.
 
 name: Release TPIX Master Node
 
@@ -21,7 +13,40 @@ permissions:
   contents: write
 
 jobs:
+  check-changes:
+    name: Check masternode changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if masternode files changed since last tag
+        id: check
+        run: |
+          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | grep -A1 "^${CURRENT_TAG}$" | tail -1)
+          if [ "$PREV_TAG" = "$CURRENT_TAG" ] || [ -z "$PREV_TAG" ]; then
+            echo "First tag or no previous tag — build"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "Comparing $PREV_TAG → $CURRENT_TAG"
+          CHANGED=$(git diff --name-only "$PREV_TAG" "$CURRENT_TAG" -- masternode-ui/ .github/workflows/release-masternode-ui.yml)
+          if [ -n "$CHANGED" ]; then
+            echo "Masternode files changed:"
+            echo "$CHANGED"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "No masternode changes — skip build"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
   build-windows:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_build == 'true'
     runs-on: windows-latest
     steps:
       - name: Checkout
