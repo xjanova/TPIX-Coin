@@ -1,0 +1,61 @@
+# TPIX Master Node — Release Workflow
+# Builds Windows portable + installer and publishes to GitHub Releases
+# Repo: xjanova/TPIX-Coin
+#
+# Trigger: Push a version tag like v1.0.0, v1.0.1, etc.
+# Usage:
+#   git tag v1.0.1
+#   git push origin v1.0.1
+#
+# electron-updater will automatically detect the new release
+# and notify users to update.
+
+name: Release TPIX Master Node
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: masternode-ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: masternode-ui
+        run: npm ci
+
+      - name: Build Electron app
+        working-directory: masternode-ui
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
+
+      - name: List build artifacts
+        working-directory: masternode-ui
+        run: |
+          echo "=== dist/ ==="
+          Get-ChildItem -Path dist -Recurse -File | Select-Object Name, Length, FullName
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpix-masternode-windows
+          path: |
+            masternode-ui/dist/*.exe
+            masternode-ui/dist/*.yml
+            masternode-ui/dist/*.yaml
+          retention-days: 30

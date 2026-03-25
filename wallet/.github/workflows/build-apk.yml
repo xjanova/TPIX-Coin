@@ -4,18 +4,11 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-    paths:
-      - 'wallet/**'
-      - '.github/workflows/build-apk.yml'
   workflow_dispatch:
-
-defaults:
-  run:
-    working-directory: wallet
 
 jobs:
   build:
-    name: Build Wallet APK
+    name: Build APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,10 +30,9 @@ jobs:
         run: flutter build apk --release
 
       - name: Rename APK
-        working-directory: .
         run: |
-          VERSION=$(grep 'version:' wallet/pubspec.yaml | head -1 | awk '{print $2}' | cut -d'+' -f1)
-          cp wallet/build/app/outputs/flutter-apk/app-release.apk "TPIX-Wallet-v${VERSION}.apk"
+          VERSION=$(grep 'version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d'+' -f1)
+          cp build/app/outputs/flutter-apk/app-release.apk "TPIX-Wallet-v${VERSION}.apk"
           echo "APK_NAME=TPIX-Wallet-v${VERSION}.apk" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
@@ -56,25 +48,20 @@ jobs:
         with:
           files: "*.apk"
           body: |
-            ## TPIX Chain v${{ env.VERSION }}
+            ## TPIX Wallet v${{ env.VERSION }}
 
-            ### 📱 TPIX Wallet
+            Official wallet for TPIX Chain (Chain ID: 4289)
+
+            ### Features
             - 🔐 Secure encrypted keystore
-            - ⚡ Zero gas fee transactions on TPIX Chain
+            - ⚡ Zero gas fee transactions
             - 🎨 Beautiful 3D animated UI
             - 📱 Create/import wallet with seed phrase
             - 💸 Send/receive TPIX instantly
             - 🔒 PIN + biometric protection
-            - 🔄 Auto-update from GitHub Releases
-
-            ### 🖥️ Master Node
-            - Electron app for Windows (in masternode-ui/)
-            - IBFT2 validator management
-            - Multi-node support
 
             ### Download
-            - **TPIX Wallet APK** — Install on Android
-            - **Master Node** — See masternode-ui/ for Windows build
+            Install the APK on your Android device.
 
             **Developer:** Xman Studio
             **Website:** https://tpix.online

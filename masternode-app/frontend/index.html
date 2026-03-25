@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPIX Master Node</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0a0e1a; --bg2: #111827; --bg-card: rgba(17,24,39,0.8);
+            --border: rgba(59,130,246,0.2); --text: #f1f5f9; --text2: #94a3b8;
+            --cyan: #06b6d4; --blue: #3b82f6; --green: #10b981;
+            --red: #ef4444; --purple: #8b5cf6; --yellow: #f59e0b;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; user-select: none; }
+
+        /* Title bar drag area */
+        .titlebar { --wails-draggable: drag; height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--border); }
+        .titlebar-title { font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 8px; }
+        .titlebar-logo { width: 18px; height: 18px; background: linear-gradient(135deg, var(--cyan), var(--blue)); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; }
+
+        /* Header */
+        .header { background: linear-gradient(135deg, rgba(6,182,212,0.12), rgba(59,130,246,0.12)); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .logo { width: 36px; height: 36px; background: linear-gradient(135deg, var(--cyan), var(--blue)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; }
+        .header h1 { font-size: 18px; }
+        .header span { font-size: 11px; color: var(--text2); }
+
+        .controls { display: flex; gap: 8px; }
+        .btn { padding: 6px 16px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn:hover { background: rgba(255,255,255,0.1); }
+        .btn-start { border-color: rgba(16,185,129,0.4); color: var(--green); }
+        .btn-start:hover { background: rgba(16,185,129,0.15); }
+        .btn-stop { border-color: rgba(239,68,68,0.4); color: var(--red); }
+        .btn-stop:hover { background: rgba(239,68,68,0.15); }
+        .btn-settings { border-color: rgba(139,92,246,0.4); color: var(--purple); }
+
+        .status-badge { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 16px; font-size: 12px; font-weight: 600; }
+        .status-badge.online { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+        .status-badge.offline { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-dot.on { background: var(--green); animation: pulse 2s infinite; }
+        .status-dot.off { background: var(--red); }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+        .tier-badge { padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+        .tier-validator { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+        .tier-sentinel { background: rgba(139,92,246,0.15); color: var(--purple); border: 1px solid rgba(139,92,246,0.3); }
+        .tier-light { background: rgba(6,182,212,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.3); }
+
+        /* Main */
+        .main { padding: 16px 24px; overflow-y: auto; height: calc(100vh - 32px - 56px - 36px); }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 2px; padding: 4px; background: var(--bg2); border-radius: 10px; margin-bottom: 16px; border: 1px solid var(--border); }
+        .tab { flex: 1; padding: 8px; text-align: center; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text2); transition: all 0.2s; }
+        .tab.active { background: rgba(6,182,212,0.15); color: var(--cyan); }
+        .tab:hover:not(.active) { color: var(--text); }
+
+        /* Stats Grid */
+        .grid { display: grid; gap: 12px; margin-bottom: 16px; }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; backdrop-filter: blur(10px); transition: border-color 0.2s; }
+        .card:hover { border-color: rgba(6,182,212,0.4); }
+
+        .card-label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .card-value { font-size: 24px; font-weight: 700; }
+        .card-value.cyan { color: var(--cyan); }
+        .card-value.green { color: var(--green); }
+        .card-value.purple { color: var(--purple); }
+        .card-value.yellow { color: var(--yellow); }
+        .card-sub { font-size: 10px; color: var(--text2); margin-top: 2px; }
+
+        /* Progress */
+        .progress { height: 6px; background: var(--bg2); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+        .progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+        .progress-fill.blue { background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+        .progress-fill.green { background: linear-gradient(90deg, var(--green), #34d399); }
+
+        .resource-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .resource-label { font-size: 12px; color: var(--text2); }
+        .resource-value { font-size: 12px; font-weight: 600; }
+
+        /* Emission */
+        .emission-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 12px; }
+        .emission-item { padding: 8px; border-radius: 8px; text-align: center; font-size: 11px; border: 1px solid var(--border); }
+        .emission-item.active { background: rgba(6,182,212,0.15); border-color: rgba(6,182,212,0.4); color: var(--cyan); }
+        .emission-item.inactive { background: rgba(255,255,255,0.02); color: var(--text2); }
+
+        /* Settings Panel */
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .form-input { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); font-size: 13px; outline: none; }
+        .form-input:focus { border-color: var(--cyan); }
+        .form-select { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); font-size: 13px; }
+
+        /* Footer */
+        .footer { text-align: center; padding: 8px; color: var(--text2); font-size: 10px; border-top: 1px solid var(--border); }
+
+        @media (max-width: 900px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+    </style>
+</head>
+<body>
+    <!-- Custom Title Bar -->
+    <div class="titlebar">
+        <div class="titlebar-title">
+            <div class="titlebar-logo">T</div>
+            TPIX Master Node v1.0.0
+        </div>
+        <div id="status-mini" class="status-badge offline">
+            <div class="status-dot off" id="status-dot-mini"></div>
+            <span id="status-text-mini">Stopped</span>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">T</div>
+            <div>
+                <h1 id="node-name-h">TPIX Master Node</h1>
+                <span id="node-tier-sub">Light Node &middot; Chain 4289</span>
+            </div>
+        </div>
+        <div class="controls">
+            <button class="btn btn-start" id="btn-start" onclick="startNode()">Start</button>
+            <button class="btn btn-stop" id="btn-stop" onclick="stopNode()" style="display:none">Stop</button>
+            <button class="btn btn-settings" onclick="showTab('settings')">Settings</button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main">
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" id="tab-dashboard" onclick="showTab('dashboard')">Dashboard</div>
+            <div class="tab" id="tab-network" onclick="showTab('network')">Network</div>
+            <div class="tab" id="tab-rewards" onclick="showTab('rewards')">Rewards</div>
+            <div class="tab" id="tab-settings" onclick="showTab('settings')">Settings</div>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="page-dashboard">
+            <div class="grid grid-4">
+                <div class="card">
+                    <div class="card-label">Staked Amount</div>
+                    <div class="card-value cyan" id="staked">0.0000</div>
+                    <div class="card-sub">TPIX</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Pending Reward</div>
+                    <div class="card-value green" id="pending">0.0000</div>
+                    <div class="card-sub">TPIX (claimable)</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Total Earned</div>
+                    <div class="card-value purple" id="earned">0.0000</div>
+                    <div class="card-sub">TPIX (all time)</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Uptime</div>
+                    <div class="card-value yellow" id="uptime">0.0%</div>
+                    <div class="card-sub" id="uptime-dur">—</div>
+                </div>
+            </div>
+
+            <div class="grid grid-4">
+                <div class="card">
+                    <div class="card-label">Block Height</div>
+                    <div class="card-value cyan" id="block-height">0</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Peers</div>
+                    <div class="card-value" id="peers">0</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Sync</div>
+                    <div class="card-value green" id="sync">—</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Version</div>
+                    <div class="card-value" style="font-size:18px" id="version">1.0.0</div>
+                </div>
+            </div>
+
+            <!-- System Resources -->
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-label" style="margin-bottom:12px">System Resources</div>
+                    <div class="resource-row"><span class="resource-label">CPU</span><span class="resource-value" id="cpu">—</span></div>
+                    <div class="progress"><div class="progress-fill blue" id="cpu-bar" style="width:0%"></div></div>
+                    <div class="resource-row" style="margin-top:12px"><span class="resource-label">Memory</span><span class="resource-value" id="mem">—</span></div>
+                    <div class="progress"><div class="progress-fill green" id="mem-bar" style="width:0%"></div></div>
+                    <div class="resource-row" style="margin-top:12px"><span class="resource-label">Disk</span><span class="resource-value" id="disk">—</span></div>
+                    <div class="progress"><div class="progress-fill blue" id="disk-bar" style="width:0%"></div></div>
+                    <div class="resource-row" style="margin-top:12px"><span class="resource-label">OS</span><span class="resource-value" id="os-info">—</span></div>
+                </div>
+                <div class="card">
+                    <div class="card-label" style="margin-bottom:12px">Reward Economics</div>
+                    <div class="resource-row"><span class="resource-label">Reward Pool</span><span class="resource-value">1,400,000,000 TPIX</span></div>
+                    <div class="resource-row"><span class="resource-label">Current Year</span><span class="resource-value" id="reward-year">Year 1</span></div>
+                    <div class="resource-row"><span class="resource-label">Block Reward</span><span class="resource-value" id="block-reward">25.5 TPIX</span></div>
+                    <div class="emission-grid">
+                        <div class="emission-item active"><b>Y1</b><br>400M</div>
+                        <div class="emission-item inactive"><b>Y2</b><br>350M</div>
+                        <div class="emission-item inactive"><b>Y3</b><br>300M</div>
+                        <div class="emission-item inactive"><b>Y4</b><br>200M</div>
+                        <div class="emission-item inactive"><b>Y5</b><br>150M</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Tab -->
+        <div id="page-network" style="display:none">
+            <div class="grid grid-4">
+                <div class="card"><div class="card-label">Total Nodes</div><div class="card-value cyan" id="n-total">0</div></div>
+                <div class="card"><div class="card-label">Validators</div><div class="card-value yellow" id="n-val">0</div></div>
+                <div class="card"><div class="card-label">Sentinels</div><div class="card-value purple" id="n-sent">0</div></div>
+                <div class="card"><div class="card-label">Light Nodes</div><div class="card-value cyan" id="n-light">0</div></div>
+            </div>
+            <div class="grid grid-2">
+                <div class="card"><div class="card-label">Network Staked</div><div class="card-value green" id="n-staked">0</div><div class="card-sub">TPIX</div></div>
+                <div class="card"><div class="card-label">Rewards Distributed</div><div class="card-value purple" id="n-distrib">0</div><div class="card-sub">TPIX</div></div>
+            </div>
+        </div>
+
+        <!-- Rewards Tab -->
+        <div id="page-rewards" style="display:none">
+            <div class="card">
+                <div class="card-label" style="margin-bottom:12px">Reward History</div>
+                <p style="color: var(--text2); font-size: 13px; text-align: center; padding: 40px 0;">
+                    Start your node to begin earning rewards.
+                </p>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="page-settings" style="display:none">
+            <div class="card">
+                <div class="card-label" style="margin-bottom:16px; font-size: 14px;">Node Configuration</div>
+                <div class="grid grid-2">
+                    <div>
+                        <div class="form-group">
+                            <label class="form-label">Node Name</label>
+                            <input class="form-input" id="cfg-name" placeholder="my-tpix-node">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Wallet Address</label>
+                            <input class="form-input" id="cfg-wallet" placeholder="0x...">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Node Tier</label>
+                            <select class="form-select" id="cfg-tier">
+                                <option value="Validator">Validator (1M TPIX, 12-15% APY)</option>
+                                <option value="Sentinel">Sentinel (100K TPIX, 7-10% APY)</option>
+                                <option value="Light" selected>Light (10K TPIX, 4-6% APY)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="form-group">
+                            <label class="form-label">Chain RPC</label>
+                            <input class="form-input" id="cfg-rpc" value="https://rpc.tpix.online" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Chain ID</label>
+                            <input class="form-input" value="4289" readonly>
+                        </div>
+                        <div class="form-group" style="margin-top: 28px;">
+                            <button class="btn btn-start" style="width: 100%; padding: 10px;" onclick="saveConfig()">Save Configuration</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        TPIX Master Node v1.0.0 &middot; Chain 4289 &middot; Powered by Xman Studio &middot; tpix.online
+    </div>
+
+    <script src="/src/main.js"></script>
+</body>
+</html>

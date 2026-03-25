@@ -27,11 +27,23 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
+**/build/
 /coverage/
+wallet/.dart_tool/
+wallet/build/
+
+# Electron/Node
+masternode-ui/node_modules/
+masternode-ui/dist/
+masternode-app/node_modules/
+
+# Environment
+.env
+*.env.local
 
 # Symbolication related
 app.*.symbols

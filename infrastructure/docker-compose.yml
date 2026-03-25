@@ -1,0 +1,117 @@
+# TPIX Chain — Polygon Edge (IBFT PoA, 4 validators)
+# docker-compose up -d เพื่อเริ่ม chain
+# Developed by Xman Studio
+
+version: '3.8'
+
+services:
+  # Validator Node 1 (Boot node)
+  validator-1:
+    image: 0xpolygon/polygon-edge:latest
+    container_name: tpix-validator-1
+    command: >
+      server
+      --data-dir /data
+      --chain /genesis/genesis.json
+      --grpc-address 0.0.0.0:10000
+      --libp2p 0.0.0.0:10001
+      --jsonrpc 0.0.0.0:8545
+      --seal
+      --max-slots 4096
+      --block-gas-target 0x1312D00
+      --price-limit 0
+    volumes:
+      - validator1-data:/data
+      - ./genesis.json:/genesis/genesis.json:ro
+    ports:
+      - "8545:8545"   # JSON-RPC (หลัก)
+      - "10000:10000"  # gRPC
+      - "10001:10001"  # libp2p
+    networks:
+      - tpix-net
+    restart: unless-stopped
+
+  # Validator Node 2
+  validator-2:
+    image: 0xpolygon/polygon-edge:latest
+    container_name: tpix-validator-2
+    command: >
+      server
+      --data-dir /data
+      --chain /genesis/genesis.json
+      --grpc-address 0.0.0.0:10000
+      --libp2p 0.0.0.0:10001
+      --jsonrpc 0.0.0.0:8545
+      --seal
+      --max-slots 4096
+      --price-limit 0
+    volumes:
+      - validator2-data:/data
+      - ./genesis.json:/genesis/genesis.json:ro
+    ports:
+      - "8546:8545"
+    networks:
+      - tpix-net
+    restart: unless-stopped
+    depends_on:
+      - validator-1
+
+  # Validator Node 3
+  validator-3:
+    image: 0xpolygon/polygon-edge:latest
+    container_name: tpix-validator-3
+    command: >
+      server
+      --data-dir /data
+      --chain /genesis/genesis.json
+      --grpc-address 0.0.0.0:10000
+      --libp2p 0.0.0.0:10001
+      --jsonrpc 0.0.0.0:8545
+      --seal
+      --max-slots 4096
+      --price-limit 0
+    volumes:
+      - validator3-data:/data
+      - ./genesis.json:/genesis/genesis.json:ro
+    ports:
+      - "8547:8545"
+    networks:
+      - tpix-net
+    restart: unless-stopped
+    depends_on:
+      - validator-1
+
+  # Validator Node 4
+  validator-4:
+    image: 0xpolygon/polygon-edge:latest
+    container_name: tpix-validator-4
+    command: >
+      server
+      --data-dir /data
+      --chain /genesis/genesis.json
+      --grpc-address 0.0.0.0:10000
+      --libp2p 0.0.0.0:10001
+      --jsonrpc 0.0.0.0:8545
+      --seal
+      --max-slots 4096
+      --price-limit 0
+    volumes:
+      - validator4-data:/data
+      - ./genesis.json:/genesis/genesis.json:ro
+    ports:
+      - "8548:8545"
+    networks:
+      - tpix-net
+    restart: unless-stopped
+    depends_on:
+      - validator-1
+
+volumes:
+  validator1-data:
+  validator2-data:
+  validator3-data:
+  validator4-data:
+
+networks:
+  tpix-net:
+    driver: bridge

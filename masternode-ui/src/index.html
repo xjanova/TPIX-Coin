@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPIX Master Node</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- 3D Animated Background -->
+    <div class="bg-3d">
+        <div class="grid-floor"></div>
+        <div class="particles" id="particles"></div>
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        <div class="glow-orb orb-3"></div>
+        <div class="scan-line"></div>
+    </div>
+
+    <div id="app">
+        <!-- Title Bar -->
+        <div class="titlebar" style="-webkit-app-region: drag;">
+            <div class="titlebar-left">
+                <img src="logo.png" alt="T" class="titlebar-logo" onerror="this.outerHTML='<div class=logo-icon>T</div>'">
+                <span class="titlebar-title">TPIX Master Node</span>
+                <span class="version-badge">v{{ appVersion }}</span>
+            </div>
+            <div class="titlebar-right" style="-webkit-app-region: no-drag;">
+                <button @click="toggleLang" class="lang-toggle" :title="i18n.switchLang">
+                    {{ lang === 'th' ? '🇹🇭 TH' : '🇬🇧 EN' }}
+                </button>
+                <button @click="minimize" class="tb-btn">&#x2015;</button>
+                <button @click="maximize" class="tb-btn">&#9633;</button>
+                <button @click="closeWindow" class="tb-btn tb-close">&times;</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="app-container">
+            <!-- Sidebar -->
+            <nav class="sidebar">
+                <div class="sidebar-nav">
+                    <button v-for="tab in tabs" :key="tab.id"
+                        @click="activeTab = tab.id"
+                        :class="['nav-btn', { active: activeTab === tab.id }]">
+                        <span class="nav-icon" v-html="tab.icon"></span>
+                        <span class="nav-label">{{ i18n.tabs[tab.id] }}</span>
+                    </button>
+                </div>
+                <div class="sidebar-footer">
+                    <div class="node-status-dot" :class="nodeStatus"></div>
+                    <span class="status-text">{{ statusLabel }}</span>
+                </div>
+            </nav>
+
+            <!-- Content Area -->
+            <main class="content">
+
+                <!-- ========== DASHBOARD ========== -->
+                <div v-if="activeTab === 'dashboard'" class="page">
+                    <h1 class="page-title">{{ i18n.tabs.dashboard }}</h1>
+
+                    <!-- Stats Grid -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">{{ i18n.dash.nodeStatus }}</div>
+                            <div class="stat-value" :class="'status-' + nodeStatus">{{ statusLabel }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">{{ i18n.dash.blockHeight }}</div>
+                            <div class="stat-value text-cyan">{{ formatNumber(network.blockNumber) }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">{{ i18n.dash.blockAge }}</div>
+                            <div class="stat-value" :class="network.isProducing ? 'text-green' : 'text-red'">
+                                {{ network.blockAge >= 0 ? formatDuration(network.blockAge) : 'N/A' }}
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">{{ i18n.dash.validators }}</div>
+                            <div class="stat-value text-purple">{{ network.validatorCount }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">{{ i18n.dash.peers }}</div>
+                            <div class="stat-value">{{ network.peerCount }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">{{ i18n.dash.uptime }}</div>
+                            <div class="stat-value">{{ nodeUptime > 0 ? formatDuration(nodeUptime) : 'N/A' }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Chain Health -->
+                    <div class="alert" :class="network.isProducing ? 'alert-success' : 'alert-danger'">
+                        <span class="alert-icon">{{ network.isProducing ? '&#10003;' : '&#9888;' }}</span>
+                        <div>
+                            <div class="alert-title">{{ network.isProducing ? i18n.dash.chainHealthy : i18n.dash.chainStopped }}</div>
+                            <div class="alert-text">{{ network.isProducing ? i18n.dash.chainHealthyDesc : i18n.dash.chainStoppedDesc }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="actions-row">
+                        <button v-if="nodeStatus === 'stopped' || nodeStatus === 'error'"
+                            @click="startNode" class="btn btn-primary btn-lg">&#9654; {{ i18n.dash.startNode }}</button>
+                        <button v-else @click="stopNode" class="btn btn-danger btn-lg">&#9632; {{ i18n.dash.stopNode }}</button>
+                        <button @click="refreshNetwork" class="btn btn-ghost">&#8635; {{ i18n.dash.refresh }}</button>
+                        <button @click="openLink('explorer')" class="btn btn-ghost">&#127760; Explorer</button>
+                    </div>
+
+                    <!-- System Metrics -->
+                    <div class="metrics-grid" v-if="metrics">
+                        <div class="metric-card">
+                            <div class="metric-header"><span>CPU</span><span class="metric-val">{{ metrics.cpu }}%</span></div>
+                            <div class="progress-bar"><div class="progress-fill bg-cyan" :style="{ width: metrics.cpu + '%' }"></div></div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-header"><span>{{ i18n.dash.memory }}</span><span class="metric-val">{{ metrics.memoryPercent }}%</span></div>
+                            <div class="progress-bar"><div class="progress-fill bg-purple" :style="{ width: metrics.memoryPercent + '%' }"></div></div>
+                            <div class="metric-sub">{{ formatMB(metrics.memoryUsed) }} / {{ formatMB(metrics.memoryTotal) }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========== SETUP WIZARD (Run a Node) ========== -->
+                <div v-if="activeTab === 'setup'" class="page">
+                    <h1 class="page-title">{{ i18n.tabs.setup }}</h1>
+
+                    <!-- Step indicator -->
+                    <div class="steps">
+                        <div v-for="(step, idx) in i18n.setup.steps" :key="idx"
+                            :class="['step', { active: setupStep === idx, done: setupStep > idx }]">
+                            <div class="step-num">{{ setupStep > idx ? '&#10003;' : idx + 1 }}</div>
+                            <div class="step-label">{{ step }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 0: Choose Tier -->
+                    <div v-if="setupStep === 0" class="step-content">
+                        <p class="step-desc">{{ i18n.setup.chooseTierDesc }}</p>
+                        <div class="tier-grid">
+                            <div v-for="tier in tiers" :key="tier.id"
+                                :class="['tier-card', { selected: config.tier === tier.id }]"
+                                @click="config.tier = tier.id">
+                                <div class="tier-badge" :class="'tier-' + tier.id">{{ tier.name }}</div>
+                                <div class="tier-stake">{{ formatNumber(tier.stake) }} TPIX</div>
+                                <div class="tier-apy">{{ tier.apy }}</div>
+                                <div class="tier-reward">
+                                    <div class="tier-reward-label">{{ i18n.setup.estimatedReward }}</div>
+                                    <div class="tier-reward-monthly">~{{ formatNumber(tier.monthlyReward) }} TPIX/{{ i18n.setup.month }}</div>
+                                    <div class="tier-reward-yearly">~{{ formatNumber(tier.yearlyReward) }} TPIX/{{ i18n.setup.year }}</div>
+                                </div>
+                                <ul class="tier-features">
+                                    <li v-for="f in tier.features" :key="f">{{ f }}</li>
+                                </ul>
+                                <div v-if="walletBalance > 0" class="tier-afford"
+                                    :class="parseFloat(walletBalance) >= tier.stake ? 'can-afford' : 'cant-afford'">
+                                    {{ parseFloat(walletBalance) >= tier.stake ? '&#10003; ' + i18n.setup.canAfford : '&#10007; ' + i18n.setup.cantAfford }}
+                                </div>
+                            </div>
+                        </div>
+                        <button @click="setupStep = 1" class="btn btn-primary btn-lg mt-4">{{ i18n.setup.next }} &rarr;</button>
+                    </div>
+
+                    <!-- Step 1: Wallet -->
+                    <div v-if="setupStep === 1" class="step-content">
+                        <p class="step-desc">{{ i18n.setup.walletDesc }}</p>
+
+                        <div v-if="walletAddress" class="wallet-mini glass-card">
+                            <div class="wallet-mini-row">
+                                <span class="text-cyan">{{ walletAddress }}</span>
+                                <span class="balance-pill">{{ walletBalance }} TPIX</span>
+                            </div>
+                            <button @click="refreshBalance" class="btn btn-ghost btn-sm">&#8635; {{ i18n.dash.refresh }}</button>
+                        </div>
+
+                        <div v-else class="setup-actions">
+                            <button @click="createWallet" class="btn btn-primary" :disabled="walletLoading">&#10010; {{ i18n.wallet.create }}</button>
+                            <button @click="showImportModal = true" class="btn btn-ghost">&#128229; {{ i18n.wallet.import }}</button>
+                        </div>
+
+                        <div v-if="newWalletData" class="wallet-result mt-4">
+                            <div class="alert alert-warning">
+                                <span class="alert-icon">&#9888;</span>
+                                <div>
+                                    <div class="alert-title">{{ i18n.wallet.saveKeyTitle }}</div>
+                                    <div class="alert-text">{{ i18n.wallet.saveKeyDesc }}</div>
+                                </div>
+                            </div>
+                            <div class="key-display">
+                                <label>Address</label>
+                                <div class="key-value">{{ newWalletData.address }}</div>
+                            </div>
+                            <div class="key-display">
+                                <label>Private Key</label>
+                                <div class="key-value private">{{ showPrivateKey ? newWalletData.privateKey : '****...' }}</div>
+                                <div class="key-actions">
+                                    <button @click="showPrivateKey = !showPrivateKey" class="btn btn-ghost btn-sm">{{ showPrivateKey ? i18n.wallet.hide : i18n.wallet.show }}</button>
+                                    <button @click="copyToClipboard(newWalletData.privateKey)" class="btn btn-ghost btn-sm">{{ i18n.wallet.copy }}</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="step-nav mt-4">
+                            <button @click="setupStep = 0" class="btn btn-ghost">&larr; {{ i18n.setup.back }}</button>
+                            <button @click="setupStep = 2" class="btn btn-primary" :disabled="!walletAddress">{{ i18n.setup.next }} &rarr;</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Configure & Run -->
+                    <div v-if="setupStep === 2" class="step-content">
+                        <p class="step-desc">{{ i18n.setup.configDesc }}</p>
+
+                        <div class="config-summary glass-card">
+                            <div class="config-row"><span>{{ i18n.setup.tier }}</span><span class="text-cyan">{{ selectedTier?.name }}</span></div>
+                            <div class="config-row"><span>{{ i18n.setup.stake }}</span><span class="text-yellow">{{ formatNumber(selectedTier?.stake || 0) }} TPIX</span></div>
+                            <div class="config-row"><span>{{ i18n.setup.reward }}</span><span class="text-green">{{ selectedTier?.apy }}</span></div>
+                            <div class="config-row"><span>Wallet</span><span class="text-cyan mono">{{ shortAddr(walletAddress) }}</span></div>
+                        </div>
+
+                        <div class="form-group mt-4">
+                            <label>{{ i18n.settings.nodeName }}</label>
+                            <input v-model="config.nodeName" class="input-field" placeholder="my-tpix-node">
+                        </div>
+
+                        <div class="reward-info glass-card mt-4">
+                            <h3>{{ i18n.setup.rewardInfo }}</h3>
+                            <table class="reward-table">
+                                <thead><tr><th>{{ i18n.setup.year }}</th><th>{{ i18n.setup.totalEmission }}</th></tr></thead>
+                                <tbody>
+                                    <tr><td>{{ i18n.setup.year }} 1</td><td>400,000,000 TPIX</td></tr>
+                                    <tr><td>{{ i18n.setup.year }} 2</td><td>350,000,000 TPIX</td></tr>
+                                    <tr><td>{{ i18n.setup.year }} 3</td><td>300,000,000 TPIX</td></tr>
+                                    <tr><td>{{ i18n.setup.year }} 4</td><td>200,000,000 TPIX</td></tr>
+                                    <tr><td>{{ i18n.setup.year }} 5</td><td>150,000,000 TPIX</td></tr>
+                                </tbody>
+                                <tfoot><tr><td><strong>{{ i18n.setup.total }}</strong></td><td><strong>1,400,000,000 TPIX</strong></td></tr></tfoot>
+                            </table>
+                            <p class="reward-note">{{ i18n.setup.rewardNote }}</p>
+                        </div>
+
+                        <div class="step-nav mt-4">
+                            <button @click="setupStep = 1" class="btn btn-ghost">&larr; {{ i18n.setup.back }}</button>
+                            <button @click="launchNode" class="btn btn-primary btn-lg">&#9654; {{ i18n.setup.launchNode }}</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========== WALLET ========== -->
+                <div v-if="activeTab === 'wallet'" class="page">
+                    <h1 class="page-title">{{ i18n.tabs.wallet }}</h1>
+
+                    <div v-if="!walletAddress" class="setup-card">
+                        <div class="setup-icon">&#128274;</div>
+                        <h2 class="setup-title">{{ i18n.wallet.setupTitle }}</h2>
+                        <p class="setup-desc">{{ i18n.wallet.setupDesc }}</p>
+                        <div class="setup-actions">
+                            <button @click="createWallet" class="btn btn-primary btn-lg" :disabled="walletLoading">&#10010; {{ i18n.wallet.create }}</button>
+                            <button @click="showImportModal = true" class="btn btn-ghost btn-lg">&#128229; {{ i18n.wallet.import }}</button>
+                        </div>
+                        <div v-if="newWalletData" class="wallet-result mt-4">
+                            <div class="alert alert-warning">
+                                <span class="alert-icon">&#9888;</span>
+                                <div><div class="alert-title">{{ i18n.wallet.saveKeyTitle }}</div><div class="alert-text">{{ i18n.wallet.saveKeyDesc }}</div></div>
+                            </div>
+                            <div class="key-display"><label>Address</label><div class="key-value">{{ newWalletData.address }}</div></div>
+                            <div class="key-display">
+                                <label>Private Key</label>
+                                <div class="key-value private">{{ showPrivateKey ? newWalletData.privateKey : '****...' }}</div>
+                                <div class="key-actions">
+                                    <button @click="showPrivateKey = !showPrivateKey" class="btn btn-ghost btn-sm">{{ showPrivateKey ? i18n.wallet.hide : i18n.wallet.show }}</button>
+                                    <button @click="copyToClipboard(newWalletData.privateKey)" class="btn btn-ghost btn-sm">{{ i18n.wallet.copy }}</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else class="wallet-card glass-card">
+                        <div class="wallet-header">
+                            <span class="wallet-icon">&#128176;</span>
+                            <span class="wallet-label">TPIX Wallet</span>
+                            <span class="chain-badge">Chain 4289</span>
+                        </div>
+                        <div class="wallet-address" @click="copyToClipboard(walletAddress)">
+                            {{ walletAddress }}
+                            <span class="copy-hint">{{ i18n.wallet.clickCopy }}</span>
+                        </div>
+                        <div class="wallet-balance">
+                            <span class="balance-amount">{{ walletBalance }}</span>
+                            <span class="balance-symbol">TPIX</span>
+                        </div>
+                        <div class="wallet-actions">
+                            <button @click="refreshBalance" class="btn btn-ghost btn-sm">&#8635; {{ i18n.dash.refresh }}</button>
+                            <button @click="showExportKey" class="btn btn-ghost btn-sm">&#128273; {{ i18n.wallet.exportKey }}</button>
+                            <button @click="openLink('explorerAddr')" class="btn btn-ghost btn-sm">&#127760; Explorer</button>
+                        </div>
+                        <div v-if="exportedKey" class="mt-4">
+                            <div class="alert alert-warning"><span class="alert-icon">&#9888;</span><div><div class="alert-title">Private Key</div><div class="alert-text">{{ i18n.wallet.neverShare }}</div></div></div>
+                            <div class="key-value private">{{ exportedKey }}</div>
+                            <div class="key-actions">
+                                <button @click="copyToClipboard(exportedKey)" class="btn btn-ghost btn-sm">{{ i18n.wallet.copy }}</button>
+                                <button @click="exportedKey = null" class="btn btn-ghost btn-sm">{{ i18n.wallet.hide }}</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Import Modal -->
+                    <div v-if="showImportModal" class="modal-overlay" @click.self="showImportModal = false">
+                        <div class="modal-content">
+                            <h3>{{ i18n.wallet.import }}</h3>
+                            <p class="modal-desc">{{ i18n.wallet.importDesc }}</p>
+                            <input v-model="importKeyInput" type="password" class="input-field" placeholder="0x..." autocomplete="off">
+                            <div class="modal-actions">
+                                <button @click="importWallet" class="btn btn-primary" :disabled="!importKeyInput">{{ i18n.wallet.import }}</button>
+                                <button @click="showImportModal = false" class="btn btn-ghost">{{ i18n.setup.back }}</button>
+                            </div>
+                            <div v-if="importError" class="text-red mt-2">{{ importError }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========== NETWORK ========== -->
+                <div v-if="activeTab === 'network'" class="page">
+                    <h1 class="page-title">{{ i18n.tabs.network }}</h1>
+
+                    <div class="stats-grid">
+                        <div class="stat-card wide"><div class="stat-label">Chain ID</div><div class="stat-value text-cyan">{{ network.chainId }}</div></div>
+                        <div class="stat-card wide"><div class="stat-label">{{ i18n.dash.blockHeight }}</div><div class="stat-value text-cyan">{{ formatNumber(network.blockNumber) }}</div></div>
+                        <div class="stat-card wide"><div class="stat-label">{{ i18n.net.production }}</div>
+                            <div class="stat-value" :class="network.isProducing ? 'text-green' : 'text-red'">{{ network.isProducing ? i18n.net.active : i18n.net.stopped }}</div>
+                        </div>
+                    </div>
+
+                    <div class="section-card">
+                        <h3 class="section-title">{{ i18n.net.validatorsTitle }} ({{ network.validators?.length || 0 }})</h3>
+                        <div v-if="network.validators?.length" class="validator-list">
+                            <div v-for="(v, i) in network.validators" :key="v" class="validator-row">
+                                <span class="validator-idx">#{{ i + 1 }}</span>
+                                <span class="validator-addr" @click="copyToClipboard(v)">{{ v }}</span>
+                            </div>
+                        </div>
+                        <div v-else class="empty-state">{{ i18n.net.noValidators }}</div>
+                        <div class="ibft-info">
+                            <p>{{ i18n.net.ibftRequires }} <strong>{{ Math.ceil(((network.validators?.length || 3) * 2) / 3) }}/{{ network.validators?.length || 3 }}</strong> {{ i18n.net.ibftOnline }}</p>
+                            <p>{{ i18n.net.faultTolerance }}: <strong>{{ Math.floor(((network.validators?.length || 3) - 1) / 3) }}</strong> {{ i18n.net.nodesFail }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Why run a node? -->
+                    <div class="section-card">
+                        <h3 class="section-title">{{ i18n.net.whyRunTitle }}</h3>
+                        <ul class="info-list">
+                            <li v-for="reason in i18n.net.whyRunReasons" :key="reason">{{ reason }}</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- ========== LINKS ========== -->
+                <div v-if="activeTab === 'links'" class="page">
+                    <h1 class="page-title">{{ i18n.tabs.links }}</h1>
+
+                    <div class="links-grid">
+                        <div v-for="group in linkGroups" :key="group.title" class="link-group">
+                            <h3 class="section-title">{{ group.title }}</h3>
+                            <div class="link-list">
+                                <a v-for="link in group.links" :key="link.url" @click.prevent="openLink(link.url)" class="link-card" href="#">
+                                    <span class="link-icon">{{ link.icon }}</span>
+                                    <div>
+                                        <div class="link-name">{{ link.name }}</div>
+                                        <div class="link-desc">{{ link.desc }}</div>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========== LOGS ========== -->
+                <div v-if="activeTab === 'logs'" class="page">
+                    <h1 class="page-title">{{ i18n.tabs.logs }} <button @click="loadLogs" class="btn btn-ghost btn-sm ml-2">&#8635;</button></h1>
+                    <div class="log-container">
+                        <div v-for="(log, i) in logs" :key="i" :class="['log-line', 'log-' + log.level]">
+                            <span class="log-time">{{ formatLogTime(log.time) }}</span>
+                            <span class="log-level">{{ log.level }}</span>
+                            <span class="log-msg">{{ log.message }}</span>
+                        </div>
+                        <div v-if="!logs.length" class="empty-state">{{ i18n.logs.empty }}</div>
+                    </div>
+                </div>
+
+                <!-- ========== SETTINGS ========== -->
+                <div v-if="activeTab === 'settings'" class="page">
+                    <h1 class="page-title">{{ i18n.tabs.settings }}</h1>
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label>{{ i18n.settings.nodeName }}</label>
+                            <input v-model="config.nodeName" class="input-field">
+                        </div>
+                        <div class="form-group">
+                            <label>{{ i18n.settings.tier }}</label>
+                            <select v-model="config.tier" class="input-field">
+                                <option value="light">Light (10,000 TPIX)</option>
+                                <option value="sentinel">Sentinel (100,000 TPIX)</option>
+                                <option value="validator">Validator (1,000,000 TPIX)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ i18n.settings.rpcUrl }}</label>
+                            <input v-model="config.rpcUrl" class="input-field">
+                        </div>
+                        <div class="form-group">
+                            <label>{{ i18n.settings.p2pPort }}</label>
+                            <input v-model.number="config.p2pPort" type="number" class="input-field">
+                        </div>
+                        <div class="form-group">
+                            <label>{{ i18n.settings.maxPeers }}</label>
+                            <input v-model.number="config.maxPeers" type="number" class="input-field">
+                        </div>
+                        <div class="form-row">
+                            <button @click="saveSettings" class="btn btn-primary">{{ i18n.settings.save }}</button>
+                            <button @click="openDataDir" class="btn btn-ghost">{{ i18n.settings.openDir }}</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========== ABOUT ========== -->
+                <div v-if="activeTab === 'about'" class="page">
+                    <h1 class="page-title">{{ i18n.tabs.about }}</h1>
+
+                    <div class="about-card glass-card">
+                        <div class="about-logo">
+                            <img src="logo.png" alt="TPIX" class="tpix-logo-img" onerror="this.style.display='none'">
+                            <h2>TPIX Master Node</h2>
+                            <p class="text-muted">v{{ appVersion }}</p>
+                        </div>
+
+                        <div class="about-section">
+                            <h3>{{ i18n.about.description }}</h3>
+                            <p>{{ i18n.about.descText }}</p>
+                        </div>
+
+                        <div class="about-section">
+                            <h3>{{ i18n.about.developer }}</h3>
+                            <div class="dev-info">
+                                <div class="dev-row"><span>{{ i18n.about.studio }}</span><strong>Xman Studio</strong></div>
+                                <div class="dev-row"><span>Website</span><a @click.prevent="openLink('xmanstudio')" href="#">xman4289.com</a></div>
+                                <div class="dev-row"><span>{{ i18n.about.license }}</span><strong>MIT License</strong></div>
+                                <div class="dev-row"><span>{{ i18n.about.version }}</span><strong>{{ appVersion }}</strong></div>
+                                <div class="dev-row"><span>Chain</span><strong>TPIX Chain (4289)</strong></div>
+                                <div class="dev-row"><span>Consensus</span><strong>IBFT2 (Polygon Edge)</strong></div>
+                            </div>
+                        </div>
+
+                        <!-- Auto-Update Section -->
+                        <div class="about-section">
+                            <h3>{{ i18n.about.updateTitle }}</h3>
+                            <div class="update-card">
+                                <div class="update-current">
+                                    <span>{{ i18n.about.currentVersion }}</span>
+                                    <strong>v{{ appVersion }}</strong>
+                                </div>
+
+                                <!-- Checking -->
+                                <div v-if="updateStatus.checking" class="update-state">
+                                    <div class="spinner"></div>
+                                    <span>{{ i18n.about.checking }}</span>
+                                </div>
+
+                                <!-- Update available -->
+                                <div v-else-if="updateStatus.updateAvailable && !updateStatus.updateDownloaded" class="update-state">
+                                    <div class="alert alert-success" style="margin:0">
+                                        <span class="alert-icon">&#127881;</span>
+                                        <div>
+                                            <div class="alert-title">{{ i18n.about.newVersion }} {{ updateStatus.updateInfo?.version }}</div>
+                                            <div class="alert-text">{{ updateStatus.updateInfo?.releaseName }}</div>
+                                        </div>
+                                    </div>
+                                    <!-- Download progress -->
+                                    <div v-if="updateStatus.downloadProgress" class="mt-2">
+                                        <div class="progress-bar"><div class="progress-fill bg-cyan" :style="{ width: updateStatus.downloadProgress.percent + '%' }"></div></div>
+                                        <div class="metric-sub">{{ updateStatus.downloadProgress.percent }}% — {{ formatBytes(updateStatus.downloadProgress.transferred) }} / {{ formatBytes(updateStatus.downloadProgress.total) }}</div>
+                                    </div>
+                                    <button v-else @click="downloadUpdate" class="btn btn-primary mt-2">&#11015; {{ i18n.about.downloadUpdate }}</button>
+                                </div>
+
+                                <!-- Downloaded, ready to install -->
+                                <div v-else-if="updateStatus.updateDownloaded" class="update-state">
+                                    <div class="alert alert-success" style="margin:0">
+                                        <span class="alert-icon">&#10003;</span>
+                                        <div>
+                                            <div class="alert-title">{{ i18n.about.readyInstall }}</div>
+                                            <div class="alert-text">{{ i18n.about.readyInstallDesc }}</div>
+                                        </div>
+                                    </div>
+                                    <button @click="installUpdate" class="btn btn-primary mt-2">&#9654; {{ i18n.about.installRestart }}</button>
+                                </div>
+
+                                <!-- Up to date -->
+                                <div v-else class="update-state">
+                                    <span class="text-green">&#10003; {{ i18n.about.upToDate }}</span>
+                                </div>
+
+                                <!-- Error -->
+                                <div v-if="updateStatus.error" class="text-red mt-2" style="font-size:12px">{{ updateStatus.error }}</div>
+
+                                <button @click="checkUpdate" class="btn btn-ghost btn-sm mt-2" :disabled="updateStatus.checking">
+                                    &#8635; {{ i18n.about.checkNow }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="about-section">
+                            <h3>{{ i18n.about.download }}</h3>
+                            <p>{{ i18n.about.downloadDesc }}</p>
+                            <button @click="openLink('download')" class="btn btn-primary mt-2">&#11015; {{ i18n.about.downloadBtn }}</button>
+                        </div>
+
+                        <div class="about-copyright">
+                            &copy; 2024-2026 Xman Studio. All rights reserved.
+                        </div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+    <script>
+    // Generate floating particles
+    (function(){
+        const container = document.getElementById('particles');
+        if (!container) return;
+        for (let i = 0; i < 30; i++) {
+            const p = document.createElement('div');
+            p.className = 'particle';
+            p.style.left = Math.random() * 100 + '%';
+            p.style.top = Math.random() * 100 + '%';
+            p.style.animationDelay = Math.random() * 8 + 's';
+            p.style.animationDuration = (6 + Math.random() * 10) + 's';
+            p.style.width = p.style.height = (1 + Math.random() * 3) + 'px';
+            container.appendChild(p);
+        }
+    })();
+    </script>
+</body>
+</html>
