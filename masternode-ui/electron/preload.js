@@ -59,13 +59,44 @@ contextBridge.exposeInMainWorld('tpix', {
         onProgress: (cb) => onEvent('update:progress', cb),
     },
 
-    // Wallet management (password required for create/import/export)
+    // Wallet — multi-wallet (up to 128)
     wallet: {
-        create: (password) => ipcRenderer.invoke('wallet:create', password),
-        import: (privateKey, password) => ipcRenderer.invoke('wallet:import', privateKey, password),
+        // Create / Import
+        create: (password, name) => ipcRenderer.invoke('wallet:create', password, name),
+        import: (privateKey, password, name) => ipcRenderer.invoke('wallet:import', privateKey, password, name),
+
+        // Multi-wallet management
+        listWallets: () => ipcRenderer.invoke('wallet:listWallets'),
+        getWalletCount: () => ipcRenderer.invoke('wallet:getWalletCount'),
+        getActiveWallet: () => ipcRenderer.invoke('wallet:getActiveWallet'),
+        switchWallet: (id) => ipcRenderer.invoke('wallet:switchWallet', id),
+        renameWallet: (id, name) => ipcRenderer.invoke('wallet:renameWallet', id, name),
+        deleteWallet: (id, password) => ipcRenderer.invoke('wallet:deleteWallet', id, password),
+
+        // Balance
         getAddress: () => ipcRenderer.invoke('wallet:getAddress'),
-        getBalance: () => ipcRenderer.invoke('wallet:getBalance'),
-        exportKey: (password) => ipcRenderer.invoke('wallet:exportKey', password),
+        getBalance: (walletId) => ipcRenderer.invoke('wallet:getBalance', walletId),
+        getBalances: () => ipcRenderer.invoke('wallet:getBalances'),
+        exportKey: (walletId, password) => ipcRenderer.invoke('wallet:exportKey', walletId, password),
         exists: () => ipcRenderer.invoke('wallet:exists'),
+
+        // QR Code
+        getQRCode: (walletId) => ipcRenderer.invoke('wallet:getQRCode', walletId),
+
+        // Transactions
+        sendTransaction: (to, amount, password) => ipcRenderer.invoke('wallet:sendTransaction', to, amount, password),
+        estimateGas: (to, amount) => ipcRenderer.invoke('wallet:estimateGas', to, amount),
+        getTransactions: (walletId, page, limit) => ipcRenderer.invoke('wallet:getTransactions', walletId, page, limit),
+        getTxStatus: (txHash) => ipcRenderer.invoke('wallet:getTxStatus', txHash),
+        scanTransactions: (walletId, blockCount) => ipcRenderer.invoke('wallet:scanTransactions', walletId, blockCount),
+
+        // Rewards
+        getRewards: (walletId) => ipcRenderer.invoke('wallet:getRewards', walletId),
+    },
+
+    // Database settings
+    db: {
+        getSetting: (key) => ipcRenderer.invoke('db:getSetting', key),
+        setSetting: (key, value) => ipcRenderer.invoke('db:setSetting', key, value),
     },
 });

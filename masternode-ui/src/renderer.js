@@ -123,6 +123,65 @@ const LANG = {
             upToDate: 'You are up to date',
             checkNow: 'Check Now',
         },
+        multiWallet: {
+            walletSlot: 'Wallet',
+            ofMax: 'of 128',
+            addWallet: 'Add Wallet',
+            rename: 'Rename',
+            deleteWallet: 'Delete',
+            switchWallet: 'Switch Wallet',
+            walletList: 'Wallet List',
+            active: 'Active',
+            confirmDelete: 'Are you sure you want to delete this wallet? Enter password to confirm.',
+            noWallets: 'No wallets yet. Create or import one.',
+            walletName: 'Wallet Name',
+        },
+        send: {
+            title: 'Send TPIX',
+            recipient: 'Recipient Address',
+            amount: 'Amount',
+            password: 'Password',
+            estimatedFee: 'Estimated Fee',
+            confirmSend: 'Confirm Send',
+            sending: 'Sending...',
+            txSent: 'Transaction Sent!',
+            txHash: 'Transaction Hash',
+            invalidAddress: 'Invalid address',
+            invalidAmount: 'Invalid amount',
+            passwordRequired: 'Password is required',
+            close: 'Close',
+        },
+        receive: {
+            title: 'Receive TPIX',
+            scanQr: 'Scan QR code to send TPIX to this address',
+            copyAddress: 'Copy Address',
+            copied: 'Copied!',
+        },
+        history: {
+            title: 'Transaction History',
+            sent: 'Sent',
+            received: 'Received',
+            pending: 'Pending',
+            confirmed: 'Confirmed',
+            noTx: 'No transactions yet',
+            loadMore: 'Load More',
+            from: 'From',
+            to: 'To',
+            amount: 'Amount',
+            fee: 'Fee',
+            date: 'Date',
+            hash: 'Tx Hash',
+            page: 'Page',
+        },
+        stakingRewards: {
+            title: 'Staking Rewards',
+            totalRewards: 'Total Rewards',
+            checkRewards: 'Check Rewards',
+            noRewards: 'No rewards yet',
+            epoch: 'Epoch',
+            amount: 'Amount',
+            date: 'Date',
+        },
         status: { stopped: 'Stopped', starting: 'Starting...', running: 'Running', syncing: 'Syncing', error: 'Error' },
     },
     th: {
@@ -238,6 +297,65 @@ const LANG = {
             installRestart: 'ติดตั้ง & รีสตาร์ท',
             upToDate: 'เป็นเวอร์ชันล่าสุดแล้ว',
             checkNow: 'ตรวจสอบตอนนี้',
+        },
+        multiWallet: {
+            walletSlot: 'กระเป๋า',
+            ofMax: 'จาก 128',
+            addWallet: 'เพิ่มกระเป๋า',
+            rename: 'เปลี่ยนชื่อ',
+            deleteWallet: 'ลบ',
+            switchWallet: 'สลับกระเป๋า',
+            walletList: 'รายการกระเป๋า',
+            active: 'ใช้งานอยู่',
+            confirmDelete: 'คุณแน่ใจหรือไม่ว่าต้องการลบกระเป๋านี้? ใส่รหัสผ่านเพื่อยืนยัน',
+            noWallets: 'ยังไม่มีกระเป๋า สร้างหรือนำเข้ากระเป๋าใหม่',
+            walletName: 'ชื่อกระเป๋า',
+        },
+        send: {
+            title: 'ส่ง TPIX',
+            recipient: 'ที่อยู่ผู้รับ',
+            amount: 'จำนวน',
+            password: 'รหัสผ่าน',
+            estimatedFee: 'ค่าธรรมเนียมโดยประมาณ',
+            confirmSend: 'ยืนยันการส่ง',
+            sending: 'กำลังส่ง...',
+            txSent: 'ส่งธุรกรรมสำเร็จ!',
+            txHash: 'แฮชธุรกรรม',
+            invalidAddress: 'ที่อยู่ไม่ถูกต้อง',
+            invalidAmount: 'จำนวนไม่ถูกต้อง',
+            passwordRequired: 'กรุณาใส่รหัสผ่าน',
+            close: 'ปิด',
+        },
+        receive: {
+            title: 'รับ TPIX',
+            scanQr: 'สแกน QR code เพื่อส่ง TPIX มายังที่อยู่นี้',
+            copyAddress: 'คัดลอกที่อยู่',
+            copied: 'คัดลอกแล้ว!',
+        },
+        history: {
+            title: 'ประวัติธุรกรรม',
+            sent: 'ส่ง',
+            received: 'รับ',
+            pending: 'รอดำเนินการ',
+            confirmed: 'ยืนยันแล้ว',
+            noTx: 'ยังไม่มีธุรกรรม',
+            loadMore: 'โหลดเพิ่ม',
+            from: 'จาก',
+            to: 'ถึง',
+            amount: 'จำนวน',
+            fee: 'ค่าธรรมเนียม',
+            date: 'วันที่',
+            hash: 'แฮชธุรกรรม',
+            page: 'หน้า',
+        },
+        stakingRewards: {
+            title: 'รางวัล Staking',
+            totalRewards: 'รางวัลรวม',
+            checkRewards: 'ตรวจสอบรางวัล',
+            noRewards: 'ยังไม่มีรางวัล',
+            epoch: 'Epoch',
+            amount: 'จำนวน',
+            date: 'วันที่',
         },
         status: { stopped: 'หยุด', starting: 'กำลังเริ่ม...', running: 'ทำงาน', syncing: 'กำลังซิงค์', error: 'ข้อผิดพลาด' },
     },
@@ -367,6 +485,24 @@ const app = createApp({
         const importError = ref('');
         const exportedKey = ref(null);
 
+        // ─── Multi-Wallet State ──────────────────
+        const wallets = ref([]);
+        const walletCount = ref(0);
+        const activeWallet = ref(null);
+        const walletBalances = ref({});
+        const showSendModal = ref(false);
+        const showReceiveModal = ref(false);
+        const showWalletList = ref(false);
+        const sendForm = reactive({ toAddress: '', amount: '', password: '', sending: false, error: '', txHash: '' });
+        const gasEstimate = ref(null);
+        const qrCodeData = ref(null);
+        const transactions = ref([]);
+        const txPage = ref(1);
+        const txTotal = ref(0);
+        const rewards = ref({ rewards: [], total: 0 });
+        const walletNameEdit = ref(null);
+        const walletNameInput = ref('');
+
         // ─── Update State ─────────────────────────
         const updateStatus = ref({
             checking: false, updateAvailable: false, updateDownloaded: false,
@@ -416,6 +552,7 @@ const app = createApp({
                     walletAddress.value = await window.tpix.wallet.getAddress();
                     await refreshBalance();
                 }
+                await loadWallets();
             } catch {}
         }
         async function createWallet() {
@@ -427,6 +564,7 @@ const app = createApp({
                     walletAddress.value = result.data.address;
                     config.walletAddress = result.data.address;
                     saveSettings();
+                    await loadWallets();
                 }
             } finally { walletLoading.value = false; }
         }
@@ -441,6 +579,7 @@ const app = createApp({
                     importKeyInput.value = '';
                     saveSettings();
                     await refreshBalance();
+                    await loadWallets();
                 } else { importError.value = result.error || 'Import failed'; }
             } catch (e) { importError.value = e.message; }
         }
@@ -449,6 +588,168 @@ const app = createApp({
         }
         async function showExportKey() {
             try { exportedKey.value = await window.tpix.wallet.exportKey(); } catch {}
+        }
+
+        // ─── Multi-Wallet Functions ──────────────
+        async function loadWallets() {
+            try {
+                const list = await window.tpix.wallet.listWallets();
+                if (Array.isArray(list)) wallets.value = list;
+                walletCount.value = await window.tpix.wallet.getWalletCount();
+                const active = await window.tpix.wallet.getActiveWallet();
+                if (active) {
+                    activeWallet.value = active;
+                    walletAddress.value = active.address;
+                }
+                const balances = await window.tpix.wallet.getBalances();
+                if (balances) walletBalances.value = balances;
+            } catch {}
+        }
+
+        async function switchWallet(id) {
+            try {
+                const result = await window.tpix.wallet.switchWallet(id);
+                if (result && result.success) {
+                    await loadWallets();
+                    await refreshBalance();
+                    await loadTransactions(1);
+                }
+            } catch {}
+        }
+
+        async function addNewWallet() {
+            walletLoading.value = true;
+            try {
+                const result = await window.tpix.wallet.create();
+                if (result.success) {
+                    newWalletData.value = result.data;
+                    await loadWallets();
+                }
+            } finally { walletLoading.value = false; }
+        }
+
+        function startRenameWallet(wallet) {
+            walletNameEdit.value = wallet.id;
+            walletNameInput.value = wallet.name || '';
+        }
+
+        async function confirmRenameWallet(id) {
+            try {
+                await window.tpix.wallet.renameWallet(id, walletNameInput.value.trim());
+                walletNameEdit.value = null;
+                walletNameInput.value = '';
+                await loadWallets();
+            } catch {}
+        }
+
+        async function deleteWalletConfirm(id) {
+            const password = prompt(i18n.value.multiWallet.confirmDelete);
+            if (password === null || password === '') return;
+            try {
+                const result = await window.tpix.wallet.deleteWallet(id, password);
+                if (result && result.success) {
+                    await loadWallets();
+                    await refreshBalance();
+                }
+            } catch {}
+        }
+
+        // ─── Send / Receive ──────────────────────
+        function openSendModal() {
+            sendForm.toAddress = '';
+            sendForm.amount = '';
+            sendForm.password = '';
+            sendForm.sending = false;
+            sendForm.error = '';
+            sendForm.txHash = '';
+            gasEstimate.value = null;
+            showSendModal.value = true;
+        }
+
+        let gasEstimateTimer = null;
+        async function estimateGasFee() {
+            if (gasEstimateTimer) clearTimeout(gasEstimateTimer);
+            gasEstimateTimer = setTimeout(async () => {
+                if (!sendForm.toAddress || !sendForm.amount) { gasEstimate.value = null; return; }
+                try {
+                    const result = await window.tpix.wallet.estimateGas(sendForm.toAddress, sendForm.amount);
+                    if (result && result.success) gasEstimate.value = result.data;
+                } catch { gasEstimate.value = null; }
+            }, 500);
+        }
+
+        async function confirmSend() {
+            sendForm.error = '';
+            if (!sendForm.toAddress || !sendForm.toAddress.startsWith('0x') || sendForm.toAddress.length !== 42) {
+                sendForm.error = i18n.value.send.invalidAddress; return;
+            }
+            const amount = parseFloat(sendForm.amount);
+            if (isNaN(amount) || amount <= 0) {
+                sendForm.error = i18n.value.send.invalidAmount; return;
+            }
+            if (!sendForm.password) {
+                sendForm.error = i18n.value.send.passwordRequired; return;
+            }
+            sendForm.sending = true;
+            try {
+                const result = await window.tpix.wallet.sendTransaction(sendForm.toAddress, sendForm.amount, sendForm.password);
+                if (result && result.success) {
+                    sendForm.txHash = result.data.txHash;
+                    await refreshBalance();
+                    await loadTransactions(1);
+                } else {
+                    sendForm.error = (result && result.error) || 'Transaction failed';
+                }
+            } catch (e) {
+                sendForm.error = e.message || 'Transaction failed';
+            } finally {
+                sendForm.sending = false;
+            }
+        }
+
+        async function openReceiveModal() {
+            showReceiveModal.value = true;
+            qrCodeData.value = null;
+            try {
+                const walletId = activeWallet.value ? activeWallet.value.id : undefined;
+                const data = await window.tpix.wallet.getQRCode(walletId);
+                qrCodeData.value = data;
+            } catch {}
+        }
+
+        // ─── Transaction History ─────────────────
+        async function loadTransactions(page) {
+            if (page !== undefined) txPage.value = page;
+            try {
+                const walletId = activeWallet.value ? activeWallet.value.id : undefined;
+                const result = await window.tpix.wallet.getTransactions(walletId, txPage.value, 20);
+                if (result) {
+                    transactions.value = result.transactions || [];
+                    txTotal.value = result.total || 0;
+                }
+            } catch {}
+        }
+
+        // ─── Rewards ─────────────────────────────
+        async function loadRewards() {
+            try {
+                const walletId = activeWallet.value ? activeWallet.value.id : undefined;
+                const result = await window.tpix.wallet.getRewards(walletId);
+                if (result) rewards.value = result;
+            } catch {}
+        }
+
+        // ─── Format Helpers ──────────────────────
+        function formatTpix(weiString) {
+            if (!weiString) return '0';
+            try {
+                const wei = Number(weiString);
+                if (isNaN(wei)) return '0';
+                const tpix = wei / 1e18;
+                if (tpix === 0) return '0';
+                if (tpix < 0.0001) return tpix.toExponential(4);
+                return tpix.toLocaleString(undefined, { maximumFractionDigits: 6 });
+            } catch { return '0'; }
         }
 
         // ─── Settings ─────────────────────────────
@@ -510,6 +811,8 @@ const app = createApp({
 
             await loadConfig();
             await loadWallet();
+            await loadWallets();
+            await loadTransactions(1);
             await refreshNetwork();
             await refreshMetrics();
             await loadLogs();
@@ -537,8 +840,22 @@ const app = createApp({
             network, metrics, logs, config,
             walletAddress, walletBalance, walletLoading,
             newWalletData, showPrivateKey, showImportModal, importKeyInput, importError, exportedKey,
+            // Multi-wallet state
+            wallets, walletCount, activeWallet, walletBalances,
+            showSendModal, showReceiveModal, showWalletList,
+            sendForm, gasEstimate, qrCodeData,
+            transactions, txPage, txTotal,
+            rewards, walletNameEdit, walletNameInput,
+            // Actions
             startNode, stopNode, launchNode, refreshNetwork, refreshMetrics,
             loadWallet, createWallet, importWallet, refreshBalance, showExportKey,
+            // Multi-wallet actions
+            loadWallets, switchWallet, addNewWallet,
+            startRenameWallet, confirmRenameWallet, deleteWalletConfirm,
+            openSendModal, estimateGasFee, confirmSend,
+            openReceiveModal, loadTransactions, loadRewards,
+            formatTpix,
+            // Settings & utils
             loadConfig, saveSettings, openDataDir, openLink, loadLogs,
             formatNumber, formatDuration, formatMB, formatLogTime,
             updateStatus, checkUpdate, downloadUpdate, installUpdate,

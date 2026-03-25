@@ -1,7 +1,7 @@
 /**
- * TPIX Master Node — Built-in Wallet Manager
- * Creates, imports, and manages an Ethereum-compatible wallet
- * for staking and node registration on TPIX Chain.
+ * TPIX Master Node — Multi-Wallet Manager
+ * Supports up to 128 wallets with SQLite persistence.
+ * Each wallet is encrypted with AES-256-GCM (password + machine ID + salt).
  * Developed by Xman Studio
  */
 
@@ -14,54 +14,94 @@ const http = require('http');
 
 const TPIX_RPC = 'https://rpc.tpix.online';
 const DATA_DIR = path.join(os.homedir(), '.tpix-node');
-const WALLET_FILE = path.join(DATA_DIR, 'wallet.json');
+const OLD_WALLET_FILE = path.join(DATA_DIR, 'wallet.json');
+const MAX_WALLETS = 128;
 
 class WalletManager {
-    constructor() {
-        this.address = null;
-        this.privateKey = null;
-        this.mnemonic = null;
-        this._loaded = false;
+    constructor(database) {
+        this.db = database;
+        this._migrateOldWallet();
     }
 
-    /**
-     * Check if a wallet file exists.
-     */
-    exists() {
-        return fs.existsSync(WALLET_FILE);
+    // ─── Migration from wallet.json ─────────────────────────────
+
+    _migrateOldWallet() {
+        if (!fs.existsSync(OLD_WALLET_FILE)) return;
+        if (this.db.getWalletCount() > 0) return; // Already migrated
+
+        try {
+            const data = JSON.parse(fs.readFileSync(OLD_WALLET_FILE, 'utf-8'));
+            if (data.address && data.encryptedKey) {
+                this.db.insertWallet({
+                    slot: 1,
+                    name: 'Wallet 1',
+                    address: data.address,
+                    encryptedKey: data.encryptedKey,
+                    iv: data.iv,
+                    authTag: data.authTag,
+                    salt: data.salt,
+                    isActive: true,
+                });
+                // Backup old file
+                fs.renameSync(OLD_WALLET_FILE, OLD_WALLET_FILE + '.bak');
+                console.log('[Wallet] Migrated wallet.json to SQLite (slot 1)');
+            }
+        } catch (err) {
+            console.error('[Wallet] Migration failed:', err.message);
+        }
     }
 
+    // ─── Create / Import ────────────────────────────────────────
+
     /**
-     * Create a new wallet (random private key).
-     * @param {string} password - User-supplied password for encryption
-     * Returns { address, privateKey }
+     * Create a new wallet.
+     * @param {string} password
+     * @param {string} [name]
+     * @returns {{ id, slot, name, address, privateKey }}
      */
-    create(password = '') {
+    create(password = '', name) {
+        const count = this.db.getWalletCount();
+        if (count >= MAX_WALLETS) {
+            throw new Error(`Maximum ${MAX_WALLETS} wallets reached`);
+        }
+
         const privKeyBytes = crypto.randomBytes(32);
         const privateKey = '0x' + privKeyBytes.toString('hex');
         const address = this._privateKeyToAddress(privKeyBytes);
+        const slot = this.db.getNextSlot();
+        const walletName = name || `Wallet ${slot}`;
 
-        this.privateKey = privateKey;
-        this.address = address;
-        this._loaded = true;
+        const { encryptedKey, iv, authTag, salt } = this._encrypt(privateKey, password);
+        const isFirst = count === 0;
 
-        this._save(password);
-
-        return {
+        const id = this.db.insertWallet({
+            slot,
+            name: walletName,
             address,
-            privateKey,
-            created: true,
-        };
+            encryptedKey,
+            iv,
+            authTag,
+            salt,
+            isActive: isFirst,
+        });
+
+        if (isFirst) {
+            this.db.setActiveWallet(id);
+        }
+
+        return { id, slot, name: walletName, address, privateKey };
     }
 
     /**
      * Import wallet from private key.
      */
-    importFromKey(privateKey, password = '') {
-        if (!privateKey.startsWith('0x')) {
-            privateKey = '0x' + privateKey;
+    importFromKey(privateKey, password = '', name) {
+        const count = this.db.getWalletCount();
+        if (count >= MAX_WALLETS) {
+            throw new Error(`Maximum ${MAX_WALLETS} wallets reached`);
         }
 
+        if (!privateKey.startsWith('0x')) privateKey = '0x' + privateKey;
         if (!/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
             throw new Error('Invalid private key format (must be 64 hex characters)');
         }
@@ -69,37 +109,93 @@ class WalletManager {
         const privKeyBytes = Buffer.from(privateKey.slice(2), 'hex');
         const address = this._privateKeyToAddress(privKeyBytes);
 
-        this.privateKey = privateKey;
-        this.address = address;
-        this._loaded = true;
-
-        this._save(password || '');
-
-        return { address, imported: true };
-    }
-
-    /**
-     * Get the wallet address (does not require password).
-     */
-    getAddress() {
-        if (!this.address && fs.existsSync(WALLET_FILE)) {
-            try {
-                const data = JSON.parse(fs.readFileSync(WALLET_FILE, 'utf-8'));
-                this.address = data.address;
-            } catch {}
+        // Check duplicate
+        const existing = this.db.getWalletByAddress(address);
+        if (existing) {
+            throw new Error('This wallet is already imported (slot ' + existing.slot + ')');
         }
-        return this.address;
+
+        const slot = this.db.getNextSlot();
+        const walletName = name || `Wallet ${slot}`;
+        const { encryptedKey, iv, authTag, salt } = this._encrypt(privateKey, password);
+        const isFirst = count === 0;
+
+        const id = this.db.insertWallet({
+            slot,
+            name: walletName,
+            address,
+            encryptedKey,
+            iv,
+            authTag,
+            salt,
+            isActive: isFirst,
+        });
+
+        if (isFirst) this.db.setActiveWallet(id);
+
+        return { id, slot, name: walletName, address, imported: true };
     }
 
-    /**
-     * Get wallet balance from TPIX Chain RPC.
-     */
-    async getBalance() {
-        if (!this.address) this.getAddress();
-        if (!this.address) return '0';
+    // ─── Wallet Management ──────────────────────────────────────
+
+    listWallets() {
+        return this.db.listWallets();
+    }
+
+    getWalletCount() {
+        return this.db.getWalletCount();
+    }
+
+    getActiveWallet() {
+        return this.db.getActiveWallet();
+    }
+
+    switchWallet(walletId) {
+        const wallet = this.db.getWallet(walletId);
+        if (!wallet) throw new Error('Wallet not found');
+        this.db.setActiveWallet(walletId);
+    }
+
+    renameWallet(walletId, newName) {
+        if (!newName || newName.trim().length === 0) throw new Error('Name cannot be empty');
+        if (newName.length > 50) throw new Error('Name too long (max 50 chars)');
+        this.db.renameWallet(walletId, newName.trim());
+    }
+
+    deleteWallet(walletId, password = '') {
+        const wallet = this.db.getWallet(walletId);
+        if (!wallet) throw new Error('Wallet not found');
+
+        // Verify password by attempting decryption
+        this._decrypt(wallet, password);
+
+        this.db.deleteWallet(walletId);
+    }
+
+    // ─── Backward-compatible methods ────────────────────────────
+
+    exists() {
+        return this.db.walletExists();
+    }
+
+    getAddress() {
+        const wallet = this.db.getActiveWallet();
+        return wallet ? wallet.address : null;
+    }
+
+    async getBalance(walletId) {
+        let address;
+        if (walletId) {
+            const wallet = this.db.getWallet(walletId);
+            address = wallet ? wallet.address : null;
+        } else {
+            address = this.getAddress();
+        }
+
+        if (!address) return '0';
 
         try {
-            const result = await this._rpcCall('eth_getBalance', [this.address, 'latest']);
+            const result = await this._rpcCall('eth_getBalance', [address, 'latest']);
             const { ethers } = require('ethers');
             return parseFloat(ethers.formatEther(result)).toFixed(4);
         } catch {
@@ -108,93 +204,104 @@ class WalletManager {
     }
 
     /**
-     * Export private key — requires password.
+     * Get balances for all wallets (batched to avoid rate-limiting).
      */
-    exportKey(password = '') {
-        this._ensureLoaded(password);
-        return this.privateKey;
-    }
+    async getBalances() {
+        const wallets = this.db.listWallets();
+        const results = {};
+        const { ethers } = require('ethers');
 
-    /**
-     * Load wallet from file.
-     */
-    _ensureLoaded(password = '') {
-        if (this._loaded) return;
-
-        if (fs.existsSync(WALLET_FILE)) {
-            try {
-                const data = JSON.parse(fs.readFileSync(WALLET_FILE, 'utf-8'));
-                this.address = data.address;
-
-                if (data.encryptedKey) {
-                    const key = this._deriveKey(password, data.salt);
-                    const decipher = crypto.createDecipheriv(
-                        'aes-256-gcm',
-                        key,
-                        Buffer.from(data.iv, 'hex')
-                    );
-                    decipher.setAuthTag(Buffer.from(data.authTag, 'hex'));
-                    let decrypted = decipher.update(data.encryptedKey, 'hex', 'utf8');
-                    decrypted += decipher.final('utf8');
-                    this.privateKey = decrypted;
+        // Batch in groups of 5
+        for (let i = 0; i < wallets.length; i += 5) {
+            const batch = wallets.slice(i, i + 5);
+            const promises = batch.map(async (w) => {
+                try {
+                    const hex = await this._rpcCall('eth_getBalance', [w.address, 'latest']);
+                    return { address: w.address, balance: parseFloat(ethers.formatEther(hex)).toFixed(4) };
+                } catch {
+                    return { address: w.address, balance: '0' };
                 }
-
-                this._loaded = true;
-            } catch (err) {
-                console.error('Failed to load wallet:', err.message);
-                // Wrong password will throw "Unsupported state or unable to authenticate data"
-                throw new Error('Failed to decrypt wallet. Wrong password?');
+            });
+            const batchResults = await Promise.all(promises);
+            for (const r of batchResults) {
+                results[r.address] = r.balance;
+            }
+            // Small delay between batches
+            if (i + 5 < wallets.length) {
+                await new Promise(r => setTimeout(r, 300));
             }
         }
+
+        return results;
     }
 
-    /**
-     * Save wallet to encrypted file with password-based encryption.
-     */
-    _save(password = '') {
-        if (!fs.existsSync(DATA_DIR)) {
-            fs.mkdirSync(DATA_DIR, { recursive: true });
+    exportKey(walletId, password = '') {
+        let wallet;
+        if (walletId) {
+            wallet = this.db.getWallet(walletId);
+        } else {
+            wallet = this.db.getActiveWallet();
         }
+        if (!wallet) throw new Error('Wallet not found');
+        return this._decrypt(wallet, password);
+    }
 
-        // Generate random salt for PBKDF2
+    // ─── QR Code ────────────────────────────────────────────────
+
+    async generateQR(walletId) {
+        let address;
+        if (walletId) {
+            const wallet = this.db.getWallet(walletId);
+            address = wallet ? wallet.address : null;
+        } else {
+            address = this.getAddress();
+        }
+        if (!address) throw new Error('No wallet found');
+
+        const QRCode = require('qrcode');
+        const uri = `ethereum:${address}@4289`;
+        return QRCode.toDataURL(uri, { width: 280, margin: 2, color: { dark: '#00BCD4', light: '#0a0e1a' } });
+    }
+
+    // ─── Encryption ─────────────────────────────────────────────
+
+    _encrypt(privateKey, password = '') {
         const salt = crypto.randomBytes(32).toString('hex');
         const key = this._deriveKey(password, salt);
         const iv = crypto.randomBytes(12);
         const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
 
-        let encrypted = cipher.update(this.privateKey, 'utf8', 'hex');
+        let encrypted = cipher.update(privateKey, 'utf8', 'hex');
         encrypted += cipher.final('hex');
         const authTag = cipher.getAuthTag();
 
-        const walletData = {
-            address: this.address,
+        return {
             encryptedKey: encrypted,
             iv: iv.toString('hex'),
             authTag: authTag.toString('hex'),
-            salt: salt,
-            createdAt: new Date().toISOString(),
-            chainId: 4289,
+            salt,
         };
-
-        fs.writeFileSync(WALLET_FILE, JSON.stringify(walletData, null, 2), { mode: 0o600 });
     }
 
-    /**
-     * Derive encryption key using PBKDF2 with user password + machine salt.
-     * 100,000 iterations for brute-force resistance.
-     */
+    _decrypt(walletRow, password = '') {
+        try {
+            const key = this._deriveKey(password, walletRow.salt);
+            const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(walletRow.iv, 'hex'));
+            decipher.setAuthTag(Buffer.from(walletRow.auth_tag, 'hex'));
+            let decrypted = decipher.update(walletRow.encrypted_key, 'hex', 'utf8');
+            decrypted += decipher.final('utf8');
+            return decrypted;
+        } catch {
+            throw new Error('Failed to decrypt wallet. Wrong password?');
+        }
+    }
+
     _deriveKey(password = '', salt = '') {
         const machineId = os.hostname() + os.userInfo().username;
         const combined = password + ':' + machineId + ':' + salt;
         return crypto.pbkdf2Sync(combined, 'tpix-node-wallet:' + salt, 100000, 32, 'sha256');
     }
 
-    /**
-     * Derive Ethereum address from private key.
-     * Uses ethers.js Wallet for correct Keccak-256 hashing.
-     * NOTE: Do NOT use crypto.createHash('sha3-256') — Ethereum uses Keccak-256,
-     * which is different from NIST SHA3-256.
-     */
     _privateKeyToAddress(privKeyBytes) {
         const { ethers } = require('ethers');
         const privateKey = '0x' + privKeyBytes.toString('hex');
@@ -202,46 +309,31 @@ class WalletManager {
         return wallet.address.toLowerCase();
     }
 
-    /**
-     * Make an RPC call to TPIX Chain.
-     */
+    // ─── RPC ────────────────────────────────────────────────────
+
     _rpcCall(method, params = []) {
         return new Promise((resolve, reject) => {
             const url = new URL(TPIX_RPC);
             const client = url.protocol === 'https:' ? https : http;
+            const body = JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() + Math.random() });
 
-            const body = JSON.stringify({
-                jsonrpc: '2.0',
-                method,
-                params,
-                id: Date.now(),
+            const req = client.request({
+                hostname: url.hostname,
+                port: url.port || (url.protocol === 'https:' ? 443 : 80),
+                path: url.pathname,
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+                timeout: 10000,
+            }, (res) => {
+                let data = '';
+                res.on('data', (c) => (data += c));
+                res.on('end', () => {
+                    try {
+                        const json = JSON.parse(data);
+                        json.error ? reject(new Error(json.error.message)) : resolve(json.result);
+                    } catch { reject(new Error('Invalid response')); }
+                });
             });
-
-            const req = client.request(
-                {
-                    hostname: url.hostname,
-                    port: url.port || (url.protocol === 'https:' ? 443 : 80),
-                    path: url.pathname,
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(body),
-                    },
-                    timeout: 10000,
-                },
-                (res) => {
-                    let data = '';
-                    res.on('data', (c) => (data += c));
-                    res.on('end', () => {
-                        try {
-                            const json = JSON.parse(data);
-                            json.error ? reject(new Error(json.error.message)) : resolve(json.result);
-                        } catch {
-                            reject(new Error('Invalid response'));
-                        }
-                    });
-                }
-            );
             req.on('error', reject);
             req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
             req.write(body);

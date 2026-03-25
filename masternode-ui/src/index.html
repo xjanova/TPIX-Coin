@@ -247,16 +247,20 @@
                     </div>
                 </div>
 
-                <!-- ========== WALLET ========== -->
+                <!-- ========== WALLET (Multi-Wallet) ========== -->
                 <div v-if="activeTab === 'wallet'" class="page">
-                    <h1 class="page-title">{{ i18n.tabs.wallet }}</h1>
+                    <div class="page-title-row">
+                        <h1 class="page-title">{{ i18n.tabs.wallet }}</h1>
+                        <span v-if="walletCount > 0" class="wallet-slot-badge">{{ i18n.multiWallet.walletSlot }} {{ activeWallet?.slot || '?' }}/{{ walletCount }} {{ i18n.multiWallet.ofMax }}</span>
+                    </div>
 
+                    <!-- No wallets yet -->
                     <div v-if="!walletAddress" class="setup-card">
                         <div class="setup-icon">&#128274;</div>
                         <h2 class="setup-title">{{ i18n.wallet.setupTitle }}</h2>
                         <p class="setup-desc">{{ i18n.wallet.setupDesc }}</p>
                         <div class="setup-actions">
-                            <button @click="createWallet" class="btn btn-primary btn-lg" :disabled="walletLoading">&#10010; {{ i18n.wallet.create }}</button>
+                            <button @click="addNewWallet" class="btn btn-primary btn-lg" :disabled="walletLoading">&#10010; {{ i18n.wallet.create }}</button>
                             <button @click="showImportModal = true" class="btn btn-ghost btn-lg">&#128229; {{ i18n.wallet.import }}</button>
                         </div>
                         <div v-if="newWalletData" class="wallet-result mt-4">
@@ -276,31 +280,181 @@
                         </div>
                     </div>
 
-                    <div v-else class="wallet-card glass-card">
-                        <div class="wallet-header">
-                            <span class="wallet-icon">&#128176;</span>
-                            <span class="wallet-label">TPIX Wallet</span>
-                            <span class="chain-badge">Chain 4289</span>
+                    <!-- Active wallet -->
+                    <div v-else>
+                        <!-- Wallet Selector Bar -->
+                        <div class="wallet-selector glass-card">
+                            <button @click="showWalletList = !showWalletList" class="wallet-switcher-btn">
+                                <span class="wallet-icon">&#128176;</span>
+                                <div class="wallet-switcher-info">
+                                    <span v-if="walletNameEdit !== activeWallet?.id" class="wallet-name" @dblclick="startRenameWallet(activeWallet)">{{ activeWallet?.name || 'Wallet' }}</span>
+                                    <span v-else>
+                                        <input v-model="walletNameInput" class="wallet-name-input" @keyup.enter="confirmRenameWallet(activeWallet.id)" @blur="confirmRenameWallet(activeWallet.id)" autofocus>
+                                    </span>
+                                    <span class="wallet-addr-mini">{{ shortAddr(walletAddress) }}</span>
+                                </div>
+                                <span class="wallet-switcher-arrow">{{ showWalletList ? '&#9650;' : '&#9660;' }}</span>
+                            </button>
+                            <button v-if="walletCount < 128" @click="addNewWallet" class="btn btn-ghost btn-sm" :disabled="walletLoading" :title="i18n.multiWallet.addWallet">&#10010;</button>
                         </div>
-                        <div class="wallet-address" @click="copyToClipboard(walletAddress)">
-                            {{ walletAddress }}
-                            <span class="copy-hint">{{ i18n.wallet.clickCopy }}</span>
+
+                        <!-- Wallet Dropdown List -->
+                        <div v-if="showWalletList" class="wallet-list glass-card">
+                            <div v-for="w in wallets" :key="w.id" :class="['wallet-list-item', { active: w.is_active }]" @click="switchWallet(w.id)">
+                                <div class="wallet-list-info">
+                                    <span class="wallet-list-slot">#{{ w.slot }}</span>
+                                    <span class="wallet-list-name">{{ w.name }}</span>
+                                    <span class="wallet-list-addr">{{ shortAddr(w.address) }}</span>
+                                </div>
+                                <div class="wallet-list-right">
+                                    <span class="wallet-list-balance">{{ walletBalances[w.address] || '0' }} TPIX</span>
+                                    <span v-if="w.is_active" class="active-badge">{{ i18n.multiWallet.active }}</span>
+                                    <button @click.stop="deleteWalletConfirm(w.id)" class="btn-icon btn-danger-icon" :title="i18n.multiWallet.deleteWallet">&times;</button>
+                                </div>
+                            </div>
+                            <div v-if="wallets.length === 0" class="empty-state">{{ i18n.multiWallet.noWallets }}</div>
                         </div>
-                        <div class="wallet-balance">
-                            <span class="balance-amount">{{ walletBalance }}</span>
-                            <span class="balance-symbol">TPIX</span>
+
+                        <!-- Wallet Card -->
+                        <div class="wallet-card glass-card">
+                            <div class="wallet-header">
+                                <span class="wallet-icon">&#128176;</span>
+                                <span class="wallet-label">{{ activeWallet?.name || 'TPIX Wallet' }}</span>
+                                <span class="chain-badge">Chain 4289</span>
+                            </div>
+                            <div class="wallet-address" @click="copyToClipboard(walletAddress)">
+                                {{ walletAddress }}
+                                <span class="copy-hint">{{ i18n.wallet.clickCopy }}</span>
+                            </div>
+                            <div class="wallet-balance">
+                                <span class="balance-amount">{{ walletBalance }}</span>
+                                <span class="balance-symbol">TPIX</span>
+                            </div>
+                            <div class="wallet-actions">
+                                <button @click="openSendModal" class="btn btn-primary btn-sm">&#11014; {{ i18n.send.title }}</button>
+                                <button @click="openReceiveModal" class="btn btn-ghost btn-sm">&#11015; {{ i18n.receive.title }}</button>
+                                <button @click="refreshBalance" class="btn btn-ghost btn-sm">&#8635; {{ i18n.dash.refresh }}</button>
+                                <button @click="showExportKey" class="btn btn-ghost btn-sm">&#128273; {{ i18n.wallet.exportKey }}</button>
+                                <button @click="openLink('explorerAddr')" class="btn btn-ghost btn-sm">&#127760; Explorer</button>
+                            </div>
+                            <div v-if="exportedKey" class="mt-4">
+                                <div class="alert alert-warning"><span class="alert-icon">&#9888;</span><div><div class="alert-title">Private Key</div><div class="alert-text">{{ i18n.wallet.neverShare }}</div></div></div>
+                                <div class="key-value private">{{ exportedKey }}</div>
+                                <div class="key-actions">
+                                    <button @click="copyToClipboard(exportedKey)" class="btn btn-ghost btn-sm">{{ i18n.wallet.copy }}</button>
+                                    <button @click="exportedKey = null" class="btn btn-ghost btn-sm">{{ i18n.wallet.hide }}</button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="wallet-actions">
-                            <button @click="refreshBalance" class="btn btn-ghost btn-sm">&#8635; {{ i18n.dash.refresh }}</button>
-                            <button @click="showExportKey" class="btn btn-ghost btn-sm">&#128273; {{ i18n.wallet.exportKey }}</button>
-                            <button @click="openLink('explorerAddr')" class="btn btn-ghost btn-sm">&#127760; Explorer</button>
+
+                        <!-- Transaction History -->
+                        <div class="section-card mt-4">
+                            <div class="section-header">
+                                <h3 class="section-title">{{ i18n.history.title }}</h3>
+                                <button @click="loadTransactions(1)" class="btn btn-ghost btn-sm">&#8635;</button>
+                            </div>
+                            <div v-if="transactions.length" class="tx-list">
+                                <div v-for="tx in transactions" :key="tx.tx_hash" class="tx-row" @click="openLink('https://explorer.tpix.online/tx/' + tx.tx_hash)">
+                                    <span :class="['tx-direction', tx.direction]">{{ tx.direction === 'sent' ? '&#11014;' : '&#11015;' }}</span>
+                                    <div class="tx-info">
+                                        <span class="tx-addr">{{ tx.direction === 'sent' ? i18n.history.to + ': ' + shortAddr(tx.to_address) : i18n.history.from + ': ' + shortAddr(tx.from_address) }}</span>
+                                        <span class="tx-date">{{ formatLogTime(tx.created_at) }}</span>
+                                    </div>
+                                    <div class="tx-right">
+                                        <span :class="['tx-amount', tx.direction]">{{ tx.direction === 'sent' ? '-' : '+' }}{{ formatTpix(tx.value) }} TPIX</span>
+                                        <span :class="['tx-status-badge', tx.status]">{{ i18n.history[tx.status] || tx.status }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="empty-state">{{ i18n.history.noTx }}</div>
+                            <div v-if="txTotal > transactions.length" class="tx-pagination">
+                                <button @click="loadTransactions(txPage + 1)" class="btn btn-ghost btn-sm">{{ i18n.history.loadMore }}</button>
+                            </div>
                         </div>
-                        <div v-if="exportedKey" class="mt-4">
-                            <div class="alert alert-warning"><span class="alert-icon">&#9888;</span><div><div class="alert-title">Private Key</div><div class="alert-text">{{ i18n.wallet.neverShare }}</div></div></div>
-                            <div class="key-value private">{{ exportedKey }}</div>
-                            <div class="key-actions">
-                                <button @click="copyToClipboard(exportedKey)" class="btn btn-ghost btn-sm">{{ i18n.wallet.copy }}</button>
-                                <button @click="exportedKey = null" class="btn btn-ghost btn-sm">{{ i18n.wallet.hide }}</button>
+
+                        <!-- Rewards -->
+                        <div class="section-card mt-4">
+                            <div class="section-header">
+                                <h3 class="section-title">{{ i18n.stakingRewards.title }}</h3>
+                                <button @click="loadRewards" class="btn btn-ghost btn-sm">&#8635; {{ i18n.stakingRewards.checkRewards }}</button>
+                            </div>
+                            <div v-if="rewards.total > 0" class="reward-summary">
+                                <span class="text-green">{{ i18n.stakingRewards.totalRewards }}: {{ rewards.total.toFixed(4) }} TPIX</span>
+                            </div>
+                            <div v-if="rewards.rewards.length" class="tx-list">
+                                <div v-for="r in rewards.rewards" :key="r.id" class="tx-row">
+                                    <span class="tx-direction received">&#127873;</span>
+                                    <div class="tx-info">
+                                        <span class="tx-addr">Block #{{ r.block_number }}</span>
+                                        <span class="tx-date">{{ formatLogTime(r.created_at) }}</span>
+                                    </div>
+                                    <span class="tx-amount received">+{{ formatTpix(r.amount) }} TPIX</span>
+                                </div>
+                            </div>
+                            <div v-else class="empty-state">{{ i18n.stakingRewards.noRewards }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Send Modal -->
+                    <div v-if="showSendModal" class="modal-overlay" @click.self="showSendModal = false">
+                        <div class="modal-content">
+                            <h3>&#11014; {{ i18n.send.title }}</h3>
+                            <div v-if="!sendForm.txHash">
+                                <div class="form-group">
+                                    <label>{{ i18n.send.recipient }}</label>
+                                    <input v-model="sendForm.toAddress" class="input-field" placeholder="0x..." @input="estimateGasFee">
+                                </div>
+                                <div class="form-group">
+                                    <label>{{ i18n.send.amount }} (TPIX)</label>
+                                    <input v-model="sendForm.amount" type="number" step="0.0001" class="input-field" placeholder="0.0" @input="estimateGasFee">
+                                </div>
+                                <div class="form-group">
+                                    <label>{{ i18n.send.password }}</label>
+                                    <input v-model="sendForm.password" type="password" class="input-field" placeholder="••••" autocomplete="off">
+                                </div>
+                                <div v-if="gasEstimate" class="gas-estimate">
+                                    <span>{{ i18n.send.estimatedFee }}:</span>
+                                    <span class="text-cyan">{{ gasEstimate.fee }} TPIX</span>
+                                </div>
+                                <div v-if="sendForm.error" class="text-red mt-2">{{ sendForm.error }}</div>
+                                <div class="modal-actions">
+                                    <button @click="confirmSend" class="btn btn-primary" :disabled="sendForm.sending">
+                                        {{ sendForm.sending ? i18n.send.sending : i18n.send.confirmSend }}
+                                    </button>
+                                    <button @click="showSendModal = false" class="btn btn-ghost">{{ i18n.send.close }}</button>
+                                </div>
+                            </div>
+                            <div v-else class="tx-success">
+                                <div class="alert alert-success">
+                                    <span class="alert-icon">&#10003;</span>
+                                    <div>
+                                        <div class="alert-title">{{ i18n.send.txSent }}</div>
+                                        <div class="alert-text mono" style="font-size:11px;word-break:break-all">{{ sendForm.txHash }}</div>
+                                    </div>
+                                </div>
+                                <div class="modal-actions mt-2">
+                                    <button @click="openLink('https://explorer.tpix.online/tx/' + sendForm.txHash)" class="btn btn-ghost btn-sm">&#127760; Explorer</button>
+                                    <button @click="showSendModal = false" class="btn btn-primary">{{ i18n.send.close }}</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Receive Modal -->
+                    <div v-if="showReceiveModal" class="modal-overlay" @click.self="showReceiveModal = false">
+                        <div class="modal-content" style="text-align:center">
+                            <h3>&#11015; {{ i18n.receive.title }}</h3>
+                            <p class="modal-desc">{{ i18n.receive.scanQr }}</p>
+                            <div class="qr-container">
+                                <img v-if="qrCodeData" :src="qrCodeData" alt="QR Code" class="qr-image">
+                                <div v-else class="spinner"></div>
+                            </div>
+                            <div class="wallet-address mt-2" @click="copyToClipboard(walletAddress)" style="font-size:12px">
+                                {{ walletAddress }}
+                            </div>
+                            <div class="modal-actions mt-2">
+                                <button @click="copyToClipboard(walletAddress)" class="btn btn-primary btn-sm">{{ i18n.receive.copyAddress }}</button>
+                                <button @click="showReceiveModal = false" class="btn btn-ghost btn-sm">{{ i18n.send.close }}</button>
                             </div>
                         </div>
                     </div>

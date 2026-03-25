@@ -9,7 +9,8 @@
     "start": "electron .",
     "dev": "cross-env NODE_ENV=development electron .",
     "build": "electron-builder --win",
-    "build:portable": "electron-builder --win portable"
+    "build:portable": "electron-builder --win portable",
+    "postinstall": "electron-rebuild"
   },
   "build": {
     "appId": "com.xmanstudio.tpix-masternode",
@@ -38,6 +39,8 @@
       "createStartMenuShortcut": true
     },
     "forceCodeSigning": false,
+    "npmRebuild": true,
+    "nodeGypRebuild": false,
     "publish": [
       {
         "provider": "github",
@@ -62,13 +65,16 @@
     ]
   },
   "dependencies": {
+    "better-sqlite3": "^12.8.0",
     "electron-updater": "^6.8.3",
     "ethers": "^6.11.1",
+    "qrcode": "^1.5.4",
     "vue": "^3.5.30"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
     "electron": "^29.0.0",
+    "@electron/rebuild": "^3.7.1",
     "electron-builder": "^24.13.0"
   }
 }
