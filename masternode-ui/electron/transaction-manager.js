@@ -4,10 +4,8 @@
  * Developed by Xman Studio
  */
 
-const https = require('https');
-const http = require('http');
+const { rpcCall } = require('./rpc-client');
 
-const TPIX_RPC = 'https://rpc.tpix.online';
 const CHAIN_ID = 4289;
 const DEFAULT_GAS_LIMIT = 21000;
 const CONFIRM_POLL_MS = 5000;
@@ -180,7 +178,6 @@ class TransactionManager {
             const latestHex = await this._rpcCall('eth_blockNumber');
             const latest = parseInt(latestHex, 16);
             const fromBlock = Math.max(0, latest - blockCount);
-            const { ethers } = require('ethers');
 
             for (let i = latest; i >= fromBlock; i--) {
                 const blockHex = '0x' + i.toString(16);
@@ -252,33 +249,7 @@ class TransactionManager {
     }
 
     _rpcCall(method, params = []) {
-        return new Promise((resolve, reject) => {
-            const url = new URL(TPIX_RPC);
-            const client = url.protocol === 'https:' ? https : http;
-            const body = JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() + Math.random() });
-
-            const req = client.request({
-                hostname: url.hostname,
-                port: url.port || (url.protocol === 'https:' ? 443 : 80),
-                path: url.pathname,
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-                timeout: 15000,
-            }, (res) => {
-                let data = '';
-                res.on('data', (c) => (data += c));
-                res.on('end', () => {
-                    try {
-                        const json = JSON.parse(data);
-                        json.error ? reject(new Error(json.error.message)) : resolve(json.result);
-                    } catch { reject(new Error('Invalid response')); }
-                });
-            });
-            req.on('error', reject);
-            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-            req.write(body);
-            req.end();
-        });
+        return rpcCall(method, params, 15000);
     }
 }
 

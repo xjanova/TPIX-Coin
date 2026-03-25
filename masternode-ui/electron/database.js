@@ -140,8 +140,12 @@ class TpixDatabase {
     }
 
     getNextSlot() {
-        const row = this.db.prepare('SELECT MAX(slot) as maxSlot FROM wallets').get();
-        return (row.maxSlot || 0) + 1;
+        // Find the lowest available slot (1..128) to reuse deleted slots
+        const usedSlots = this.db.prepare('SELECT slot FROM wallets ORDER BY slot ASC').all().map(r => r.slot);
+        for (let i = 1; i <= MAX_WALLETS; i++) {
+            if (!usedSlots.includes(i)) return i;
+        }
+        throw new Error(`Maximum ${MAX_WALLETS} wallets reached`);
     }
 
     setActiveWallet(id) {
@@ -227,10 +231,14 @@ class TpixDatabase {
     }
 
     getTotalRewards(walletId) {
-        const row = this.db.prepare(`
-            SELECT COALESCE(SUM(CAST(amount AS REAL)), 0) as total FROM rewards WHERE wallet_id = ?
-        `).get(walletId);
-        return row.total;
+        // Sum amounts as strings to avoid REAL precision loss with large wei values
+        const rows = this.db.prepare('SELECT amount FROM rewards WHERE wallet_id = ?').all(walletId);
+        let total = BigInt(0);
+        for (const r of rows) {
+            try { total += BigInt(r.amount); } catch { /* skip invalid */ }
+        }
+        // Return as ether (number) for display
+        return Number(total) / 1e18;
     }
 
     // ─── Settings ───────────────────────────────────────────────

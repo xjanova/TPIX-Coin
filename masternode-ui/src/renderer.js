@@ -644,14 +644,19 @@ const app = createApp({
 
         async function deleteWalletConfirm(id) {
             const password = prompt(i18n.value.multiWallet.confirmDelete);
-            if (password === null || password === '') return;
+            if (password === null) return; // User cancelled
+            // Empty password is valid (default for wallets created without password)
             try {
                 const result = await window.tpix.wallet.deleteWallet(id, password);
                 if (result && result.success) {
                     await loadWallets();
                     await refreshBalance();
+                } else if (result && result.error) {
+                    alert(result.error);
                 }
-            } catch {}
+            } catch (e) {
+                alert(e.message || 'Delete failed');
+            }
         }
 
         // ─── Send / Receive ──────────────────────
@@ -743,12 +748,17 @@ const app = createApp({
         function formatTpix(weiString) {
             if (!weiString) return '0';
             try {
-                const wei = Number(weiString);
-                if (isNaN(wei)) return '0';
-                const tpix = wei / 1e18;
-                if (tpix === 0) return '0';
-                if (tpix < 0.0001) return tpix.toExponential(4);
-                return tpix.toLocaleString(undefined, { maximumFractionDigits: 6 });
+                const wei = BigInt(weiString);
+                if (wei === 0n) return '0';
+                const ether = Number(wei) / 1e18;
+                // For very large values, do integer division to keep precision
+                const whole = wei / BigInt(1e18);
+                const frac = wei % BigInt(1e18);
+                if (frac === 0n) return whole.toLocaleString();
+                // Format with up to 6 decimal places
+                const fracStr = frac.toString().padStart(18, '0').slice(0, 6).replace(/0+$/, '');
+                if (!fracStr) return whole.toLocaleString();
+                return whole.toLocaleString() + '.' + fracStr;
             } catch { return '0'; }
         }
 
@@ -810,8 +820,7 @@ const app = createApp({
             try { appVersion.value = await window.tpix.update.getVersion(); } catch { appVersion.value = '?'; }
 
             await loadConfig();
-            await loadWallet();
-            await loadWallets();
+            await loadWallet(); // loadWallet already calls loadWallets inside
             await loadTransactions(1);
             await refreshNetwork();
             await refreshMetrics();
