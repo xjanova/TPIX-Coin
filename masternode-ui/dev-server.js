@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 3847;
+const PKG_VERSION = require('./package.json').version;
 const SRC = path.join(__dirname, 'src');
 
 const MIME = {
@@ -80,7 +81,7 @@ window.tpix = {
         download: async () => ({ success: true }),
         install: () => ({ success: true }),
         getStatus: async () => ({ checking: false, updateAvailable: false, updateDownloaded: false, updateInfo: null, downloadProgress: null, error: null }),
-        getVersion: async () => require('./package.json').version,
+        getVersion: async () => '${PKG_VERSION}',
         onStatus: () => {},
         onProgress: () => {},
     },

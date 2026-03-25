@@ -201,41 +201,52 @@ class NodeManager extends EventEmitter {
     }
 
     async stop() {
+        if (this._stopping) return; // Guard against double-call
+        this._stopping = true;
+
         this.addLog('info', 'Stopping node...');
         this.stopMonitoring();
 
         if (this.process) {
-            return new Promise((resolve) => {
-                this.process.on('exit', () => {
+            const pid = this.process.pid;
+            await new Promise((resolve) => {
+                let resolved = false;
+                const done = () => {
+                    if (resolved) return;
+                    resolved = true;
                     this.process = null;
                     this.setStatus('stopped');
                     this.addLog('info', 'Node stopped.');
                     resolve();
-                });
+                };
+
+                this.process.once('exit', done);
+
+                // Final timeout — force resolve after 20 seconds no matter what
+                setTimeout(done, 20000);
 
                 // Graceful shutdown — Windows doesn't support SIGTERM reliably
                 if (os.platform() === 'win32') {
                     const { exec } = require('child_process');
-                    exec(`taskkill /PID ${this.process.pid} /T`, (err) => {
+                    exec(`taskkill /PID ${pid} /T`, () => {
                         // Force kill after 10 seconds if still alive
                         setTimeout(() => {
                             if (this.process) {
-                                exec(`taskkill /PID ${this.process.pid} /T /F`);
+                                exec(`taskkill /PID ${pid} /T /F`, () => {});
                             }
                         }, 10000);
                     });
                 } else {
-                    this.process.kill('SIGTERM');
+                    try { this.process.kill('SIGTERM'); } catch {}
                     setTimeout(() => {
-                        if (this.process) {
-                            this.process.kill('SIGKILL');
-                        }
+                        try { if (this.process) this.process.kill('SIGKILL'); } catch {}
                     }, 10000);
                 }
             });
         }
 
         this.setStatus('stopped');
+        this._stopping = false;
     }
 
     isRunning() {
