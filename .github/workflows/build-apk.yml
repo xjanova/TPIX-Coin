@@ -42,7 +42,12 @@ jobs:
       - name: Rename APK
         working-directory: .
         run: |
-          VERSION=$(grep 'version:' wallet/pubspec.yaml | head -1 | awk '{print $2}' | cut -d'+' -f1)
+          # Use tag version if available, otherwise use pubspec version
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(grep 'version:' wallet/pubspec.yaml | head -1 | awk '{print $2}' | cut -d'+' -f1)
+          fi
           cp wallet/build/app/outputs/flutter-apk/app-release.apk "TPIX-Wallet-v${VERSION}.apk"
           echo "APK_NAME=TPIX-Wallet-v${VERSION}.apk" >> $GITHUB_ENV
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
