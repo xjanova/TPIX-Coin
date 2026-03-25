@@ -22,6 +22,7 @@ dependencies:
   flutter_secure_storage: ^9.2.4
   local_auth: ^2.3.0
   encrypt: ^5.0.3
+  crypto: ^3.0.6
 
   # State Management
   provider: ^6.1.5
@@ -43,6 +44,9 @@ dependencies:
 
   # Audio
   audioplayers: ^6.1.0
+
+  # Location (for recovery)
+  geolocator: ^13.0.2
 
   # Auto-update
   dio: ^5.8.0+1

@@ -12,6 +12,7 @@ import 'send_screen.dart';
 import 'receive_screen.dart';
 import 'tx_history_screen.dart';
 import 'wallet_list_sheet.dart';
+import 'identity_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -85,6 +86,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     _buildBalanceCard(wallet, l),
                     const SizedBox(height: 24),
                     _buildActionButtons(context, l),
+                    const SizedBox(height: 24),
+                    _buildIdentityCard(l),
                     const SizedBox(height: 24),
                     _buildRecentTx(wallet, l),
                     const SizedBox(height: 24),
@@ -335,6 +338,45 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Text(sublabel, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIdentityCard(LocaleProvider l) {
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IdentityScreen())),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            colors: [AppTheme.accent.withValues(alpha: 0.1), AppTheme.primary.withValues(alpha: 0.05)],
+          ),
+          border: Border.all(color: AppTheme.accent.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppTheme.accent.withValues(alpha: 0.15),
+              ),
+              child: const Icon(Icons.shield_rounded, color: AppTheme.accent, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l.t('identity.title'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.accent)),
+                  Text(l.t('identity.subtitle'), style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, color: AppTheme.textMuted, size: 16),
+          ],
         ),
       ),
     );
