@@ -80,7 +80,7 @@ window.tpix = {
         download: async () => ({ success: true }),
         install: () => ({ success: true }),
         getStatus: async () => ({ checking: false, updateAvailable: false, updateDownloaded: false, updateInfo: null, downloadProgress: null, error: null }),
-        getVersion: async () => '1.0.0',
+        getVersion: async () => require('./package.json').version,
         onStatus: () => {},
         onProgress: () => {},
     },

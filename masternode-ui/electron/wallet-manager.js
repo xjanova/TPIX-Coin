@@ -79,10 +79,15 @@ class WalletManager {
     }
 
     /**
-     * Get the wallet address.
+     * Get the wallet address (does not require password).
      */
     getAddress() {
-        this._ensureLoaded();
+        if (!this.address && fs.existsSync(WALLET_FILE)) {
+            try {
+                const data = JSON.parse(fs.readFileSync(WALLET_FILE, 'utf-8'));
+                this.address = data.address;
+            } catch {}
+        }
         return this.address;
     }
 
@@ -90,7 +95,7 @@ class WalletManager {
      * Get wallet balance from TPIX Chain RPC.
      */
     async getBalance() {
-        this._ensureLoaded();
+        if (!this.address) this.getAddress();
         if (!this.address) return '0';
 
         try {

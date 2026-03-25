@@ -247,7 +247,7 @@ const LANG = {
 
 const app = createApp({
     setup() {
-        const appVersion = '1.0.0';
+        const appVersion = ref('...');
         const lang = ref(localStorage.getItem('tpix-lang') || 'th');
         const i18n = computed(() => LANG[lang.value]);
         const activeTab = ref('dashboard');
@@ -318,7 +318,7 @@ const app = createApp({
                 links: [
                     { icon: '📃', name: 'Whitepaper', desc: lang.value === 'th' ? 'เอกสาร Whitepaper ของ TPIX' : 'TPIX Whitepaper document', url: 'https://tpix.online/whitepaper' },
                     { icon: '📚', name: 'API Docs', desc: lang.value === 'th' ? 'เอกสาร API สำหรับนักพัฒนา' : 'API documentation for developers', url: 'https://tpix.online/api-docs' },
-                    { icon: '💻', name: 'GitHub', desc: lang.value === 'th' ? 'ซอร์สโค้ดโอเพนซอร์ส' : 'Open source code', url: 'https://github.com/xjanova/ThaiXTrade' },
+                    { icon: '💻', name: 'GitHub', desc: lang.value === 'th' ? 'ซอร์สโค้ดโอเพนซอร์ส' : 'Open source code', url: 'https://github.com/xjanova/TPIX-Coin'},
                 ],
             },
             {
@@ -505,6 +505,9 @@ const app = createApp({
 
         // ─── Lifecycle ────────────────────────────
         onMounted(async () => {
+            // Fetch version dynamically from main process
+            try { appVersion.value = await window.tpix.update.getVersion(); } catch { appVersion.value = '?'; }
+
             await loadConfig();
             await loadWallet();
             await refreshNetwork();

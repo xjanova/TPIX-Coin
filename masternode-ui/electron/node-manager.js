@@ -112,10 +112,39 @@ class NodeManager extends EventEmitter {
         const binPath = this.findBinary();
 
         if (!binPath) {
-            this.addLog('info', 'Polygon Edge binary not found, running in monitoring mode...');
+            this.addLog('warn', 'Polygon Edge binary not found — running in monitoring mode only.');
+            this.addLog('info', 'The node will monitor the TPIX Chain via RPC but cannot produce blocks.');
+            this.status = 'monitoring';
             this.setStatus('running');
             this.startMonitoring();
             return;
+        }
+
+        // Ensure genesis.json exists
+        const genesisPath = path.join(this.dataDir, 'genesis.json');
+        if (!fs.existsSync(genesisPath)) {
+            this.addLog('error', 'genesis.json not found. Please download it from tpix.online or place it in: ' + this.dataDir);
+            this.setStatus('error');
+            return;
+        }
+
+        // Initialize node secrets/key if not done yet
+        const chainDataDir = path.join(this.dataDir, 'chain-data');
+        const consensusKeyPath = path.join(chainDataDir, 'consensus', 'validator.key');
+        if (!fs.existsSync(consensusKeyPath)) {
+            this.addLog('info', 'Initializing node keys (first run)...');
+            try {
+                const { execFileSync } = require('child_process');
+                execFileSync(binPath, ['secrets', 'init', '--data-dir', chainDataDir], {
+                    timeout: 30000,
+                    cwd: this.dataDir,
+                });
+                this.addLog('info', 'Node keys initialized successfully.');
+            } catch (err) {
+                this.addLog('error', `Failed to initialize node keys: ${err.message}`);
+                this.setStatus('error');
+                return;
+            }
         }
 
         // Build command args for polygon-edge
@@ -184,15 +213,25 @@ class NodeManager extends EventEmitter {
                     resolve();
                 });
 
-                // Graceful shutdown
-                this.process.kill('SIGTERM');
-
-                // Force kill after 10 seconds
-                setTimeout(() => {
-                    if (this.process) {
-                        this.process.kill('SIGKILL');
-                    }
-                }, 10000);
+                // Graceful shutdown — Windows doesn't support SIGTERM reliably
+                if (os.platform() === 'win32') {
+                    const { exec } = require('child_process');
+                    exec(`taskkill /PID ${this.process.pid} /T`, (err) => {
+                        // Force kill after 10 seconds if still alive
+                        setTimeout(() => {
+                            if (this.process) {
+                                exec(`taskkill /PID ${this.process.pid} /T /F`);
+                            }
+                        }, 10000);
+                    });
+                } else {
+                    this.process.kill('SIGTERM');
+                    setTimeout(() => {
+                        if (this.process) {
+                            this.process.kill('SIGKILL');
+                        }
+                    }, 10000);
+                }
             });
         }
 
@@ -235,7 +274,11 @@ class NodeManager extends EventEmitter {
         args.push('--jsonrpc', `127.0.0.1:${this.config.rpcPort}`);
         args.push('--max-peers', String(this.config.maxPeers));
         args.push('--block-gas-target', '20000000');
-        args.push('--seal');
+
+        // Only validators seal blocks
+        if (this.config.tier === 'validator') {
+            args.push('--seal');
+        }
 
         if (this.config.bootnodes && this.config.bootnodes.length > 0) {
             this.config.bootnodes.forEach((bn) => {
@@ -459,12 +502,22 @@ class NodeManager extends EventEmitter {
         const freeMem = os.freemem();
         const usedMem = totalMem - freeMem;
 
-        // Simple CPU usage estimate
+        // Real-time CPU usage (delta between snapshots)
         let cpuUsage = 0;
         if (cpus.length > 0) {
-            const cpu = cpus[0];
-            const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
-            cpuUsage = Math.round(((total - cpu.times.idle) / total) * 100);
+            let totalIdle = 0, totalTick = 0;
+            for (const cpu of cpus) {
+                const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
+                totalIdle += cpu.times.idle;
+                totalTick += total;
+            }
+            if (this._prevCpuIdle !== undefined) {
+                const idleDelta = totalIdle - this._prevCpuIdle;
+                const totalDelta = totalTick - this._prevCpuTotal;
+                cpuUsage = totalDelta > 0 ? Math.round(100 - (idleDelta / totalDelta) * 100) : 0;
+            }
+            this._prevCpuIdle = totalIdle;
+            this._prevCpuTotal = totalTick;
         }
 
         return {
