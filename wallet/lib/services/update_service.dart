@@ -82,12 +82,22 @@ class UpdateService {
   }
 
   /// Open tpix.online download page in browser
+  /// Falls back to direct GitHub release page if browser launch fails
   Future<void> openDownloadPage() async {
     final uri = Uri.parse(_downloadPageUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      throw Exception('Could not open $uri');
+    try {
+      final launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) throw Exception('launchUrl returned false');
+    } catch (_) {
+      // Fallback: open GitHub releases page directly
+      final fallback = Uri.parse(
+          'https://github.com/$_owner/$_repo/releases/latest');
+      final ok =
+          await launchUrl(fallback, mode: LaunchMode.externalApplication);
+      if (!ok) {
+        throw Exception('Could not open $_downloadPageUrl');
+      }
     }
   }
 
