@@ -40,7 +40,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: masternode-ui
-        run: npm ci
+        run: npm ci --ignore-scripts
+
+      - name: Rebuild native modules for Electron
+        working-directory: masternode-ui
+        run: npx electron-rebuild
 
       - name: Build Electron app
         working-directory: masternode-ui
