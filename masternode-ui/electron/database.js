@@ -288,8 +288,14 @@ class TpixDatabase {
         for (const r of rows) {
             try { total += BigInt(r.amount); } catch { /* skip invalid */ }
         }
-        // Return as ether (number) for display
-        return Number(total) / 1e18;
+        // Return as string in ether with BigInt precision
+        if (total === 0n) return 0;
+        const WEI = BigInt('1000000000000000000');
+        const whole = total / WEI;
+        const frac = total % WEI;
+        const fracStr = frac.toString().padStart(18, '0').slice(0, 6).replace(/0+$/, '');
+        const result = fracStr ? `${whole}.${fracStr}` : `${whole}`;
+        return parseFloat(result);
     }
 
     // ─── Settings ───────────────────────────────────────────────

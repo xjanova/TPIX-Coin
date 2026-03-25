@@ -411,7 +411,7 @@
                             </div>
                             <div v-else class="empty-state">{{ i18n.history.noTx }}</div>
                             <div v-if="txTotal > transactions.length" class="tx-pagination">
-                                <button @click="loadTransactions(txPage + 1)" class="btn btn-ghost btn-sm">{{ i18n.history.loadMore }}</button>
+                                <button @click="loadTransactions(txPage + 1, true)" class="btn btn-ghost btn-sm">{{ i18n.history.loadMore }}</button>
                             </div>
                         </div>
 
@@ -439,7 +439,7 @@
                     </div>
 
                     <!-- Send Modal -->
-                    <div v-if="showSendModal" class="modal-overlay" @click.self="showSendModal = false">
+                    <div v-if="showSendModal" class="modal-overlay" @click.self="stopQRScan(); showSendModal = false">
                         <div class="modal-content">
                             <h3>&#11014; {{ i18n.send.title }}</h3>
                             <div v-if="!sendForm.txHash">
@@ -480,7 +480,7 @@
                                     <button @click="confirmSend" class="btn btn-primary" :disabled="sendForm.sending">
                                         {{ sendForm.sending ? i18n.send.sending : i18n.send.confirmSend }}
                                     </button>
-                                    <button @click="showSendModal = false" class="btn btn-ghost">{{ i18n.send.close }}</button>
+                                    <button @click="stopQRScan(); showSendModal = false" class="btn btn-ghost">{{ i18n.send.close }}</button>
                                 </div>
                             </div>
                             <div v-else class="tx-success">
@@ -560,7 +560,7 @@
                             <h3>&#128273; {{ i18n.identity.setupRecoveryKey }}</h3>
                             <div class="form-group">
                                 <label>{{ i18n.identity.recoveryKeyLabel }}</label>
-                                <input v-model="recoveryKeyForm.pin" class="input-field input-pin" type="password" maxlength="6" placeholder="000000" inputmode="numeric">
+                                <input v-model="recoveryKeyForm.pin" class="input-field input-pin" type="password" maxlength="8" placeholder="000000" inputmode="numeric">
                             </div>
                             <div class="form-group">
                                 <label>{{ i18n.identity.recoveryHint }}</label>
@@ -576,7 +576,7 @@
                     </div>
 
                     <!-- Mnemonic Display Modal -->
-                    <div v-if="showMnemonicModal" class="modal-overlay" @click.self="showMnemonicModal = false">
+                    <div v-if="showMnemonicModal" class="modal-overlay" @click.self="showMnemonicModal = false; showMnemonic = false; mnemonicWords = ''">
                         <div class="modal-content modal-wide">
                             <h3>&#127793; {{ i18n.identity.mnemonicTitle }}</h3>
                             <div class="alert alert-warning">

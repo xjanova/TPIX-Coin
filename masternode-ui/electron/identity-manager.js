@@ -12,10 +12,39 @@
 
 const crypto = require('crypto');
 
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 class IdentityManager {
     constructor(database) {
         this.db = database;
+        this._attemptTracker = new Map(); // walletId -> { count, lastAttempt }
         this._ensureTables();
+    }
+
+    _checkRateLimit(walletId) {
+        const tracker = this._attemptTracker.get(walletId);
+        if (!tracker) return;
+        if (tracker.count >= MAX_ATTEMPTS) {
+            const elapsed = Date.now() - tracker.lastAttempt;
+            if (elapsed < LOCKOUT_MS) {
+                const remaining = Math.ceil((LOCKOUT_MS - elapsed) / 1000);
+                throw new Error(`Too many attempts. Try again in ${remaining} seconds.`);
+            }
+            // Reset after lockout period
+            this._attemptTracker.delete(walletId);
+        }
+    }
+
+    _recordAttempt(walletId, success) {
+        if (success) {
+            this._attemptTracker.delete(walletId);
+            return;
+        }
+        const tracker = this._attemptTracker.get(walletId) || { count: 0, lastAttempt: 0 };
+        tracker.count++;
+        tracker.lastAttempt = Date.now();
+        this._attemptTracker.set(walletId, tracker);
     }
 
     _ensureTables() {
@@ -155,14 +184,14 @@ class IdentityManager {
     // ─── Recovery Key (Layer 1 supplement) ──────────────────
 
     /**
-     * Set a 6-digit recovery key
+     * Set a 6-8 digit recovery key
      * @param {number} walletId
-     * @param {string} recoveryKey - 6 digit PIN
+     * @param {string} recoveryKey - 6-8 digit PIN
      * @param {string} [hint] - optional hint
      */
     setRecoveryKey(walletId, recoveryKey, hint = '') {
-        if (!/^\d{6}$/.test(recoveryKey)) {
-            throw new Error('Recovery key must be exactly 6 digits');
+        if (!/^\d{6,8}$/.test(recoveryKey)) {
+            throw new Error('Recovery key must be 6-8 digits');
         }
 
         const salt = crypto.randomBytes(32).toString('hex');
@@ -273,6 +302,9 @@ class IdentityManager {
      * @returns {{ success: boolean, layersPassed: string[], message: string }}
      */
     attemptRecovery(walletId, { answers, recoveryKey }) {
+        // Rate limiting
+        this._checkRateLimit(walletId);
+
         const layersPassed = [];
         const results = {};
 
@@ -305,6 +337,9 @@ class IdentityManager {
 
         const success = layersPassed.length >= requiredLayers;
 
+        // Track attempts for rate limiting
+        this._recordAttempt(walletId, success);
+
         return {
             success,
             layersPassed,
@@ -321,7 +356,7 @@ class IdentityManager {
     _hashAnswer(answer, salt) {
         // Normalize: lowercase, trim, remove extra spaces
         const normalized = String(answer).toLowerCase().trim().replace(/\s+/g, ' ');
-        return crypto.pbkdf2Sync(normalized, 'tpix-identity:' + salt, 50000, 32, 'sha256').toString('hex');
+        return crypto.pbkdf2Sync(normalized, 'tpix-identity:' + salt, 100000, 32, 'sha256').toString('hex');
     }
 }
 

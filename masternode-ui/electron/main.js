@@ -199,8 +199,9 @@ function setupIPC() {
     ipcMain.handle('wallet:exportKey', (_, walletId, password) => {
         try {
             if (typeof password !== 'string') password = '';
-            return walletManager.exportKey(walletId, password);
-        } catch { return null; }
+            const key = walletManager.exportKey(walletId, password);
+            return { success: true, key };
+        } catch (err) { return { success: false, error: err.message }; }
     });
 
     ipcMain.handle('wallet:exists', () => {
@@ -455,10 +456,13 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => { if (!mainWindow) createWindow(); });
 
+let isQuitting = false;
 app.on('before-quit', (e) => {
+    if (isQuitting) return; // Prevent infinite loop
     if (nodeManager && nodeManager.isRunning()) {
         e.preventDefault();
-        nodeManager.stop().then(() => app.quit());
+        isQuitting = true;
+        nodeManager.stop().finally(() => app.quit());
     }
 });
 

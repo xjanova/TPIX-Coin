@@ -163,6 +163,7 @@ const LANG = {
             received: 'Received',
             pending: 'Pending',
             confirmed: 'Confirmed',
+            failed: 'Failed',
             noTx: 'No transactions yet',
             loadMore: 'Load More',
             from: 'From',
@@ -194,7 +195,7 @@ const LANG = {
             questionPlaceholder: 'Enter your personal question...',
             answerPlaceholder: 'Enter your answer...',
             saveQuestions: 'Save Security Questions',
-            recoveryKeyLabel: 'Recovery PIN (6 digits)',
+            recoveryKeyLabel: 'Recovery PIN (6-8 digits)',
             recoveryHint: 'Hint (optional)',
             saveRecoveryKey: 'Save Recovery Key',
             mnemonicTitle: 'Recovery Seed Phrase',
@@ -382,6 +383,7 @@ const LANG = {
             received: 'รับ',
             pending: 'รอดำเนินการ',
             confirmed: 'ยืนยันแล้ว',
+            failed: 'ล้มเหลว',
             noTx: 'ยังไม่มีธุรกรรม',
             loadMore: 'โหลดเพิ่ม',
             from: 'จาก',
@@ -413,7 +415,7 @@ const LANG = {
             questionPlaceholder: 'ตั้งคำถามส่วนตัวของคุณ...',
             answerPlaceholder: 'ใส่คำตอบ...',
             saveQuestions: 'บันทึกคำถามกันลืม',
-            recoveryKeyLabel: 'PIN กู้คืน (6 หลัก)',
+            recoveryKeyLabel: 'PIN กู้คืน (6-8 หลัก)',
             recoveryHint: 'คำใบ้ (ไม่บังคับ)',
             saveRecoveryKey: 'บันทึกรหัสกู้คืน',
             mnemonicTitle: 'คำลับกู้คืน (Seed Phrase)',
@@ -688,6 +690,12 @@ const app = createApp({
                     saveSettings();
                     await loadWallets();
                     await loadIdentityStatus();
+                    // Auto-clear private key from memory after 60 seconds
+                    setTimeout(() => {
+                        if (newWalletData.value && newWalletData.value.privateKey) {
+                            newWalletData.value = { ...newWalletData.value, privateKey: null };
+                        }
+                    }, 60000);
                 }
             } finally { walletLoading.value = false; }
         }
@@ -710,7 +718,18 @@ const app = createApp({
             try { walletBalance.value = await window.tpix.wallet.getBalance(); } catch { walletBalance.value = '0'; }
         }
         async function showExportKey() {
-            try { exportedKey.value = await window.tpix.wallet.exportKey(); } catch {}
+            const password = prompt(lang.value === 'th' ? 'ใส่รหัสผ่านเพื่อดู Private Key' : 'Enter password to export Private Key');
+            if (password === null) return;
+            try {
+                const result = await window.tpix.wallet.exportKey(undefined, password);
+                if (result && result.success) {
+                    exportedKey.value = result.key;
+                    // Auto-clear after 30 seconds
+                    setTimeout(() => { exportedKey.value = null; }, 30000);
+                } else {
+                    alert(result?.error || 'Wrong password');
+                }
+            } catch (e) { alert(e.message); }
         }
 
         // ─── Multi-Wallet Functions ──────────────
@@ -815,8 +834,10 @@ const app = createApp({
             if (isNaN(amount) || amount <= 0) {
                 sendForm.error = i18n.value.send.invalidAmount; return;
             }
-            if (!sendForm.password) {
-                sendForm.error = i18n.value.send.passwordRequired; return;
+            // Password can be empty (wallets created without password)
+            // Only validate that password field is not undefined/null
+            if (sendForm.password === undefined || sendForm.password === null) {
+                sendForm.password = '';
             }
             sendForm.sending = true;
             try {
@@ -846,13 +867,20 @@ const app = createApp({
         }
 
         // ─── Transaction History ─────────────────
-        async function loadTransactions(page) {
+        async function loadTransactions(page, append = false) {
             if (page !== undefined) txPage.value = page;
             try {
                 const walletId = activeWallet.value ? activeWallet.value.id : undefined;
                 const result = await window.tpix.wallet.getTransactions(walletId, txPage.value, 20);
                 if (result) {
-                    transactions.value = result.transactions || [];
+                    if (append && txPage.value > 1) {
+                        // Append new results to existing list (Load More)
+                        const existingHashes = new Set(transactions.value.map(t => t.tx_hash));
+                        const newTxs = (result.transactions || []).filter(t => !existingHashes.has(t.tx_hash));
+                        transactions.value = [...transactions.value, ...newTxs];
+                    } else {
+                        transactions.value = result.transactions || [];
+                    }
                     txTotal.value = result.total || 0;
                 }
             } catch {}
@@ -878,8 +906,9 @@ const app = createApp({
                 });
                 qrVideoStream = stream;
 
-                // Wait for video element to be in DOM
-                await new Promise(r => setTimeout(r, 100));
+                // Wait for Vue to flush DOM update then find video element
+                await Vue.nextTick();
+                await new Promise(r => setTimeout(r, 50));
                 const video = document.getElementById('qr-video');
                 if (!video) { stopQRScan(); return; }
 
@@ -971,8 +1000,8 @@ const app = createApp({
             const walletId = activeWallet.value?.id;
             if (!walletId) return;
 
-            if (!/^\d{6}$/.test(recoveryKeyForm.pin)) {
-                alert(lang.value === 'th' ? 'PIN ต้องเป็นตัวเลข 6 หลัก' : 'PIN must be 6 digits');
+            if (!/^\d{6,8}$/.test(recoveryKeyForm.pin)) {
+                alert(lang.value === 'th' ? 'PIN ต้องเป็นตัวเลข 6-8 หลัก' : 'PIN must be 6-8 digits');
                 return;
             }
 
@@ -1039,8 +1068,7 @@ const app = createApp({
             try {
                 const wei = BigInt(weiString);
                 if (wei === 0n) return '0';
-                const ether = Number(wei) / 1e18;
-                // For very large values, do integer division to keep precision
+                // BigInt division for precision
                 const whole = wei / BigInt(1e18);
                 const frac = wei % BigInt(1e18);
                 if (frac === 0n) return whole.toLocaleString();
@@ -1128,7 +1156,7 @@ const app = createApp({
                 try { const s = await window.tpix.update.getStatus(); if (s) updateStatus.value = s; } catch {}
             }
         });
-        onUnmounted(() => { clearInterval(networkInterval); clearInterval(metricsInterval); clearInterval(uptimeInterval); });
+        onUnmounted(() => { clearInterval(networkInterval); clearInterval(metricsInterval); clearInterval(uptimeInterval); stopQRScan(); });
 
         return {
             appVersion, lang, i18n, toggleLang,
