@@ -104,7 +104,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                           ),
                         ],
                       ),
-                      child: Image.asset('assets/images/tpixlogo.webp'),
+                      child: Image.asset('assets/images/logowallet.png'),
                     ),
                   ),
                 ),

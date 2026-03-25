@@ -76,7 +76,7 @@ class ReceiveScreen extends StatelessWidget {
                       dataModuleShape: QrDataModuleShape.square,
                       color: AppTheme.bgDark,
                     ),
-                    embeddedImage: const AssetImage('assets/images/tpixlogo.webp'),
+                    embeddedImage: const AssetImage('assets/images/logowallet.png'),
                     embeddedImageStyle: const QrEmbeddedImageStyle(size: Size(48, 48)),
                   ),
                 ),

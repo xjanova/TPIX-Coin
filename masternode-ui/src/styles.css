@@ -260,6 +260,28 @@ body {
     flex-shrink: 0;
     backdrop-filter: blur(20px);
     box-shadow: 4px 0 30px rgba(6, 182, 212, 0.05);
+    position: relative;
+    overflow: hidden;
+}
+
+.sidebar::before {
+    content: '';
+    position: absolute;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 140px;
+    height: 140px;
+    background: url('logomasternode.png') center/contain no-repeat;
+    opacity: 0.06;
+    pointer-events: none;
+    filter: grayscale(30%) brightness(1.2);
+    animation: sidebar-logo-pulse 6s ease-in-out infinite;
+}
+
+@keyframes sidebar-logo-pulse {
+    0%, 100% { opacity: 0.05; transform: translateX(-50%) scale(1); }
+    50% { opacity: 0.09; transform: translateX(-50%) scale(1.03); }
 }
 
 .sidebar-nav {

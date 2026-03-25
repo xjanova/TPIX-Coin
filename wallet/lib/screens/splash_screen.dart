@@ -245,29 +245,29 @@ class _SplashScreenState extends State<SplashScreen>
                             child: Transform.scale(
                               scale: _logoScale.value,
                               child: Container(
-                                width: 100,
-                                height: 100,
+                                width: 140,
+                                height: 140,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
                                       color: AppTheme.primary.withValues(alpha: 0.3),
-                                      blurRadius: 40,
-                                      spreadRadius: 10,
+                                      blurRadius: 50,
+                                      spreadRadius: 15,
                                     ),
                                     BoxShadow(
-                                      color: AppTheme.accent.withValues(alpha: 0.15),
-                                      blurRadius: 60,
-                                      spreadRadius: 20,
+                                      color: const Color(0xFFD4A017).withValues(alpha: 0.15),
+                                      blurRadius: 70,
+                                      spreadRadius: 25,
                                     ),
                                   ],
                                 ),
                                 child: ClipOval(
                                   child: Image.asset(
-                                    'assets/images/tpixlogo.webp',
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.contain,
+                                    'assets/images/logowallet.png',
+                                    width: 140,
+                                    height: 140,
+                                    fit: BoxFit.cover,
                                   ),
                                 ),
                               ),

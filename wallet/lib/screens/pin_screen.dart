@@ -142,7 +142,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
                     BoxShadow(color: AppTheme.primary.withValues(alpha: 0.2), blurRadius: 30),
                   ],
                 ),
-                child: Image.asset('assets/images/tpixlogo.webp'),
+                child: Image.asset('assets/images/logowallet.png'),
               ),
 
               const SizedBox(height: 32),
