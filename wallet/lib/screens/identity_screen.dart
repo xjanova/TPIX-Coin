@@ -386,7 +386,7 @@ class _IdentityScreenState extends State<IdentityScreen> {
 
                     try {
                       await _identityService.setSecurityQuestions(pairs);
-                      SynthService.playSuccess();
+                      SynthService.playSendSuccess();
                       if (ctx.mounted) Navigator.pop(ctx);
                       _showSnack(l.t('identity.questionsSaved'), AppTheme.success);
                       await _loadStatus();
@@ -469,7 +469,7 @@ class _IdentityScreenState extends State<IdentityScreen> {
                       setButtonState(() => registering = true);
                       try {
                         await _identityService.registerLocation(label);
-                        SynthService.playSuccess();
+                        SynthService.playSendSuccess();
                         if (ctx.mounted) Navigator.pop(ctx);
                         _showSnack(l.t('identity.locationSaved'), AppTheme.success);
                         await _loadStatus();
@@ -580,7 +580,7 @@ class _IdentityScreenState extends State<IdentityScreen> {
 
                   try {
                     await _identityService.setRecoveryPin(pin);
-                    SynthService.playSuccess();
+                    SynthService.playSendSuccess();
                     if (ctx.mounted) Navigator.pop(ctx);
                     _showSnack(l.t('identity.pinSaved'), AppTheme.success);
                     await _loadStatus();
@@ -733,7 +733,7 @@ class _IdentityScreenState extends State<IdentityScreen> {
                             );
 
                             if (result['success'] == true) {
-                              SynthService.playSuccess();
+                              SynthService.playSendSuccess();
                               setButtonState(() {
                                 testing = false;
                                 resultText = l.t('identity.testSuccess');

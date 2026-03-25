@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geolocator/geolocator.dart';
@@ -365,9 +366,9 @@ class IdentityService {
   /// Hash answer with iterated SHA-256 (10,000 rounds)
   String _hashAnswer(String answer, String salt) {
     final normalized = answer.trim().toLowerCase();
-    var bytes = utf8.encode('tpix-identity:$salt:$normalized');
+    Uint8List bytes = Uint8List.fromList(utf8.encode('tpix-identity:$salt:$normalized'));
     for (int i = 0; i < 10000; i++) {
-      bytes = sha256.convert(bytes).bytes;
+      bytes = Uint8List.fromList(sha256.convert(bytes).bytes);
     }
     return base64Encode(bytes);
   }
