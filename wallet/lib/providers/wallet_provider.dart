@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../models/wallet_info.dart';
+import '../models/tx_record.dart';
 import '../services/wallet_service.dart';
 
 class WalletProvider extends ChangeNotifier {
@@ -13,6 +15,8 @@ class WalletProvider extends ChangeNotifier {
   String? _mnemonic;
   String? _error;
   String? _lastTxHash;
+  List<TxRecord> _txHistory = [];
+  bool _isScanning = false;
 
   Timer? _balanceTimer;
 
@@ -26,6 +30,14 @@ class WalletProvider extends ChangeNotifier {
   String? get error => _error;
   String? get lastTxHash => _lastTxHash;
   String get shortAddress => _walletService.shortAddress;
+  List<TxRecord> get txHistory => _txHistory;
+  bool get isScanning => _isScanning;
+
+  // Multi-wallet getters
+  List<WalletInfo> get wallets => _walletService.wallets;
+  int get walletCount => _walletService.walletCount;
+  int get activeSlot => _walletService.activeSlot;
+  WalletInfo? get activeWallet => _walletService.activeWallet;
 
   String get formattedBalance {
     if (_balance >= 1000000) return '${(_balance / 1000000).toStringAsFixed(2)}M';
@@ -40,13 +52,13 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Create new wallet
-  Future<Map<String, String>> createWallet() async {
+  Future<Map<String, String>> createWallet({String? name}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final result = await _walletService.createWallet();
+      final result = await _walletService.createWallet(name: name);
       _mnemonic = result['mnemonic'];
       _address = result['address'];
       return result;
@@ -116,6 +128,7 @@ class WalletProvider extends ChangeNotifier {
         _address = _walletService.address;
         _mnemonic = _walletService.mnemonic;
         await refreshBalance();
+        await loadTxHistory();
         _startBalanceRefresh();
       } else {
         _error = 'Invalid PIN';
@@ -149,6 +162,7 @@ class WalletProvider extends ChangeNotifier {
       );
       _lastTxHash = txHash;
       await refreshBalance();
+      await loadTxHistory(); // Reload to show new pending TX
       return txHash;
     } catch (e) {
       _error = e.toString();
@@ -159,6 +173,96 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  Multi-Wallet Operations
+  // ═══════════════════════════════════════════════════════════
+
+  /// Switch to another wallet
+  Future<void> switchWallet(int slot) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      await _walletService.switchWallet(slot);
+      _address = _walletService.address;
+      await refreshBalance();
+      await loadTxHistory();
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Add a new wallet from HD seed
+  Future<Map<String, String>> addWallet({String? name}) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final result = await _walletService.createWallet(name: name);
+      _address = result['address'];
+      await _walletService.persistWallets(); // Save wallet list (PIN already set)
+      await refreshBalance();
+      await loadTxHistory();
+      return result;
+    } catch (e) {
+      _error = e.toString();
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Rename a wallet
+  Future<void> renameWallet(int slot, String newName) async {
+    await _walletService.renameWallet(slot, newName);
+    notifyListeners();
+  }
+
+  /// Delete a wallet
+  Future<void> deleteWalletBySlot(int slot) async {
+    await _walletService.deleteWalletBySlot(slot);
+    _address = _walletService.address;
+    if (_walletService.walletCount > 0) {
+      await refreshBalance();
+      await loadTxHistory();
+    } else {
+      _balance = 0;
+      _txHistory = [];
+    }
+    _hasWallet = _walletService.walletCount > 0;
+    notifyListeners();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Transaction History
+  // ═══════════════════════════════════════════════════════════
+
+  /// Load tx history from local storage
+  Future<void> loadTxHistory() async {
+    _txHistory = await _walletService.getActiveTxHistory();
+    notifyListeners();
+  }
+
+  /// Scan blockchain for recent transactions
+  Future<void> scanTransactions({int blockCount = 50}) async {
+    if (_isScanning) return;
+    _isScanning = true;
+    notifyListeners();
+
+    try {
+      await _walletService.scanRecentTransactions(blockCount: blockCount);
+      await loadTxHistory();
+    } catch (_) {}
+
+    _isScanning = false;
+    notifyListeners();
+  }
+
   /// Lock wallet
   void lock() {
     _walletService.lock();
@@ -167,7 +271,7 @@ class WalletProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Delete wallet
+  /// Delete ALL wallets
   Future<void> deleteWallet() async {
     await _walletService.deleteWallet();
     _hasWallet = false;
@@ -175,6 +279,7 @@ class WalletProvider extends ChangeNotifier {
     _address = null;
     _balance = 0;
     _mnemonic = null;
+    _txHistory = [];
     _balanceTimer?.cancel();
     notifyListeners();
   }

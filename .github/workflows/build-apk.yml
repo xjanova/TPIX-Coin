@@ -1,3 +1,6 @@
+# TPIX Wallet — Build APK Workflow
+# Builds Android APK and publishes to GitHub Releases on tag push.
+
 name: Build TPIX Wallet APK
 
 on:
@@ -17,48 +20,8 @@ defaults:
     working-directory: wallet
 
 jobs:
-  check-changes:
-    name: Check wallet changes
-    runs-on: ubuntu-latest
-    outputs:
-      should_build: ${{ steps.check.outputs.should_build }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check if wallet files changed since last tag
-        id: check
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            CURRENT_TAG="${GITHUB_REF#refs/tags/}"
-            # Find previous tag
-            PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | grep -A1 "^${CURRENT_TAG}$" | tail -1)
-            if [ "$PREV_TAG" = "$CURRENT_TAG" ] || [ -z "$PREV_TAG" ]; then
-              echo "First tag or no previous tag — build"
-              echo "should_build=true" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-            echo "Comparing $PREV_TAG → $CURRENT_TAG"
-            CHANGED=$(git diff --name-only "$PREV_TAG" "$CURRENT_TAG" -- wallet/ .github/workflows/build-apk.yml)
-            if [ -n "$CHANGED" ]; then
-              echo "Wallet files changed:"
-              echo "$CHANGED"
-              echo "should_build=true" >> $GITHUB_OUTPUT
-            else
-              echo "No wallet changes — skip build"
-              echo "should_build=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            # Branch push — paths filter already handled this
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          fi
-        working-directory: .
-
   build:
     name: Build Wallet APK
-    needs: check-changes
-    if: needs.check-changes.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +60,7 @@ jobs:
           name: tpix-wallet-apk
           path: "*.apk"
 
-      - name: Create Release (on tag push)
+      - name: Attach to Release (on tag push)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
@@ -105,8 +68,23 @@ jobs:
           body: |
             ## TPIX Chain v${{ env.VERSION }}
 
-            ### Download
-            - **TPIX Wallet APK** — Install on Android
+            ### 📱 TPIX Wallet
+            - 🔐 Multi-wallet support (up to 128 wallets)
+            - 📷 QR code scanner for sending
+            - 📋 Transaction history with blockchain scan
+            - ⚡ Zero gas fee transactions on TPIX Chain
+            - 🎨 Beautiful animated UI with sound effects
+            - 📱 Create/import wallet with BIP-39 seed phrase
+            - 💸 Send/receive TPIX instantly
+            - 🔒 PIN protection with encrypted storage
+            - 🌐 Thai + English language support
+
+            ### 🖥️ Master Node
+            - HD Wallet with BIP-39/BIP-44 derivation
+            - Living Identity protection system
+            - Multi-wallet management (128 slots)
+            - QR code scanning for addresses
+            - Auto-update via electron-updater
 
             **Developer:** Xman Studio
             **Website:** https://tpix.online

@@ -1,6 +1,7 @@
-# TPIX Master Node — Release Workflow
+# TPIX Master Node UI — Release Workflow
 # Builds Windows portable + installer and publishes to GitHub Releases
-# Only builds when masternode-ui/ files actually changed.
+# Trigger: Push a version tag like v1.2.0
+# electron-updater will automatically detect the new release.
 
 name: Release TPIX Master Node
 
@@ -8,45 +9,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  check-changes:
-    name: Check masternode changes
-    runs-on: ubuntu-latest
-    outputs:
-      should_build: ${{ steps.check.outputs.should_build }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check if masternode files changed since last tag
-        id: check
-        run: |
-          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | grep -A1 "^${CURRENT_TAG}$" | tail -1)
-          if [ "$PREV_TAG" = "$CURRENT_TAG" ] || [ -z "$PREV_TAG" ]; then
-            echo "First tag or no previous tag — build"
-            echo "should_build=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "Comparing $PREV_TAG → $CURRENT_TAG"
-          CHANGED=$(git diff --name-only "$PREV_TAG" "$CURRENT_TAG" -- masternode-ui/ .github/workflows/release-masternode-ui.yml)
-          if [ -n "$CHANGED" ]; then
-            echo "Masternode files changed:"
-            echo "$CHANGED"
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          else
-            echo "No masternode changes — skip build"
-            echo "should_build=false" >> $GITHUB_OUTPUT
-          fi
-
   build-windows:
-    needs: check-changes
-    if: needs.check-changes.outputs.should_build == 'true'
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -63,10 +32,11 @@ jobs:
         working-directory: masternode-ui
         shell: bash
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "Setting package.json version to ${TAG_VERSION}"
-          npm version "${TAG_VERSION}" --no-git-tag-version --allow-same-version
-          echo "TAG_VERSION=${TAG_VERSION}" >> $GITHUB_ENV
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "Setting package.json version to ${TAG_VERSION}"
+            npm version "${TAG_VERSION}" --no-git-tag-version --allow-same-version
+          fi
 
       - name: Install dependencies
         working-directory: masternode-ui

@@ -5,6 +5,7 @@ import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
+import '../widgets/qr_scanner_screen.dart';
 
 class SendScreen extends StatefulWidget {
   const SendScreen({super.key});
@@ -37,6 +38,39 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     _amountController.dispose();
     _successController.dispose();
     super.dispose();
+  }
+
+  void _scanQR() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => QRScannerScreen(
+          titleKey: 'send.scanQR',
+          onScanned: (value) {
+            // Parse ethereum: URI format (e.g., ethereum:0x123...@4289?value=100)
+            String address = value;
+            if (value.startsWith('ethereum:')) {
+              address = value.substring('ethereum:'.length);
+              // Remove chain ID (@4289) and query params (?value=...)
+              if (address.contains('@')) {
+                address = address.split('@')[0];
+              }
+              if (address.contains('?')) {
+                address = address.split('?')[0];
+              }
+            }
+            // Validate and set address
+            if (RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(address)) {
+              _addressController.text = address;
+            } else {
+              // Try raw value as-is (might be a plain address)
+              _addressController.text = value;
+            }
+            Navigator.pop(context);
+          },
+        ),
+      ),
+    );
   }
 
   void _send() async {
@@ -153,7 +187,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               ),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.qr_code_scanner, color: AppTheme.primary),
-                onPressed: () {}, // TODO: QR scanner
+                onPressed: _scanQR,
               ),
             ),
           ),

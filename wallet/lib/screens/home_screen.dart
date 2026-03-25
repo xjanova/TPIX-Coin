@@ -10,6 +10,8 @@ import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import 'send_screen.dart';
 import 'receive_screen.dart';
+import 'tx_history_screen.dart';
+import 'wallet_list_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -84,6 +86,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     const SizedBox(height: 24),
                     _buildActionButtons(context, l),
                     const SizedBox(height: 24),
+                    _buildRecentTx(wallet, l),
+                    const SizedBox(height: 24),
                     _buildInfoCards(l),
                     const SizedBox(height: 24),
                     _buildQuickLinks(l),
@@ -100,32 +104,45 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildHeader(WalletProvider wallet, LocaleProvider l) {
     return Row(
       children: [
-        // Avatar with glow
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(color: AppTheme.primary.withValues(alpha: 0.3), blurRadius: 12),
-            ],
-          ),
-          child: ClipOval(
-            child: Image.asset('assets/images/logowallet.png', fit: BoxFit.cover),
+        // Avatar with glow — tap to open wallet list
+        GestureDetector(
+          onTap: () => WalletListSheet.show(context),
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: AppTheme.primary.withValues(alpha: 0.3), blurRadius: 12),
+              ],
+            ),
+            child: ClipOval(
+              child: Image.asset('assets/images/logowallet.png', fit: BoxFit.cover),
+            ),
           ),
         ),
         const SizedBox(width: 12),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Text('TPIX Wallet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
-                if (_appVersion.isNotEmpty) ...[
-                  const SizedBox(width: 6),
-                  Text('v$_appVersion', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+            GestureDetector(
+              onTap: () => WalletListSheet.show(context),
+              child: Row(
+                children: [
+                  Text(
+                    wallet.activeWallet?.name ?? 'TPIX Wallet',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
+                  if (wallet.walletCount > 1) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.expand_more, size: 18, color: AppTheme.textMuted),
+                  ],
+                  if (_appVersion.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text('v$_appVersion', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  ],
                 ],
-              ],
+              ),
             ),
             GestureDetector(
               onTap: () {
@@ -273,11 +290,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         )),
         const SizedBox(width: 12),
         Expanded(child: _buildActionBtn(
-          icon: Icons.swap_horiz_rounded,
-          label: l.t('home.swap'),
-          sublabel: l.t('home.swapSub'),
+          icon: Icons.receipt_long_rounded,
+          label: l.t('home.history'),
+          sublabel: l.t('home.historySub'),
           color: AppTheme.accent,
-          onTap: () {}, // TODO: Swap screen
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TxHistoryScreen())),
         )),
       ],
     );
@@ -319,6 +336,67 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Recent transactions preview (last 3)
+  Widget _buildRecentTx(WalletProvider wallet, LocaleProvider l) {
+    if (wallet.txHistory.isEmpty) return const SizedBox.shrink();
+
+    final recent = wallet.txHistory.take(3).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: glassCard(borderRadius: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(l.t('home.recentTx'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TxHistoryScreen())),
+                child: Text(l.t('home.viewAll'), style: const TextStyle(fontSize: 12, color: AppTheme.primary)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...recent.map((tx) {
+            final isSent = tx.direction == 'sent';
+            final color = isSent ? AppTheme.danger : AppTheme.success;
+            final icon = isSent ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+            final sign = isSent ? '-' : '+';
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color.withValues(alpha: 0.12),
+                    ),
+                    child: Icon(icon, color: color, size: 16),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      isSent ? tx.shortTo : tx.shortFrom,
+                      style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, fontFamily: 'monospace'),
+                    ),
+                  ),
+                  Text(
+                    '$sign${tx.valueInTPIX.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }

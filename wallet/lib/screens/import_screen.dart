@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../widgets/qr_scanner_screen.dart';
 import 'pin_screen.dart';
 
 class ImportScreen extends StatefulWidget {
@@ -21,7 +21,8 @@ class _ImportScreenState extends State<ImportScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => _QRScannerScreen(
+        builder: (_) => QRScannerScreen(
+          titleKey: 'import.scanQR',
           onScanned: (value) {
             _controller.text = value;
             Navigator.pop(context);
@@ -193,90 +194,6 @@ class _ImportScreenState extends State<ImportScreen> {
             color: active ? AppTheme.primary : AppTheme.textMuted,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _QRScannerScreen extends StatefulWidget {
-  final ValueChanged<String> onScanned;
-
-  const _QRScannerScreen({required this.onScanned});
-
-  @override
-  State<_QRScannerScreen> createState() => _QRScannerScreenState();
-}
-
-class _QRScannerScreenState extends State<_QRScannerScreen> {
-  final MobileScannerController _scannerController = MobileScannerController();
-  bool _hasScanned = false;
-
-  @override
-  void dispose() {
-    _scannerController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Builder(
-          builder: (context) {
-            final l = context.watch<LocaleProvider>();
-            return Text(l.t('import.scanQR'), style: const TextStyle(color: Colors.white, fontSize: 18));
-          },
-        ),
-        centerTitle: true,
-      ),
-      body: Stack(
-        children: [
-          MobileScanner(
-            controller: _scannerController,
-            onDetect: (capture) {
-              if (_hasScanned) return;
-              final barcode = capture.barcodes.firstOrNull;
-              if (barcode?.rawValue != null) {
-                _hasScanned = true;
-                widget.onScanned(barcode!.rawValue!);
-              }
-            },
-          ),
-          // Scan overlay
-          Center(
-            child: Container(
-              width: 260,
-              height: 260,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: AppTheme.primary, width: 2),
-              ),
-            ),
-          ),
-          // Hint text
-          Positioned(
-            bottom: 80,
-            left: 0,
-            right: 0,
-            child: Builder(
-              builder: (context) {
-                final l = context.watch<LocaleProvider>();
-                return Text(
-                  l.t('import.scanHint'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
-                );
-              },
-            ),
-          ),
-        ],
       ),
     );
   }

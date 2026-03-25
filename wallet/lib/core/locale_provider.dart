@@ -46,6 +46,8 @@ class LocaleProvider extends ChangeNotifier {
       'home.sendSub': 'Send',
       'home.receive': 'รับ',
       'home.receiveSub': 'Receive',
+      'home.history': 'ประวัติ',
+      'home.historySub': 'History',
       'home.swap': 'แลก',
       'home.swapSub': 'Swap',
       'home.blockTime': 'Block Time',
@@ -56,6 +58,8 @@ class LocaleProvider extends ChangeNotifier {
       'home.links': 'ลิงก์',
       'home.settings': 'ตั้งค่า',
       'home.language': 'ภาษา',
+      'home.recentTx': 'ธุรกรรมล่าสุด',
+      'home.viewAll': 'ดูทั้งหมด',
 
       // Import
       'import.title': 'นำเข้ากระเป๋า',
@@ -81,6 +85,8 @@ class LocaleProvider extends ChangeNotifier {
       'send.success': 'ส่งสำเร็จ!',
       'send.confirmed': 'Transaction Confirmed',
       'send.goBack': 'กลับหน้าหลัก',
+      'send.scanQR': 'สแกน QR Code',
+      'send.scanHint': 'วาง QR Code ที่อยู่ผู้รับในกรอบ',
 
       // Receive
       'receive.title': 'รับ TPIX',
@@ -105,6 +111,36 @@ class LocaleProvider extends ChangeNotifier {
       'pin.unlock': 'ใส่ PIN เพื่อเข้าใช้',
       'pin.unlockSub': 'Enter your PIN to unlock',
       'pin.wrong': 'PIN ไม่ถูกต้อง',
+
+      // Transaction History
+      'tx.title': 'ประวัติธุรกรรม',
+      'tx.subtitle': 'Transaction History',
+      'tx.empty': 'ยังไม่มีธุรกรรม',
+      'tx.emptyHint': 'ส่งหรือรับ TPIX เพื่อเริ่มบันทึก',
+      'tx.scan': 'สแกนบล็อกเชน',
+      'tx.scanning': 'กำลังสแกน...',
+      'tx.detail': 'รายละเอียดธุรกรรม',
+      'tx.hash': 'TX Hash',
+      'tx.from': 'จาก',
+      'tx.to': 'ถึง',
+      'tx.amount': 'จำนวน',
+      'tx.status': 'สถานะ',
+      'tx.block': 'บล็อก',
+      'tx.copyHash': 'คัดลอก TX Hash',
+      'tx.hashCopied': 'คัดลอก TX Hash แล้ว!',
+
+      // Wallet Management
+      'wallets.title': 'กระเป๋าเงิน',
+      'wallets.active': 'ใช้งาน',
+      'wallets.switch': 'สลับ',
+      'wallets.rename': 'เปลี่ยนชื่อ',
+      'wallets.delete': 'ลบ',
+      'wallets.newName': 'ชื่อใหม่',
+      'wallets.cancel': 'ยกเลิก',
+      'wallets.save': 'บันทึก',
+      'wallets.created': 'สร้างกระเป๋าใหม่แล้ว!',
+      'wallets.deleteConfirm': 'ลบกระเป๋า?',
+      'wallets.deleteMsg': 'กระเป๋านี้จะถูกลบถาวร กรุณาสำรองก่อนลบ',
     },
     'en': {
       // Splash
@@ -124,6 +160,8 @@ class LocaleProvider extends ChangeNotifier {
       'home.sendSub': 'Transfer',
       'home.receive': 'Receive',
       'home.receiveSub': 'Deposit',
+      'home.history': 'History',
+      'home.historySub': 'Records',
       'home.swap': 'Swap',
       'home.swapSub': 'Exchange',
       'home.blockTime': 'Block Time',
@@ -134,6 +172,8 @@ class LocaleProvider extends ChangeNotifier {
       'home.links': 'Links',
       'home.settings': 'Settings',
       'home.language': 'Language',
+      'home.recentTx': 'Recent Transactions',
+      'home.viewAll': 'View All',
 
       // Import
       'import.title': 'Import Wallet',
@@ -159,6 +199,8 @@ class LocaleProvider extends ChangeNotifier {
       'send.success': 'Sent Successfully!',
       'send.confirmed': 'Transaction Confirmed',
       'send.goBack': 'Back to Home',
+      'send.scanQR': 'Scan QR Code',
+      'send.scanHint': 'Place recipient QR Code in frame',
 
       // Receive
       'receive.title': 'Receive TPIX',
@@ -183,6 +225,36 @@ class LocaleProvider extends ChangeNotifier {
       'pin.unlock': 'Enter PIN to Unlock',
       'pin.unlockSub': 'Authenticate to continue',
       'pin.wrong': 'Incorrect PIN',
+
+      // Transaction History
+      'tx.title': 'Transaction History',
+      'tx.subtitle': 'All transactions',
+      'tx.empty': 'No transactions yet',
+      'tx.emptyHint': 'Send or receive TPIX to start recording',
+      'tx.scan': 'Scan Blockchain',
+      'tx.scanning': 'Scanning...',
+      'tx.detail': 'Transaction Detail',
+      'tx.hash': 'TX Hash',
+      'tx.from': 'From',
+      'tx.to': 'To',
+      'tx.amount': 'Amount',
+      'tx.status': 'Status',
+      'tx.block': 'Block',
+      'tx.copyHash': 'Copy TX Hash',
+      'tx.hashCopied': 'TX Hash copied!',
+
+      // Wallet Management
+      'wallets.title': 'Wallets',
+      'wallets.active': 'Active',
+      'wallets.switch': 'Switch',
+      'wallets.rename': 'Rename',
+      'wallets.delete': 'Delete',
+      'wallets.newName': 'New name',
+      'wallets.cancel': 'Cancel',
+      'wallets.save': 'Save',
+      'wallets.created': 'New wallet created!',
+      'wallets.deleteConfirm': 'Delete wallet?',
+      'wallets.deleteMsg': 'This wallet will be permanently removed. Please backup first.',
     },
   };
 }
