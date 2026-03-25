@@ -1594,6 +1594,245 @@ body {
     box-shadow: 0 0 30px rgba(6, 182, 212, 0.15);
 }
 
+/* ─── QR Scanner ──────────────────────────────── */
+.input-with-scan {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+.input-with-scan .input-field {
+    flex: 1;
+}
+.btn-scan {
+    background: rgba(6, 182, 212, 0.1);
+    border: 1px solid var(--border);
+    color: var(--cyan);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 18px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+.btn-scan:hover {
+    background: rgba(6, 182, 212, 0.2);
+    border-color: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan-glow);
+}
+.qr-scanner-overlay {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+.qr-scanner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-weight: 600;
+    color: var(--cyan);
+}
+.qr-scanner-video-container {
+    position: relative;
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 4/3;
+}
+.qr-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.qr-scanner-crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 180px;
+    height: 180px;
+    border: 2px solid var(--cyan);
+    border-radius: 12px;
+    box-shadow: 0 0 20px var(--cyan-glow), inset 0 0 20px rgba(6, 182, 212, 0.05);
+    animation: scanPulse 2s ease-in-out infinite;
+}
+@keyframes scanPulse {
+    0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); }
+}
+.qr-scanner-hint {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+/* ─── Living Identity ────────────────────────────── */
+.identity-section {
+    border-left: 3px solid var(--neon-purple);
+}
+.identity-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+.identity-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: rgba(168, 85, 247, 0.04);
+    border: 1px solid rgba(168, 85, 247, 0.15);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.identity-card:hover {
+    background: rgba(168, 85, 247, 0.08);
+    border-color: rgba(168, 85, 247, 0.3);
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.1);
+}
+.identity-card-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+.identity-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.identity-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.identity-card-info .text-green {
+    font-size: 11px;
+}
+.identity-card-info .text-muted {
+    font-size: 11px;
+}
+.identity-level {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+.identity-level.level-0 {
+    color: var(--text-muted);
+    background: rgba(100, 116, 139, 0.1);
+}
+.identity-level.level-1 {
+    color: var(--yellow);
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+.identity-level.level-2 {
+    color: var(--cyan);
+    background: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+}
+.identity-level.level-3 {
+    color: var(--green);
+    background: rgba(0, 230, 118, 0.1);
+    border: 1px solid rgba(0, 230, 118, 0.2);
+    box-shadow: 0 0 10px rgba(0, 230, 118, 0.1);
+}
+
+/* Security Questions Form */
+.question-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+.question-number {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(168, 85, 247, 0.1);
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--purple);
+    margin-top: 4px;
+}
+.question-fields {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.question-fields .input-field {
+    font-size: 13px;
+    padding: 8px 12px;
+}
+.input-pin {
+    letter-spacing: 8px;
+    font-size: 24px !important;
+    text-align: center;
+    font-family: 'Courier New', monospace;
+    max-width: 200px;
+}
+.modal-wide {
+    max-width: 560px !important;
+}
+
+/* Mnemonic Grid */
+.mnemonic-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 16px 0;
+}
+.mnemonic-word {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: rgba(6, 182, 212, 0.06);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: var(--radius-sm);
+    font-family: 'Courier New', monospace;
+}
+.mnemonic-idx {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 700;
+    min-width: 16px;
+}
+.mnemonic-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--cyan);
+}
+.mnemonic-hidden {
+    text-align: center;
+    padding: 30px;
+    color: var(--text-muted);
+    font-size: 14px;
+    background: rgba(100, 116, 139, 0.05);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    margin: 16px 0;
+}
+.input-textarea {
+    resize: vertical;
+    min-height: 60px;
+    font-family: 'Courier New', monospace;
+}
+
 /* ─── Responsive ───────────────────────────────── */
 @media (max-width: 800px) {
     .sidebar { width: 56px; }
@@ -1607,4 +1846,8 @@ body {
     .wallet-list-info { flex-wrap: wrap; }
     .wallet-list-addr { display: none; }
     .page-title-row { flex-wrap: wrap; }
+    .identity-cards { grid-template-columns: 1fr; }
+    .mnemonic-grid { grid-template-columns: repeat(3, 1fr); }
+    .question-row { flex-direction: column; }
+    .question-number { margin-top: 0; }
 }

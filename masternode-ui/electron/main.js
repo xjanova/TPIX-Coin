@@ -4,12 +4,13 @@
  * Developed by Xman Studio
  */
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell, session } = require('electron');
 const path = require('path');
 const TpixDatabase = require('./database');
 const NodeManager = require('./node-manager');
 const WalletManager = require('./wallet-manager');
 const TransactionManager = require('./transaction-manager');
+const IdentityManager = require('./identity-manager');
 const AppUpdater = require('./auto-updater');
 
 let mainWindow = null;
@@ -18,6 +19,7 @@ let db = null;
 let nodeManager = null;
 let walletManager = null;
 let txManager = null;
+let identityManager = null;
 let appUpdater = null;
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -46,6 +48,15 @@ function createWindow() {
     });
 
     mainWindow.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
+
+    // Grant camera permission for QR scanning
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        if (permission === 'media') {
+            callback(true);
+        } else {
+            callback(false);
+        }
+    });
 
     if (isDev) {
         mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -103,6 +114,7 @@ function setupIPC() {
     nodeManager = new NodeManager();
     walletManager = new WalletManager(db);
     txManager = new TransactionManager(db);
+    identityManager = new IdentityManager(db);
 
     // ═══════════════════════════════════════════════════════════
     //  WALLET — Multi-wallet (up to 128)
@@ -285,6 +297,81 @@ function setupIPC() {
             const total = db.getTotalRewards(walletId);
             return { rewards, total };
         } catch { return { rewards: [], total: 0 }; }
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    //  HD WALLET (BIP-39)
+    // ═══════════════════════════════════════════════════════════
+
+    ipcMain.handle('wallet:hasHDSeed', () => {
+        return walletManager.hasHDSeed();
+    });
+
+    ipcMain.handle('wallet:getMnemonic', (_, password) => {
+        try {
+            if (typeof password !== 'string') password = '';
+            const mnemonic = walletManager.getMnemonic(password);
+            return { success: true, mnemonic };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('wallet:recoverFromMnemonic', async (_, mnemonic, password) => {
+        try {
+            if (typeof password !== 'string') password = '';
+            const result = await walletManager.recoverFromMnemonic(mnemonic, password);
+            return { success: true, data: result };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    //  LIVING IDENTITY
+    // ═══════════════════════════════════════════════════════════
+
+    ipcMain.handle('identity:getStatus', (_, walletId) => {
+        try {
+            if (!walletId) {
+                const active = walletManager.getActiveWallet();
+                walletId = active ? active.id : null;
+            }
+            if (!walletId) return null;
+            return identityManager.getIdentityStatus(walletId);
+        } catch { return null; }
+    });
+
+    ipcMain.handle('identity:setSecurityQuestions', (_, walletId, questions) => {
+        try {
+            identityManager.setSecurityQuestions(walletId, questions);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('identity:getSecurityQuestions', (_, walletId) => {
+        try {
+            return identityManager.getSecurityQuestions(walletId);
+        } catch { return []; }
+    });
+
+    ipcMain.handle('identity:setRecoveryKey', (_, walletId, key, hint) => {
+        try {
+            identityManager.setRecoveryKey(walletId, key, hint);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('identity:verifyRecovery', (_, walletId, data) => {
+        try {
+            return identityManager.attemptRecovery(walletId, data);
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
     });
 
     // ═══════════════════════════════════════════════════════════

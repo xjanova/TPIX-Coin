@@ -59,11 +59,16 @@ contextBridge.exposeInMainWorld('tpix', {
         onProgress: (cb) => onEvent('update:progress', cb),
     },
 
-    // Wallet — multi-wallet (up to 128)
+    // Wallet — multi-wallet (up to 128) with HD support
     wallet: {
         // Create / Import
         create: (password, name) => ipcRenderer.invoke('wallet:create', password, name),
         import: (privateKey, password, name) => ipcRenderer.invoke('wallet:import', privateKey, password, name),
+
+        // HD Wallet
+        hasHDSeed: () => ipcRenderer.invoke('wallet:hasHDSeed'),
+        getMnemonic: (password) => ipcRenderer.invoke('wallet:getMnemonic', password),
+        recoverFromMnemonic: (mnemonic, password) => ipcRenderer.invoke('wallet:recoverFromMnemonic', mnemonic, password),
 
         // Multi-wallet management
         listWallets: () => ipcRenderer.invoke('wallet:listWallets'),
@@ -92,6 +97,15 @@ contextBridge.exposeInMainWorld('tpix', {
 
         // Rewards
         getRewards: (walletId) => ipcRenderer.invoke('wallet:getRewards', walletId),
+    },
+
+    // Living Identity
+    identity: {
+        getStatus: (walletId) => ipcRenderer.invoke('identity:getStatus', walletId),
+        setSecurityQuestions: (walletId, questions) => ipcRenderer.invoke('identity:setSecurityQuestions', walletId, questions),
+        getSecurityQuestions: (walletId) => ipcRenderer.invoke('identity:getSecurityQuestions', walletId),
+        setRecoveryKey: (walletId, key, hint) => ipcRenderer.invoke('identity:setRecoveryKey', walletId, key, hint),
+        verifyRecovery: (walletId, data) => ipcRenderer.invoke('identity:verifyRecovery', walletId, data),
     },
 
     // Database settings

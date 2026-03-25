@@ -182,6 +182,50 @@ const LANG = {
             amount: 'Amount',
             date: 'Date',
         },
+        identity: {
+            title: 'Living Identity',
+            securityLevel: 'Security Level',
+            setupQuestions: 'Set Security Questions',
+            setupRecoveryKey: 'Set Recovery Key',
+            questionsSet: 'Security Questions Set',
+            recoveryKeySet: 'Recovery Key Set',
+            question: 'Question',
+            answer: 'Answer',
+            questionPlaceholder: 'Enter your personal question...',
+            answerPlaceholder: 'Enter your answer...',
+            saveQuestions: 'Save Security Questions',
+            recoveryKeyLabel: 'Recovery PIN (6 digits)',
+            recoveryHint: 'Hint (optional)',
+            saveRecoveryKey: 'Save Recovery Key',
+            mnemonicTitle: 'Recovery Seed Phrase',
+            mnemonicDesc: 'Write down these 12 words in order. This is the ONLY way to recover ALL your HD wallets.',
+            mnemonicWarning: 'Never share your seed phrase! Anyone with these words can steal all your wallets.',
+            showMnemonic: 'Show Seed Phrase',
+            hideMnemonic: 'Hide Seed Phrase',
+            recoverWallet: 'Recover from Seed',
+            recoverDesc: 'Enter your 12-word seed phrase to recover all HD wallets',
+            recoverBtn: 'Recover Wallets',
+            recovering: 'Recovering...',
+            recovered: 'wallets recovered!',
+            none: 'None',
+            basic: 'Basic',
+            standard: 'Standard',
+            strong: 'Strong',
+            viewSeed: 'View Seed Phrase',
+            levels: {
+                0: 'No identity protection',
+                1: 'Basic protection',
+                2: 'Standard protection',
+                3: 'Strong protection',
+            },
+        },
+        qrScanner: {
+            scanTitle: 'Scan QR Code',
+            scanning: 'Point camera at QR code...',
+            noCamera: 'Camera access denied or not available',
+            scanBtn: 'Scan QR',
+            stopScan: 'Stop',
+        },
         status: { stopped: 'Stopped', starting: 'Starting...', running: 'Running', syncing: 'Syncing', error: 'Error' },
     },
     th: {
@@ -357,6 +401,50 @@ const LANG = {
             amount: 'จำนวน',
             date: 'วันที่',
         },
+        identity: {
+            title: 'ตัวตนมีชีวิต',
+            securityLevel: 'ระดับความปลอดภัย',
+            setupQuestions: 'ตั้งคำถามกันลืม',
+            setupRecoveryKey: 'ตั้งรหัสกู้คืน',
+            questionsSet: 'ตั้งคำถามกันลืมแล้ว',
+            recoveryKeySet: 'ตั้งรหัสกู้คืนแล้ว',
+            question: 'คำถาม',
+            answer: 'คำตอบ',
+            questionPlaceholder: 'ตั้งคำถามส่วนตัวของคุณ...',
+            answerPlaceholder: 'ใส่คำตอบ...',
+            saveQuestions: 'บันทึกคำถามกันลืม',
+            recoveryKeyLabel: 'PIN กู้คืน (6 หลัก)',
+            recoveryHint: 'คำใบ้ (ไม่บังคับ)',
+            saveRecoveryKey: 'บันทึกรหัสกู้คืน',
+            mnemonicTitle: 'คำลับกู้คืน (Seed Phrase)',
+            mnemonicDesc: 'จดคำ 12 คำนี้ตามลำดับ นี่คือวิธีเดียวในการกู้คืนกระเป๋า HD ทั้งหมด',
+            mnemonicWarning: 'ห้ามแชร์ seed phrase! ใครมีคำเหล่านี้สามารถขโมยกระเป๋าทั้งหมดได้',
+            showMnemonic: 'แสดง Seed Phrase',
+            hideMnemonic: 'ซ่อน Seed Phrase',
+            recoverWallet: 'กู้คืนจาก Seed',
+            recoverDesc: 'ใส่ seed phrase 12 คำเพื่อกู้คืนกระเป๋า HD ทั้งหมด',
+            recoverBtn: 'กู้คืนกระเป๋า',
+            recovering: 'กำลังกู้คืน...',
+            recovered: 'กระเป๋าที่กู้คืนได้!',
+            none: 'ไม่มี',
+            basic: 'พื้นฐาน',
+            standard: 'มาตรฐาน',
+            strong: 'แข็งแกร่ง',
+            viewSeed: 'ดู Seed Phrase',
+            levels: {
+                0: 'ยังไม่มีการป้องกันตัวตน',
+                1: 'การป้องกันพื้นฐาน',
+                2: 'การป้องกันมาตรฐาน',
+                3: 'การป้องกันแข็งแกร่ง',
+            },
+        },
+        qrScanner: {
+            scanTitle: 'สแกน QR Code',
+            scanning: 'ชี้กล้องไปที่ QR code...',
+            noCamera: 'ไม่สามารถเข้าถึงกล้องได้',
+            scanBtn: 'สแกน QR',
+            stopScan: 'หยุด',
+        },
         status: { stopped: 'หยุด', starting: 'กำลังเริ่ม...', running: 'ทำงาน', syncing: 'กำลังซิงค์', error: 'ข้อผิดพลาด' },
     },
 };
@@ -503,6 +591,35 @@ const app = createApp({
         const walletNameEdit = ref(null);
         const walletNameInput = ref('');
 
+        // ─── QR Scanner State ──────────────────
+        const showQRScanner = ref(false);
+        const qrScanError = ref('');
+        let qrVideoStream = null;
+        let qrScanInterval = null;
+
+        // ─── Identity State ────────────────────
+        const identityStatus = ref(null);
+        const showIdentitySetup = ref(false);
+        const showSecurityQuestions = ref(false);
+        const showRecoveryKeySetup = ref(false);
+        const showMnemonicModal = ref(false);
+        const showRecoverModal = ref(false);
+        const showMnemonic = ref(false);
+        const mnemonicWords = ref('');
+        const recoverMnemonicInput = ref('');
+        const recoverPassword = ref('');
+        const recoverResult = ref(null);
+        const recoverLoading = ref(false);
+        const securityQuestionsForm = ref([
+            { question: '', answer: '' },
+            { question: '', answer: '' },
+            { question: '', answer: '' },
+            { question: '', answer: '' },
+            { question: '', answer: '' },
+        ]);
+        const recoveryKeyForm = reactive({ pin: '', hint: '' });
+        const identitySaving = ref(false);
+
         // ─── Update State ─────────────────────────
         const updateStatus = ref({
             checking: false, updateAvailable: false, updateDownloaded: false,
@@ -553,6 +670,7 @@ const app = createApp({
                     await refreshBalance();
                 }
                 await loadWallets();
+                await loadIdentityStatus();
             } catch {}
         }
         async function createWallet() {
@@ -561,10 +679,15 @@ const app = createApp({
                 const result = await window.tpix.wallet.create();
                 if (result.success) {
                     newWalletData.value = result.data;
+                    if (result.data.mnemonic) {
+                        mnemonicWords.value = result.data.mnemonic;
+                        showMnemonicModal.value = true;
+                    }
                     walletAddress.value = result.data.address;
                     config.walletAddress = result.data.address;
                     saveSettings();
                     await loadWallets();
+                    await loadIdentityStatus();
                 }
             } finally { walletLoading.value = false; }
         }
@@ -744,6 +867,172 @@ const app = createApp({
             } catch {}
         }
 
+        // ─── QR Scanner ───────────────────────
+        async function startQRScan() {
+            showQRScanner.value = true;
+            qrScanError.value = '';
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+                });
+                qrVideoStream = stream;
+
+                // Wait for video element to be in DOM
+                await new Promise(r => setTimeout(r, 100));
+                const video = document.getElementById('qr-video');
+                if (!video) { stopQRScan(); return; }
+
+                video.srcObject = stream;
+                await video.play();
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+                qrScanInterval = setInterval(() => {
+                    if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+                    if (typeof jsQR !== 'undefined') {
+                        const code = jsQR(imageData.data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' });
+                        if (code && code.data) {
+                            handleQRResult(code.data);
+                            stopQRScan();
+                        }
+                    }
+                }, 200);
+            } catch (err) {
+                qrScanError.value = i18n.value.qrScanner.noCamera;
+                console.error('[QR] Camera error:', err);
+            }
+        }
+
+        function stopQRScan() {
+            if (qrScanInterval) { clearInterval(qrScanInterval); qrScanInterval = null; }
+            if (qrVideoStream) {
+                qrVideoStream.getTracks().forEach(t => t.stop());
+                qrVideoStream = null;
+            }
+            showQRScanner.value = false;
+        }
+
+        function handleQRResult(data) {
+            // Parse ethereum: URI or plain address
+            // Format: ethereum:0x1234...@4289 or just 0x1234...
+            let address = data;
+            if (data.startsWith('ethereum:')) {
+                address = data.replace('ethereum:', '').split('@')[0].split('?')[0].split('/')[0];
+            }
+            if (/^0x[0-9a-fA-F]{40}$/.test(address)) {
+                sendForm.toAddress = address;
+                estimateGasFee();
+            }
+        }
+
+        // ─── Identity (Living Wallet) ─────────
+        async function loadIdentityStatus() {
+            try {
+                const walletId = activeWallet.value ? activeWallet.value.id : undefined;
+                const status = await window.tpix.identity.getStatus(walletId);
+                if (status) identityStatus.value = status;
+            } catch {}
+        }
+
+        async function saveSecurityQuestions() {
+            const walletId = activeWallet.value?.id;
+            if (!walletId) return;
+
+            const valid = securityQuestionsForm.value.filter(q => q.question.trim() && q.answer.trim());
+            if (valid.length < 3) {
+                alert(lang.value === 'th' ? 'ต้องตั้งคำถามอย่างน้อย 3 ข้อ' : 'At least 3 questions required');
+                return;
+            }
+
+            identitySaving.value = true;
+            try {
+                const result = await window.tpix.identity.setSecurityQuestions(walletId, valid);
+                if (result.success) {
+                    showSecurityQuestions.value = false;
+                    await loadIdentityStatus();
+                } else {
+                    alert(result.error || 'Failed');
+                }
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                identitySaving.value = false;
+            }
+        }
+
+        async function saveRecoveryKey() {
+            const walletId = activeWallet.value?.id;
+            if (!walletId) return;
+
+            if (!/^\d{6}$/.test(recoveryKeyForm.pin)) {
+                alert(lang.value === 'th' ? 'PIN ต้องเป็นตัวเลข 6 หลัก' : 'PIN must be 6 digits');
+                return;
+            }
+
+            identitySaving.value = true;
+            try {
+                const result = await window.tpix.identity.setRecoveryKey(walletId, recoveryKeyForm.pin, recoveryKeyForm.hint);
+                if (result.success) {
+                    showRecoveryKeySetup.value = false;
+                    recoveryKeyForm.pin = '';
+                    recoveryKeyForm.hint = '';
+                    await loadIdentityStatus();
+                } else {
+                    alert(result.error || 'Failed');
+                }
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                identitySaving.value = false;
+            }
+        }
+
+        async function viewMnemonic() {
+            const password = prompt(lang.value === 'th' ? 'ใส่รหัสผ่านเพื่อดู Seed Phrase' : 'Enter password to view Seed Phrase');
+            if (password === null) return;
+            try {
+                const result = await window.tpix.wallet.getMnemonic(password);
+                if (result.success && result.mnemonic) {
+                    mnemonicWords.value = result.mnemonic;
+                    showMnemonicModal.value = true;
+                } else {
+                    alert(result.error || 'Wrong password');
+                }
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function recoverFromSeed() {
+            if (!recoverMnemonicInput.value.trim()) return;
+            recoverLoading.value = true;
+            recoverResult.value = null;
+            try {
+                const result = await window.tpix.wallet.recoverFromMnemonic(
+                    recoverMnemonicInput.value.trim(),
+                    recoverPassword.value
+                );
+                if (result.success) {
+                    recoverResult.value = result.data;
+                    await loadWallets();
+                    await refreshBalance();
+                } else {
+                    alert(result.error || 'Recovery failed');
+                }
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                recoverLoading.value = false;
+            }
+        }
+
         // ─── Format Helpers ──────────────────────
         function formatTpix(weiString) {
             if (!weiString) return '0';
@@ -855,6 +1144,15 @@ const app = createApp({
             sendForm, gasEstimate, qrCodeData,
             transactions, txPage, txTotal,
             rewards, walletNameEdit, walletNameInput,
+            // QR Scanner
+            showQRScanner, qrScanError, startQRScan, stopQRScan,
+            // Identity
+            identityStatus, showIdentitySetup, showSecurityQuestions, showRecoveryKeySetup,
+            showMnemonicModal, showRecoverModal, showMnemonic, mnemonicWords,
+            recoverMnemonicInput, recoverPassword, recoverResult, recoverLoading,
+            securityQuestionsForm, recoveryKeyForm, identitySaving,
+            loadIdentityStatus, saveSecurityQuestions, saveRecoveryKey,
+            viewMnemonic, recoverFromSeed,
             // Actions
             startNode, stopNode, launchNode, refreshNetwork, refreshMetrics,
             loadWallet, createWallet, importWallet, refreshBalance, showExportKey,

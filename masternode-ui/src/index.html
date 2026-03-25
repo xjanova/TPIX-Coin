@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TPIX Master Node</title>
     <script src="vue.global.prod.js"></script>
+    <script src="jsQR.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -262,6 +263,7 @@
                         <div class="setup-actions">
                             <button @click="addNewWallet" class="btn btn-primary btn-lg" :disabled="walletLoading">&#10010; {{ i18n.wallet.create }}</button>
                             <button @click="showImportModal = true" class="btn btn-ghost btn-lg">&#128229; {{ i18n.wallet.import }}</button>
+                            <button @click="showRecoverModal = true" class="btn btn-ghost btn-lg">&#127793; {{ i18n.identity.recoverWallet }}</button>
                         </div>
                         <div v-if="newWalletData" class="wallet-result mt-4">
                             <div class="alert alert-warning">
@@ -347,6 +349,47 @@
                             </div>
                         </div>
 
+                        <!-- Living Identity -->
+                        <div class="section-card mt-4 identity-section">
+                            <div class="section-header">
+                                <h3 class="section-title">&#128737; {{ i18n.identity.title }}</h3>
+                                <span v-if="identityStatus" :class="['identity-level', 'level-' + identityStatus.securityLevel]">
+                                    {{ i18n.identity.levels[identityStatus.securityLevel] || i18n.identity.none }}
+                                </span>
+                            </div>
+
+                            <div class="identity-cards">
+                                <!-- Security Questions Card -->
+                                <div class="identity-card" @click="showSecurityQuestions = true">
+                                    <div class="identity-card-icon">&#128270;</div>
+                                    <div class="identity-card-info">
+                                        <span class="identity-card-title">{{ i18n.identity.setupQuestions }}</span>
+                                        <span v-if="identityStatus?.hasQuestions" class="text-green">&#10003; {{ i18n.identity.questionsSet }} ({{ identityStatus.questionCount }})</span>
+                                        <span v-else class="text-muted">{{ i18n.identity.none }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Recovery Key Card -->
+                                <div class="identity-card" @click="showRecoveryKeySetup = true">
+                                    <div class="identity-card-icon">&#128273;</div>
+                                    <div class="identity-card-info">
+                                        <span class="identity-card-title">{{ i18n.identity.setupRecoveryKey }}</span>
+                                        <span v-if="identityStatus?.hasRecKey" class="text-green">&#10003; {{ i18n.identity.recoveryKeySet }}</span>
+                                        <span v-else class="text-muted">{{ i18n.identity.none }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Seed Phrase Card -->
+                                <div class="identity-card" @click="viewMnemonic">
+                                    <div class="identity-card-icon">&#127793;</div>
+                                    <div class="identity-card-info">
+                                        <span class="identity-card-title">{{ i18n.identity.viewSeed }}</span>
+                                        <span class="text-muted">HD Wallet (BIP-39)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Transaction History -->
                         <div class="section-card mt-4">
                             <div class="section-header">
@@ -400,9 +443,25 @@
                         <div class="modal-content">
                             <h3>&#11014; {{ i18n.send.title }}</h3>
                             <div v-if="!sendForm.txHash">
+                                <!-- QR Scanner -->
+                                <div v-if="showQRScanner" class="qr-scanner-overlay">
+                                    <div class="qr-scanner-header">
+                                        <span>{{ i18n.qrScanner.scanTitle }}</span>
+                                        <button @click="stopQRScan" class="btn btn-ghost btn-sm">&times; {{ i18n.qrScanner.stopScan }}</button>
+                                    </div>
+                                    <div class="qr-scanner-video-container">
+                                        <video id="qr-video" autoplay playsinline muted class="qr-video"></video>
+                                        <div class="qr-scanner-crosshair"></div>
+                                    </div>
+                                    <p class="qr-scanner-hint">{{ i18n.qrScanner.scanning }}</p>
+                                    <p v-if="qrScanError" class="text-red">{{ qrScanError }}</p>
+                                </div>
                                 <div class="form-group">
                                     <label>{{ i18n.send.recipient }}</label>
-                                    <input v-model="sendForm.toAddress" class="input-field" placeholder="0x..." @input="estimateGasFee">
+                                    <div class="input-with-scan">
+                                        <input v-model="sendForm.toAddress" class="input-field" placeholder="0x..." @input="estimateGasFee">
+                                        <button @click="startQRScan" class="btn-scan" type="button" :title="i18n.qrScanner.scanBtn">&#128247;</button>
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                     <label>{{ i18n.send.amount }} (TPIX)</label>
@@ -470,6 +529,107 @@
                                 <button @click="showImportModal = false" class="btn btn-ghost">{{ i18n.setup.back }}</button>
                             </div>
                             <div v-if="importError" class="text-red mt-2">{{ importError }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Security Questions Modal -->
+                    <div v-if="showSecurityQuestions" class="modal-overlay" @click.self="showSecurityQuestions = false">
+                        <div class="modal-content modal-wide">
+                            <h3>&#128270; {{ i18n.identity.setupQuestions }}</h3>
+                            <p class="modal-desc" v-if="lang === 'th'">ตั้งคำถามส่วนตัวที่มีแค่คุณเท่านั้นที่รู้คำตอบ (3-5 ข้อ)</p>
+                            <p class="modal-desc" v-else>Set personal questions that only you know the answer to (3-5 questions)</p>
+                            <div v-for="(q, idx) in securityQuestionsForm" :key="idx" class="question-row">
+                                <div class="question-number">#{{ idx + 1 }}</div>
+                                <div class="question-fields">
+                                    <input v-model="q.question" class="input-field" :placeholder="i18n.identity.questionPlaceholder">
+                                    <input v-model="q.answer" class="input-field" :placeholder="i18n.identity.answerPlaceholder" type="password">
+                                </div>
+                            </div>
+                            <div class="modal-actions">
+                                <button @click="saveSecurityQuestions" class="btn btn-primary" :disabled="identitySaving">
+                                    {{ identitySaving ? '...' : i18n.identity.saveQuestions }}
+                                </button>
+                                <button @click="showSecurityQuestions = false" class="btn btn-ghost">{{ i18n.send.close }}</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recovery Key Modal -->
+                    <div v-if="showRecoveryKeySetup" class="modal-overlay" @click.self="showRecoveryKeySetup = false">
+                        <div class="modal-content">
+                            <h3>&#128273; {{ i18n.identity.setupRecoveryKey }}</h3>
+                            <div class="form-group">
+                                <label>{{ i18n.identity.recoveryKeyLabel }}</label>
+                                <input v-model="recoveryKeyForm.pin" class="input-field input-pin" type="password" maxlength="6" placeholder="000000" inputmode="numeric">
+                            </div>
+                            <div class="form-group">
+                                <label>{{ i18n.identity.recoveryHint }}</label>
+                                <input v-model="recoveryKeyForm.hint" class="input-field" placeholder="e.g. birthday + phone...">
+                            </div>
+                            <div class="modal-actions">
+                                <button @click="saveRecoveryKey" class="btn btn-primary" :disabled="identitySaving">
+                                    {{ identitySaving ? '...' : i18n.identity.saveRecoveryKey }}
+                                </button>
+                                <button @click="showRecoveryKeySetup = false" class="btn btn-ghost">{{ i18n.send.close }}</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Mnemonic Display Modal -->
+                    <div v-if="showMnemonicModal" class="modal-overlay" @click.self="showMnemonicModal = false">
+                        <div class="modal-content modal-wide">
+                            <h3>&#127793; {{ i18n.identity.mnemonicTitle }}</h3>
+                            <div class="alert alert-warning">
+                                <span class="alert-icon">&#9888;</span>
+                                <div>
+                                    <div class="alert-title">{{ i18n.identity.mnemonicDesc }}</div>
+                                    <div class="alert-text">{{ i18n.identity.mnemonicWarning }}</div>
+                                </div>
+                            </div>
+                            <div class="mnemonic-grid" v-if="showMnemonic">
+                                <div v-for="(word, idx) in mnemonicWords.split(' ')" :key="idx" class="mnemonic-word">
+                                    <span class="mnemonic-idx">{{ idx + 1 }}</span>
+                                    <span class="mnemonic-text">{{ word }}</span>
+                                </div>
+                            </div>
+                            <div class="mnemonic-hidden" v-else>
+                                <p>&#128274; {{ i18n.identity.mnemonicDesc }}</p>
+                            </div>
+                            <div class="modal-actions mt-2">
+                                <button @click="showMnemonic = !showMnemonic" class="btn btn-ghost">
+                                    {{ showMnemonic ? i18n.identity.hideMnemonic : i18n.identity.showMnemonic }}
+                                </button>
+                                <button @click="copyToClipboard(mnemonicWords)" class="btn btn-ghost btn-sm" v-if="showMnemonic">{{ i18n.wallet.copy }}</button>
+                                <button @click="showMnemonicModal = false; showMnemonic = false; mnemonicWords = ''" class="btn btn-primary">{{ i18n.send.close }}</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recover from Seed Modal -->
+                    <div v-if="showRecoverModal" class="modal-overlay" @click.self="showRecoverModal = false">
+                        <div class="modal-content modal-wide">
+                            <h3>&#127793; {{ i18n.identity.recoverWallet }}</h3>
+                            <p class="modal-desc">{{ i18n.identity.recoverDesc }}</p>
+                            <div class="form-group">
+                                <label>Seed Phrase (12 words)</label>
+                                <textarea v-model="recoverMnemonicInput" class="input-field input-textarea" rows="3" placeholder="word1 word2 word3 ..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>{{ i18n.send.password }}</label>
+                                <input v-model="recoverPassword" type="password" class="input-field" placeholder="Password for encryption">
+                            </div>
+                            <div v-if="recoverResult" class="alert alert-success mt-2">
+                                <span class="alert-icon">&#10003;</span>
+                                <div>
+                                    <div class="alert-title">{{ recoverResult.recovered }} {{ i18n.identity.recovered }}</div>
+                                </div>
+                            </div>
+                            <div class="modal-actions">
+                                <button @click="recoverFromSeed" class="btn btn-primary" :disabled="recoverLoading || !recoverMnemonicInput.trim()">
+                                    {{ recoverLoading ? i18n.identity.recovering : i18n.identity.recoverBtn }}
+                                </button>
+                                <button @click="showRecoverModal = false" class="btn btn-ghost">{{ i18n.send.close }}</button>
+                            </div>
                         </div>
                     </div>
                 </div>

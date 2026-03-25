@@ -68,13 +68,14 @@
     "better-sqlite3": "^12.8.0",
     "electron-updater": "^6.8.3",
     "ethers": "^6.11.1",
+    "jsqr": "^1.4.0",
     "qrcode": "^1.5.4",
     "vue": "^3.5.30"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
     "cross-env": "^7.0.3",
     "electron": "^29.0.0",
-    "@electron/rebuild": "^3.7.1",
     "electron-builder": "^24.13.0"
   }
 }

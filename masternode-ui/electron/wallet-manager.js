@@ -1,7 +1,11 @@
 /**
- * TPIX Master Node — Multi-Wallet Manager
- * Supports up to 128 wallets with SQLite persistence.
+ * TPIX Master Node — Multi-Wallet Manager (HD + Living Identity)
+ * Supports up to 128 wallets with BIP-39 HD derivation + SQLite persistence.
  * Each wallet is encrypted with AES-256-GCM (password + machine ID + salt).
+ *
+ * HD Path: m/44'/4289'/0'/0/{index}
+ * Chain ID: 4289 (TPIX Chain)
+ *
  * Developed by Xman Studio
  */
 
@@ -14,6 +18,7 @@ const { rpcCall } = require('./rpc-client');
 const DATA_DIR = path.join(os.homedir(), '.tpix-node');
 const OLD_WALLET_FILE = path.join(DATA_DIR, 'wallet.json');
 const MAX_WALLETS = 128;
+const HD_PATH_PREFIX = "m/44'/4289'/0'/0/";
 
 class WalletManager {
     constructor(database) {
@@ -25,7 +30,7 @@ class WalletManager {
 
     _migrateOldWallet() {
         if (!fs.existsSync(OLD_WALLET_FILE)) return;
-        if (this.db.getWalletCount() > 0) return; // Already migrated
+        if (this.db.getWalletCount() > 0) return;
 
         try {
             const data = JSON.parse(fs.readFileSync(OLD_WALLET_FILE, 'utf-8'));
@@ -40,7 +45,6 @@ class WalletManager {
                     salt: data.salt,
                     isActive: true,
                 });
-                // Backup old file
                 fs.renameSync(OLD_WALLET_FILE, OLD_WALLET_FILE + '.bak');
                 console.log('[Wallet] Migrated wallet.json to SQLite (slot 1)');
             }
@@ -49,49 +53,224 @@ class WalletManager {
         }
     }
 
-    // ─── Create / Import ────────────────────────────────────────
+    // ─── HD Wallet (BIP-39 / BIP-44) ─────────────────────────
 
     /**
-     * Create a new wallet.
-     * @param {string} password
-     * @param {string} [name]
-     * @returns {{ id, slot, name, address, privateKey }}
+     * Initialize HD wallet with a new mnemonic seed.
+     * @param {string} password - Master password to encrypt the seed
+     * @returns {{ mnemonic: string, seedId: number }}
      */
-    create(password = '', name) {
+    initHDWallet(password = '') {
+        const existing = this.db.getDefaultSeed();
+        if (existing) {
+            throw new Error('HD wallet already initialized. Use createFromSeed() to add wallets.');
+        }
+
+        const { ethers } = require('ethers');
+        const wallet = ethers.Wallet.createRandom();
+        const mnemonic = wallet.mnemonic.phrase;
+
+        // Encrypt and store seed
+        const { encryptedKey, iv, authTag, salt } = this._encrypt(mnemonic, password);
+        const seedId = this.db.insertSeed({
+            encryptedMnemonic: encryptedKey,
+            iv,
+            authTag,
+            salt,
+        });
+
+        console.log('[Wallet] HD wallet initialized (seed ID:', seedId, ')');
+        return { mnemonic, seedId };
+    }
+
+    /**
+     * Create a new wallet derived from HD seed.
+     * @param {string} password - Master password
+     * @param {string} [name] - Wallet name
+     * @returns {{ id, slot, name, address, hdIndex, mnemonic? }}
+     */
+    createFromSeed(password = '', name) {
         const count = this.db.getWalletCount();
         if (count >= MAX_WALLETS) {
             throw new Error(`Maximum ${MAX_WALLETS} wallets reached`);
         }
 
-        const privKeyBytes = crypto.randomBytes(32);
-        const privateKey = '0x' + privKeyBytes.toString('hex');
-        const address = this._privateKeyToAddress(privKeyBytes);
+        let seed = this.db.getDefaultSeed();
+        let mnemonic;
+        let isNewSeed = false;
+
+        if (!seed) {
+            // First wallet — create HD seed
+            const result = this.initHDWallet(password);
+            mnemonic = result.mnemonic;
+            seed = this.db.getDefaultSeed();
+            isNewSeed = true;
+        } else {
+            // Decrypt existing seed
+            mnemonic = this._decryptSeed(seed, password);
+        }
+
+        const { ethers } = require('ethers');
+        const hdIndex = seed.wallet_count;
+        const hdPath = HD_PATH_PREFIX + hdIndex;
+        const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, '', hdPath);
+
+        const privateKey = hdNode.privateKey;
+        const address = hdNode.address.toLowerCase();
+
+        // Check duplicate
+        const existing = this.db.getWalletByAddress(address);
+        if (existing) {
+            throw new Error('This wallet already exists (slot ' + existing.slot + ')');
+        }
+
         const slot = this.db.getNextSlot();
         const walletName = name || `Wallet ${slot}`;
-
-        const { encryptedKey, iv, authTag, salt } = this._encrypt(privateKey, password);
+        const encrypted = this._encrypt(privateKey, password);
         const isFirst = count === 0;
 
         const id = this.db.insertWallet({
             slot,
             name: walletName,
             address,
-            encryptedKey,
-            iv,
-            authTag,
-            salt,
+            encryptedKey: encrypted.encryptedKey,
+            iv: encrypted.iv,
+            authTag: encrypted.authTag,
+            salt: encrypted.salt,
             isActive: isFirst,
         });
+
+        // Mark as HD wallet
+        try {
+            this.db.db.prepare('UPDATE wallets SET is_hd = 1, hd_index = ?, seed_id = ? WHERE id = ?')
+                .run(hdIndex, seed.id, id);
+        } catch { /* columns may not exist yet */ }
+
+        // Update seed wallet count
+        this.db.updateSeedWalletCount(seed.id, hdIndex + 1);
 
         if (isFirst) {
             this.db.setActiveWallet(id);
         }
 
-        return { id, slot, name: walletName, address, privateKey };
+        const result = { id, slot, name: walletName, address, hdIndex, isHD: true };
+        if (isNewSeed) {
+            result.mnemonic = mnemonic;
+            result.privateKey = privateKey;
+        }
+        return result;
     }
 
     /**
-     * Import wallet from private key.
+     * Recover all HD wallets from a mnemonic phrase.
+     * @param {string} mnemonic - 12/24 word seed phrase
+     * @param {string} password - Password to encrypt wallets
+     * @param {number} [scanCount=10] - How many addresses to scan
+     * @returns {{ recovered: number, wallets: Array }}
+     */
+    async recoverFromMnemonic(mnemonic, password = '', scanCount = 10) {
+        const { ethers } = require('ethers');
+
+        // Validate mnemonic
+        if (!ethers.Mnemonic.isValidMnemonic(mnemonic)) {
+            throw new Error('Invalid mnemonic phrase');
+        }
+
+        // Store encrypted seed
+        let seed = this.db.getDefaultSeed();
+        if (!seed) {
+            const encrypted = this._encrypt(mnemonic, password);
+            this.db.insertSeed({
+                encryptedMnemonic: encrypted.encryptedKey,
+                iv: encrypted.iv,
+                authTag: encrypted.authTag,
+                salt: encrypted.salt,
+            });
+            seed = this.db.getDefaultSeed();
+        }
+
+        const recovered = [];
+        let maxIndex = 0;
+
+        for (let i = 0; i < scanCount; i++) {
+            const hdPath = HD_PATH_PREFIX + i;
+            const hdNode = ethers.HDNodeWallet.fromPhrase(mnemonic, '', hdPath);
+            const address = hdNode.address.toLowerCase();
+
+            // Check if already exists
+            const existing = this.db.getWalletByAddress(address);
+            if (existing) continue;
+
+            // Check if address has balance or transactions
+            let hasActivity = false;
+            try {
+                const balance = await this._rpcCall('eth_getBalance', [address, 'latest']);
+                hasActivity = balance && balance !== '0x0';
+            } catch { }
+
+            if (!hasActivity && i >= 3 && recovered.length === 0) {
+                // No activity found in first 3 addresses and nothing recovered, stop
+                break;
+            }
+
+            if (hasActivity || i < 3) {
+                const slot = this.db.getNextSlot();
+                const encrypted = this._encrypt(hdNode.privateKey, password);
+                const isFirst = this.db.getWalletCount() === 0;
+
+                const id = this.db.insertWallet({
+                    slot,
+                    name: `Wallet ${slot}`,
+                    address,
+                    encryptedKey: encrypted.encryptedKey,
+                    iv: encrypted.iv,
+                    authTag: encrypted.authTag,
+                    salt: encrypted.salt,
+                    isActive: isFirst,
+                });
+
+                try {
+                    this.db.db.prepare('UPDATE wallets SET is_hd = 1, hd_index = ?, seed_id = ? WHERE id = ?')
+                        .run(i, seed.id, id);
+                } catch { }
+
+                if (isFirst) this.db.setActiveWallet(id);
+                maxIndex = Math.max(maxIndex, i);
+                recovered.push({ id, slot, address, hdIndex: i });
+            }
+        }
+
+        this.db.updateSeedWalletCount(seed.id, maxIndex + 1);
+        return { recovered: recovered.length, wallets: recovered };
+    }
+
+    /**
+     * Get the mnemonic phrase (requires password).
+     */
+    getMnemonic(password = '') {
+        const seed = this.db.getDefaultSeed();
+        if (!seed) return null;
+        return this._decryptSeed(seed, password);
+    }
+
+    /**
+     * Check if HD wallet is initialized
+     */
+    hasHDSeed() {
+        return !!this.db.getDefaultSeed();
+    }
+
+    // ─── Create / Import (legacy + HD) ──────────────────────────
+
+    /**
+     * Create a new wallet. Uses HD derivation if seed exists, otherwise creates HD seed first.
+     */
+    create(password = '', name) {
+        return this.createFromSeed(password, name);
+    }
+
+    /**
+     * Import wallet from private key (standalone, not HD).
      */
     importFromKey(privateKey, password = '', name) {
         const count = this.db.getWalletCount();
@@ -107,14 +286,13 @@ class WalletManager {
         const privKeyBytes = Buffer.from(privateKey.slice(2), 'hex');
         const address = this._privateKeyToAddress(privKeyBytes);
 
-        // Check duplicate
         const existing = this.db.getWalletByAddress(address);
         if (existing) {
             throw new Error('This wallet is already imported (slot ' + existing.slot + ')');
         }
 
         const slot = this.db.getNextSlot();
-        const walletName = name || `Wallet ${slot}`;
+        const walletName = name || `Imported ${slot}`;
         const { encryptedKey, iv, authTag, salt } = this._encrypt(privateKey, password);
         const isFirst = count === 0;
 
@@ -131,7 +309,7 @@ class WalletManager {
 
         if (isFirst) this.db.setActiveWallet(id);
 
-        return { id, slot, name: walletName, address, imported: true };
+        return { id, slot, name: walletName, address, imported: true, isHD: false };
     }
 
     // ─── Wallet Management ──────────────────────────────────────
@@ -163,10 +341,7 @@ class WalletManager {
     deleteWallet(walletId, password = '') {
         const wallet = this.db.getWallet(walletId);
         if (!wallet) throw new Error('Wallet not found');
-
-        // Verify password by attempting decryption
         this._decrypt(wallet, password);
-
         this.db.deleteWallet(walletId);
     }
 
@@ -201,15 +376,11 @@ class WalletManager {
         }
     }
 
-    /**
-     * Get balances for all wallets (batched to avoid rate-limiting).
-     */
     async getBalances() {
         const wallets = this.db.listWallets();
         const results = {};
         const { ethers } = require('ethers');
 
-        // Batch in groups of 5
         for (let i = 0; i < wallets.length; i += 5) {
             const batch = wallets.slice(i, i + 5);
             const promises = batch.map(async (w) => {
@@ -224,7 +395,6 @@ class WalletManager {
             for (const r of batchResults) {
                 results[r.address] = r.balance;
             }
-            // Small delay between batches
             if (i + 5 < wallets.length) {
                 await new Promise(r => setTimeout(r, 300));
             }
@@ -263,13 +433,13 @@ class WalletManager {
 
     // ─── Encryption ─────────────────────────────────────────────
 
-    _encrypt(privateKey, password = '') {
+    _encrypt(data, password = '') {
         const salt = crypto.randomBytes(32).toString('hex');
         const key = this._deriveKey(password, salt);
         const iv = crypto.randomBytes(12);
         const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
 
-        let encrypted = cipher.update(privateKey, 'utf8', 'hex');
+        let encrypted = cipher.update(data, 'utf8', 'hex');
         encrypted += cipher.final('hex');
         const authTag = cipher.getAuthTag();
 
@@ -291,6 +461,19 @@ class WalletManager {
             return decrypted;
         } catch {
             throw new Error('Failed to decrypt wallet. Wrong password?');
+        }
+    }
+
+    _decryptSeed(seedRow, password = '') {
+        try {
+            const key = this._deriveKey(password, seedRow.salt);
+            const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(seedRow.iv, 'hex'));
+            decipher.setAuthTag(Buffer.from(seedRow.auth_tag, 'hex'));
+            let decrypted = decipher.update(seedRow.encrypted_mnemonic, 'hex', 'utf8');
+            decrypted += decipher.final('utf8');
+            return decrypted;
+        } catch {
+            throw new Error('Failed to decrypt seed. Wrong password?');
         }
     }
 

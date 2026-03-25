@@ -13,7 +13,7 @@ const fs = require('fs');
 const DATA_DIR = path.join(os.homedir(), '.tpix-node');
 const DB_FILE = path.join(DATA_DIR, 'tpix-wallets.db');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const MAX_WALLETS = 128;
 
 class TpixDatabase {
@@ -87,6 +87,21 @@ class TpixDatabase {
             CREATE INDEX IF NOT EXISTS idx_rewards_wallet ON rewards(wallet_id);
         `);
 
+        // Schema v2: HD wallet + Living Identity tables
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS hd_seeds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                encrypted_mnemonic TEXT NOT NULL,
+                iv TEXT NOT NULL,
+                auth_tag TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                wallet_count INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            -- Identity tables are created by IdentityManager._ensureTables()
+        `);
+
         // Set schema version if not exists
         const ver = this.getSetting('schema_version');
         if (!ver) {
@@ -96,10 +111,46 @@ class TpixDatabase {
 
     _migrate() {
         const currentVer = parseInt(this.getSetting('schema_version') || '0', 10);
+
+        if (currentVer < 2) {
+            // v2: Add HD wallet columns to wallets table
+            try {
+                this.db.exec(`ALTER TABLE wallets ADD COLUMN is_hd INTEGER DEFAULT 0`);
+            } catch { /* column may already exist */ }
+            try {
+                this.db.exec(`ALTER TABLE wallets ADD COLUMN hd_index INTEGER DEFAULT -1`);
+            } catch { /* column may already exist */ }
+            try {
+                this.db.exec(`ALTER TABLE wallets ADD COLUMN seed_id INTEGER DEFAULT NULL`);
+            } catch { /* column may already exist */ }
+        }
+
         if (currentVer < SCHEMA_VERSION) {
-            // Future migrations go here
             this.setSetting('schema_version', String(SCHEMA_VERSION));
         }
+    }
+
+    // ─── HD Seeds ─────────────────────────────────────────────
+
+    insertSeed({ encryptedMnemonic, iv, authTag, salt }) {
+        const stmt = this.db.prepare(`
+            INSERT INTO hd_seeds (encrypted_mnemonic, iv, auth_tag, salt, wallet_count, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+        `);
+        const result = stmt.run(encryptedMnemonic, iv, authTag, salt, new Date().toISOString());
+        return result.lastInsertRowid;
+    }
+
+    getSeed(id) {
+        return this.db.prepare('SELECT * FROM hd_seeds WHERE id = ?').get(id);
+    }
+
+    getDefaultSeed() {
+        return this.db.prepare('SELECT * FROM hd_seeds ORDER BY id ASC LIMIT 1').get();
+    }
+
+    updateSeedWalletCount(seedId, count) {
+        this.db.prepare('UPDATE hd_seeds SET wallet_count = ? WHERE id = ?').run(count, seedId);
     }
 
     // ─── Wallets ────────────────────────────────────────────────
