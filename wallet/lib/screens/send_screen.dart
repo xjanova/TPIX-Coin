@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 
 class SendScreen extends StatefulWidget {
@@ -41,16 +43,18 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     final address = _addressController.text.trim();
     final amount = double.tryParse(_amountController.text.trim());
 
+    final l = context.read<LocaleProvider>();
     if (address.isEmpty || !address.startsWith('0x') || address.length != 42) {
-      _showError('ที่อยู่ไม่ถูกต้อง');
+      _showError(l.t('send.invalidAddress'));
       return;
     }
     if (amount == null || amount <= 0) {
-      _showError('จำนวนไม่ถูกต้อง');
+      _showError(l.t('send.invalidAmount'));
       return;
     }
 
     setState(() => _isSending = true);
+    SynthService.playSend();
 
     try {
       final wallet = context.read<WalletProvider>();
@@ -61,8 +65,10 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
         _isSending = false;
       });
       _successController.forward();
+      SynthService.playSendSuccess();
     } catch (e) {
       setState(() => _isSending = false);
+      SynthService.playError();
       _showError(e.toString());
     }
   }
@@ -85,13 +91,18 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           ),
         ),
         child: SafeArea(
-          child: _isSent ? _buildSuccess() : _buildForm(),
+          child: Builder(
+            builder: (context) {
+              final l = context.watch<LocaleProvider>();
+              return _isSent ? _buildSuccess(l) : _buildForm(l);
+            },
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildForm() {
+  Widget _buildForm(LocaleProvider l) {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -105,11 +116,11 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                 icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
               ),
               const SizedBox(width: 8),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('ส่ง TPIX', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                  Text('Send TPIX — Zero Gas Fee', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  Text(l.t('send.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
+                  Text(l.t('send.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                 ],
               ),
             ],
@@ -118,7 +129,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           const SizedBox(height: 32),
 
           // To Address
-          const Text('ที่อยู่ผู้รับ', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+          Text(l.t('send.toAddress'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
           const SizedBox(height: 8),
           TextField(
             controller: _addressController,
@@ -150,7 +161,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           const SizedBox(height: 24),
 
           // Amount
-          const Text('จำนวน', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+          Text(l.t('send.amount'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
           const SizedBox(height: 8),
           TextField(
             controller: _amountController,
@@ -186,7 +197,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               onTap: () => _amountController.text = wallet.balance.toStringAsFixed(4),
               child: Row(
                 children: [
-                  const Text('ยอดคงเหลือ: ', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  Text(l.t('send.balance'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                   Text('${wallet.formattedBalance} TPIX', style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                   const SizedBox(width: 4),
                   Container(
@@ -212,12 +223,12 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               color: AppTheme.success.withValues(alpha: 0.06),
               border: Border.all(color: AppTheme.success.withValues(alpha: 0.15)),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.local_gas_station, color: AppTheme.success, size: 18),
-                SizedBox(width: 8),
-                Text('Gas Fee: ', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                Text('ฟรี! (0 TPIX)', style: TextStyle(fontSize: 13, color: AppTheme.success, fontWeight: FontWeight.w700)),
+                const Icon(Icons.local_gas_station, color: AppTheme.success, size: 18),
+                const SizedBox(width: 8),
+                Text(l.t('send.gasFee'), style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                Text(l.t('send.gasFreeVal'), style: const TextStyle(fontSize: 13, color: AppTheme.success, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -235,15 +246,15 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
               child: _isSending
-                  ? const Row(
+                  ? Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-                        SizedBox(width: 12),
-                        Text('กำลังส่ง...', style: TextStyle(fontSize: 16, color: Colors.white)),
+                        const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                        const SizedBox(width: 12),
+                        Text(l.t('send.sending'), style: const TextStyle(fontSize: 16, color: Colors.white)),
                       ],
                     )
-                  : const Text('ส่ง TPIX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+                  : Text(l.t('send.button'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
             ),
           ),
         ],
@@ -251,7 +262,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildSuccess() {
+  Widget _buildSuccess(LocaleProvider l) {
     return Center(
       child: AnimatedBuilder(
         animation: _successController,
@@ -287,9 +298,9 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
                   const SizedBox(height: 32),
 
-                  const Text('ส่งสำเร็จ!', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
+                  Text(l.t('send.success'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
                   const SizedBox(height: 8),
-                  const Text('Transaction Confirmed', style: TextStyle(fontSize: 16, color: AppTheme.success)),
+                  Text(l.t('send.confirmed'), style: const TextStyle(fontSize: 16, color: AppTheme.success)),
 
                   const SizedBox(height: 24),
 
@@ -319,7 +330,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    child: const Text('กลับหน้าหลัก', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                    child: Text(l.t('send.goBack'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
                   ),
                 ],
               ),

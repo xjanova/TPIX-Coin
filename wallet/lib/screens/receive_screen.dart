@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/synth_service.dart';
 
 class ReceiveScreen extends StatelessWidget {
   const ReceiveScreen({super.key});
@@ -11,6 +13,7 @@ class ReceiveScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletProvider>();
+    final l = context.watch<LocaleProvider>();
     final address = wallet.address ?? '';
 
     return Scaffold(
@@ -35,11 +38,11 @@ class ReceiveScreen extends StatelessWidget {
                       icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
                     ),
                     const SizedBox(width: 8),
-                    const Column(
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('รับ TPIX', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                        Text('Receive TPIX', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                        Text(l.t('receive.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
+                        Text(l.t('receive.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                       ],
                     ),
                   ],
@@ -100,9 +103,10 @@ class ReceiveScreen extends StatelessWidget {
                       GestureDetector(
                         onTap: () {
                           Clipboard.setData(ClipboardData(text: address));
+                          SynthService.playTap();
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('คัดลอกที่อยู่แล้ว!'),
+                            SnackBar(
+                              content: Text(l.t('receive.copied')),
                               backgroundColor: AppTheme.success,
                               duration: Duration(seconds: 1),
                             ),
@@ -117,9 +121,9 @@ class ReceiveScreen extends StatelessWidget {
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.copy, size: 16, color: AppTheme.primary),
-                              SizedBox(width: 4),
-                              Text('คัดลอก', style: TextStyle(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                              const Icon(Icons.copy, size: 16, color: AppTheme.primary),
+                              const SizedBox(width: 4),
+                              Text(l.t('receive.copy'), style: const TextStyle(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
@@ -144,8 +148,8 @@ class ReceiveScreen extends StatelessWidget {
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'ส่งเฉพาะ TPIX (Chain ID: 4289) มาที่อยู่นี้เท่านั้น',
-                          style: TextStyle(fontSize: 12, color: AppTheme.warm, height: 1.4),
+                          l.t('receive.warning'),
+                          style: const TextStyle(fontSize: 12, color: AppTheme.warm, height: 1.4),
                         ),
                       ),
                     ],

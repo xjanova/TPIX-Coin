@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
 import 'pin_screen.dart';
@@ -14,6 +16,20 @@ class ImportScreen extends StatefulWidget {
 class _ImportScreenState extends State<ImportScreen> {
   final _controller = TextEditingController();
   bool _isMnemonic = true;
+
+  void _scanQR() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _QRScannerScreen(
+          onScanned: (value) {
+            _controller.text = value;
+            Navigator.pop(context);
+          },
+        ),
+      ),
+    );
+  }
 
   void _import() async {
     final input = _controller.text.trim();
@@ -41,6 +57,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = context.watch<LocaleProvider>();
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -63,11 +80,11 @@ class _ImportScreenState extends State<ImportScreen> {
                       icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
                     ),
                     const SizedBox(width: 8),
-                    const Column(
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('นำเข้ากระเป๋า', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                        Text('Import Wallet', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                        Text(l.t('import.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
+                        Text(l.t('import.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                       ],
                     ),
                   ],
@@ -95,7 +112,7 @@ class _ImportScreenState extends State<ImportScreen> {
                   maxLines: 4,
                   style: const TextStyle(color: Colors.white, fontSize: 15),
                   decoration: InputDecoration(
-                    hintText: _isMnemonic ? 'ใส่ 12 คำ คั่นด้วยช่องว่าง...' : 'ใส่ Private Key (0x...)...',
+                    hintText: _isMnemonic ? l.t('import.hintMnemonic') : l.t('import.hintKey'),
                     hintStyle: const TextStyle(color: AppTheme.textMuted),
                     filled: true,
                     fillColor: Colors.white.withValues(alpha: 0.04),
@@ -114,6 +131,23 @@ class _ImportScreenState extends State<ImportScreen> {
                   ),
                 ),
 
+                const SizedBox(height: 16),
+
+                // Scan QR button
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _scanQR,
+                    icon: const Icon(Icons.qr_code_scanner, color: AppTheme.primary),
+                    label: Text(l.t('import.scanQR'), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                ),
+
                 const Spacer(),
 
                 SizedBox(
@@ -128,7 +162,7 @@ class _ImportScreenState extends State<ImportScreen> {
                       ),
                       child: provider.isLoading
                           ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Text('นำเข้า', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                          : Text(l.t('import.button'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                     ),
                   ),
                 ),
@@ -159,6 +193,90 @@ class _ImportScreenState extends State<ImportScreen> {
             color: active ? AppTheme.primary : AppTheme.textMuted,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _QRScannerScreen extends StatefulWidget {
+  final ValueChanged<String> onScanned;
+
+  const _QRScannerScreen({required this.onScanned});
+
+  @override
+  State<_QRScannerScreen> createState() => _QRScannerScreenState();
+}
+
+class _QRScannerScreenState extends State<_QRScannerScreen> {
+  final MobileScannerController _scannerController = MobileScannerController();
+  bool _hasScanned = false;
+
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Builder(
+          builder: (context) {
+            final l = context.watch<LocaleProvider>();
+            return Text(l.t('import.scanQR'), style: const TextStyle(color: Colors.white, fontSize: 18));
+          },
+        ),
+        centerTitle: true,
+      ),
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _scannerController,
+            onDetect: (capture) {
+              if (_hasScanned) return;
+              final barcode = capture.barcodes.firstOrNull;
+              if (barcode?.rawValue != null) {
+                _hasScanned = true;
+                widget.onScanned(barcode!.rawValue!);
+              }
+            },
+          ),
+          // Scan overlay
+          Center(
+            child: Container(
+              width: 260,
+              height: 260,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppTheme.primary, width: 2),
+              ),
+            ),
+          ),
+          // Hint text
+          Positioned(
+            bottom: 80,
+            left: 0,
+            right: 0,
+            child: Builder(
+              builder: (context) {
+                final l = context.watch<LocaleProvider>();
+                return Text(
+                  l.t('import.scanHint'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

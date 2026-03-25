@@ -2,8 +2,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/synth_service.dart';
 import 'home_screen.dart';
 
 class PinScreen extends StatefulWidget {
@@ -98,6 +100,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
 
   void _showError() {
     HapticFeedback.heavyImpact();
+    SynthService.playError();
     setState(() {
       _isError = true;
       _pin = '';
@@ -107,12 +110,13 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
+    final l = context.watch<LocaleProvider>();
     final title = widget.isSetup
-        ? (_isConfirmMode ? 'ยืนยัน PIN' : 'ตั้ง PIN 6 หลัก')
-        : 'ใส่ PIN เพื่อเข้าใช้';
+        ? (_isConfirmMode ? l.t('pin.confirm') : l.t('pin.setup'))
+        : l.t('pin.unlock');
     final subtitle = widget.isSetup
-        ? (_isConfirmMode ? 'Confirm your PIN' : 'Set a 6-digit PIN')
-        : 'Enter your PIN to unlock';
+        ? (_isConfirmMode ? l.t('pin.confirmSub') : l.t('pin.setupSub'))
+        : l.t('pin.unlockSub');
 
     return Scaffold(
       body: Container(
@@ -187,7 +191,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
               if (_isError)
                 const Padding(
                   padding: EdgeInsets.only(top: 16),
-                  child: Text('PIN ไม่ถูกต้อง', style: TextStyle(color: AppTheme.danger, fontSize: 14)),
+                  child: Text(l.t('pin.wrong'), style: const TextStyle(color: AppTheme.danger, fontSize: 14)),
                 ),
 
               const Spacer(flex: 2),

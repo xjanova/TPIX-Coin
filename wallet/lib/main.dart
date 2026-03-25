@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'core/locale_provider.dart';
 import 'core/theme.dart';
 import 'providers/wallet_provider.dart';
 import 'screens/splash_screen.dart';
@@ -14,12 +15,18 @@ void main() {
   ));
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
+  final localeProvider = LocaleProvider();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => WalletProvider()),
+        ChangeNotifierProvider.value(value: localeProvider),
       ],
-      child: const TPIXWalletApp(),
+      child: FutureBuilder(
+        future: localeProvider.init(),
+        builder: (_, __) => const TPIXWalletApp(),
+      ),
     ),
   );
 }

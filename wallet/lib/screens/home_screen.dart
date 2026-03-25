@@ -1,9 +1,12 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import 'send_screen.dart';
 import 'receive_screen.dart';
@@ -19,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _balanceController;
   late AnimationController _orbController;
   late Animation<double> _balanceScale;
+  String _appVersion = '';
 
   @override
   void initState() {
@@ -36,6 +40,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _balanceScale = Tween<double>(begin: 0.8, end: 1.0).animate(
       CurvedAnimation(parent: _balanceController, curve: Curves.elasticOut),
     );
+
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    setState(() => _appVersion = info.version);
   }
 
   @override
@@ -47,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final l = context.watch<LocaleProvider>();
     return Scaffold(
       body: Consumer<WalletProvider>(
         builder: (context, wallet, _) => Container(
@@ -66,15 +78,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    _buildHeader(wallet),
+                    _buildHeader(wallet, l),
                     const SizedBox(height: 24),
-                    _buildBalanceCard(wallet),
+                    _buildBalanceCard(wallet, l),
                     const SizedBox(height: 24),
-                    _buildActionButtons(context),
+                    _buildActionButtons(context, l),
                     const SizedBox(height: 24),
-                    _buildInfoCards(),
+                    _buildInfoCards(l),
                     const SizedBox(height: 24),
-                    _buildQuickLinks(),
+                    _buildQuickLinks(l),
                   ],
                 ),
               ),
@@ -85,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildHeader(WalletProvider wallet) {
+  Widget _buildHeader(WalletProvider wallet, LocaleProvider l) {
     return Row(
       children: [
         // Avatar with glow
@@ -106,13 +118,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('TPIX Wallet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+            Row(
+              children: [
+                const Text('TPIX Wallet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+                if (_appVersion.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Text('v$_appVersion', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                ],
+              ],
+            ),
             GestureDetector(
               onTap: () {
                 if (wallet.address != null) {
                   Clipboard.setData(ClipboardData(text: wallet.address!));
+                  SynthService.playTap();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('คัดลอกที่อยู่แล้ว!'), backgroundColor: AppTheme.success, duration: Duration(seconds: 1)),
+                    SnackBar(content: Text(l.t('home.copied')), backgroundColor: AppTheme.success, duration: const Duration(seconds: 1)),
                   );
                 }
               },
@@ -127,6 +148,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ],
         ),
         const Spacer(),
+        // Language toggle
+        GestureDetector(
+          onTap: () => l.toggle(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: AppTheme.accent.withValues(alpha: 0.1),
+              border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+            ),
+            child: Text(l.isThai ? 'TH' : 'EN', style: const TextStyle(fontSize: 11, color: AppTheme.accent, fontWeight: FontWeight.w700)),
+          ),
+        ),
+        const SizedBox(width: 8),
         // Network badge
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -148,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildBalanceCard(WalletProvider wallet) {
+  Widget _buildBalanceCard(WalletProvider wallet, LocaleProvider l) {
     return AnimatedBuilder(
       animation: _balanceScale,
       builder: (_, child) => Transform.scale(scale: _balanceScale.value, child: child),
@@ -189,7 +224,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('ยอดคงเหลือ', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+                Text(l.t('home.balance'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
                 const SizedBox(height: 8),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -218,29 +253,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildActionButtons(BuildContext context) {
+  Widget _buildActionButtons(BuildContext context, LocaleProvider l) {
     return Row(
       children: [
         Expanded(child: _buildActionBtn(
           icon: Icons.arrow_upward_rounded,
-          label: 'ส่ง',
-          sublabel: 'Send',
+          label: l.t('home.send'),
+          sublabel: l.t('home.sendSub'),
           color: AppTheme.primary,
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SendScreen())),
         )),
         const SizedBox(width: 12),
         Expanded(child: _buildActionBtn(
           icon: Icons.arrow_downward_rounded,
-          label: 'รับ',
-          sublabel: 'Receive',
+          label: l.t('home.receive'),
+          sublabel: l.t('home.receiveSub'),
           color: AppTheme.success,
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReceiveScreen())),
         )),
         const SizedBox(width: 12),
         Expanded(child: _buildActionBtn(
           icon: Icons.swap_horiz_rounded,
-          label: 'แลก',
-          sublabel: 'Swap',
+          label: l.t('home.swap'),
+          sublabel: l.t('home.swapSub'),
           color: AppTheme.accent,
           onTap: () {}, // TODO: Swap screen
         )),
@@ -288,14 +323,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildInfoCards() {
+  Widget _buildInfoCards(LocaleProvider l) {
     return Column(
       children: [
-        _buildInfoRow(Icons.speed, 'Block Time', '2 วินาที', AppTheme.success),
+        _buildInfoRow(Icons.speed, l.t('home.blockTime'), l.t('home.blockTimeVal'), AppTheme.success),
         const SizedBox(height: 10),
-        _buildInfoRow(Icons.local_gas_station, 'Gas Fee', 'ฟรี!', AppTheme.warm),
+        _buildInfoRow(Icons.local_gas_station, l.t('home.gasFee'), l.t('home.gasFeeVal'), AppTheme.warm),
         const SizedBox(height: 10),
-        _buildInfoRow(Icons.shield, 'Consensus', 'IBFT 2.0', AppTheme.accent),
+        _buildInfoRow(Icons.shield, l.t('home.consensus'), 'IBFT 2.0', AppTheme.accent),
       ],
     );
   }
@@ -316,14 +351,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildQuickLinks() {
+  Widget _buildQuickLinks(LocaleProvider l) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: glassCard(borderRadius: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('ลิงก์', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+          Text(l.t('home.links'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
           const SizedBox(height: 12),
           _buildLink('🌐', 'TPIX TRADE', 'https://tpix.online'),
           _buildLink('🔍', 'Explorer', TpixChain.explorerUrl),

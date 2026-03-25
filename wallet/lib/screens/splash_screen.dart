@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/synth_service.dart';
 import '../services/update_service.dart';
 import 'onboarding_screen.dart';
 import 'pin_screen.dart';
@@ -75,10 +76,13 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 300));
     _logoController.forward();
 
+    // Play synthesized melody when logo appears
+    SynthService.playSplashMelody();
+
     await Future.delayed(const Duration(milliseconds: 800));
     _fadeController.forward();
 
-    await Future.delayed(const Duration(milliseconds: 2000));
+    await Future.delayed(const Duration(milliseconds: 2500));
     _navigateNext();
   }
 
@@ -332,7 +336,7 @@ class _SplashScreenState extends State<SplashScreen>
                 builder: (_, __) => Opacity(
                   opacity: _subtitleOpacity.value,
                   child: const Text(
-                    'v1.0.0 • by Xman Studio',
+                    'by Xman Studio',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 11,

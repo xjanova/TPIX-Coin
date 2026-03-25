@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import 'pin_screen.dart';
 
@@ -9,6 +11,7 @@ class BackupScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = context.watch<LocaleProvider>();
     final words = mnemonic.split(' ');
 
     return Scaffold(
@@ -34,11 +37,11 @@ class BackupScreen extends StatelessWidget {
                       icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
                     ),
                     const SizedBox(width: 8),
-                    const Column(
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('สำรองกระเป๋า', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                        Text('Backup Seed Phrase', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                        Text(l.t('backup.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
+                        Text(l.t('backup.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                       ],
                     ),
                   ],
@@ -60,8 +63,8 @@ class BackupScreen extends StatelessWidget {
                       SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'จดบันทึก 12 คำนี้ไว้ในที่ปลอดภัย ห้ามแชร์ให้ใครเด็ดขาด!',
-                          style: TextStyle(fontSize: 13, color: AppTheme.warm, height: 1.4),
+                          l.t('backup.warning'),
+                          style: const TextStyle(fontSize: 13, color: AppTheme.warm, height: 1.4),
                         ),
                       ),
                     ],
@@ -102,11 +105,11 @@ class BackupScreen extends StatelessWidget {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: mnemonic));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('คัดลอกแล้ว!'), backgroundColor: AppTheme.success),
+                        SnackBar(content: Text(l.t('backup.copied')), backgroundColor: AppTheme.success),
                       );
                     },
                     icon: const Icon(Icons.copy, size: 18, color: AppTheme.primary),
-                    label: const Text('คัดลอก', style: TextStyle(color: AppTheme.primary)),
+                    label: Text(l.t('backup.copy'), style: const TextStyle(color: AppTheme.primary)),
                   ),
                 ),
 
@@ -127,7 +130,7 @@ class BackupScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 18),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: const Text('สำรองแล้ว ดำเนินการต่อ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                    child: Text(l.t('backup.continue'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                   ),
                 ),
               ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
 import 'backup_screen.dart';
@@ -116,22 +117,27 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                     parent: _controller,
                     curve: const Interval(0.3, 0.7),
                   ),
-                  child: Column(
-                    children: [
-                      ShaderMask(
-                        shaderCallback: (bounds) => AppTheme.brandGradient.createShader(bounds),
-                        child: const Text(
-                          'TPIX Wallet',
-                          style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: Colors.white),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'กระเป๋าเงินสำหรับ TPIX Chain\nปลอดภัย ไม่มีค่าแก๊ส เร็ว 2 วินาที',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 15, color: AppTheme.textSecondary.withValues(alpha: 0.8), height: 1.5),
-                      ),
-                    ],
+                  child: Builder(
+                    builder: (context) {
+                      final l = context.watch<LocaleProvider>();
+                      return Column(
+                        children: [
+                          ShaderMask(
+                            shaderCallback: (bounds) => AppTheme.brandGradient.createShader(bounds),
+                            child: const Text(
+                              'TPIX Wallet',
+                              style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: Colors.white),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            l.t('onboarding.subtitle'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 15, color: AppTheme.textSecondary.withValues(alpha: 0.8), height: 1.5),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
 
@@ -151,27 +157,32 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       parent: _controller,
                       curve: const Interval(0.5, 1.0, curve: Curves.easeOut),
                     )),
-                    child: Column(
-                      children: [
-                        // Create Wallet Button
-                        _buildGradientButton(
-                          label: 'สร้างกระเป๋าใหม่',
-                          subtitle: 'Create New Wallet',
-                          icon: Icons.add_circle_outline,
-                          gradient: AppTheme.brandGradient,
-                          onTap: _createWallet,
-                        ),
+                    child: Builder(
+                      builder: (context) {
+                        final l = context.watch<LocaleProvider>();
+                        return Column(
+                          children: [
+                            // Create Wallet Button
+                            _buildGradientButton(
+                              label: l.t('onboarding.createWallet'),
+                              subtitle: l.t('onboarding.createWalletSub'),
+                              icon: Icons.add_circle_outline,
+                              gradient: AppTheme.brandGradient,
+                              onTap: _createWallet,
+                            ),
 
-                        const SizedBox(height: 16),
+                            const SizedBox(height: 16),
 
-                        // Import Wallet Button
-                        _buildOutlineButton(
-                          label: 'นำเข้ากระเป๋า',
-                          subtitle: 'Import Existing Wallet',
-                          icon: Icons.download_outlined,
-                          onTap: _importWallet,
-                        ),
-                      ],
+                            // Import Wallet Button
+                            _buildOutlineButton(
+                              label: l.t('onboarding.importWallet'),
+                              subtitle: l.t('onboarding.importWalletSub'),
+                              icon: Icons.download_outlined,
+                              onTap: _importWallet,
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
