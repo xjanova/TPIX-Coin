@@ -39,9 +39,10 @@ Run a TPIX blockchain master node to earn rewards by
 validating transactions and securing the network.
 
 Node Tiers:
-  Validator  - 1,000,000 TPIX stake  (12-15% APY)
-  Sentinel   -   100,000 TPIX stake  ( 7-10% APY)
-  Light      -    10,000 TPIX stake  (  4-6% APY)
+  Validator  - 10,000,000 TPIX stake  (15-20% APY, KYC required)
+  Guardian   -  1,000,000 TPIX stake  (10-12% APY)
+  Sentinel   -    100,000 TPIX stake  ( 7-9%  APY)
+  Light      -     10,000 TPIX stake  (  4-6% APY)
 `,
 		Run: runNode,
 	}

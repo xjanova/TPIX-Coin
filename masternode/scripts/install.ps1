@@ -41,14 +41,15 @@ function Show-Help {
     Write-Host "Usage: .\install.ps1 [OPTIONS]"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  -Tier TYPE      Node tier: validator, sentinel, light (default: light)"
+    Write-Host "  -Tier TYPE      Node tier: validator, guardian, sentinel, light (default: light)"
     Write-Host "  -Wallet ADDR    Your TPIX wallet address (0x...)"
     Write-Host "  -Name NAME      Node display name"
     Write-Host ""
     Write-Host "Tiers:"
-    Write-Host "  validator  1,000,000 TPIX stake  12-15% APY  (max 100 nodes)" -ForegroundColor Yellow
-    Write-Host "  sentinel     100,000 TPIX stake   7-10% APY  (max 500 nodes)" -ForegroundColor Magenta
-    Write-Host "  light         10,000 TPIX stake    4-6% APY  (unlimited)"     -ForegroundColor Cyan
+    Write-Host "  validator  10,000,000 TPIX stake  15-20% APY  (max 21 nodes, KYC required)" -ForegroundColor Red
+    Write-Host "  guardian    1,000,000 TPIX stake  10-12% APY  (max 100 nodes)" -ForegroundColor Yellow
+    Write-Host "  sentinel      100,000 TPIX stake   7-9% APY   (max 500 nodes)" -ForegroundColor Magenta
+    Write-Host "  light          10,000 TPIX stake    4-6% APY   (unlimited)"     -ForegroundColor Cyan
 }
 
 function Log-Info  { param([string]$msg) Write-Host "  [OK]    $msg" -ForegroundColor Green }

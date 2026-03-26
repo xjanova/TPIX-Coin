@@ -55,10 +55,10 @@ const LANG = {
             stake: 'Stake Required',
             reward: 'APY',
             launchNode: 'Launch Node',
-            rewardInfo: 'Reward Distribution (5 Years)',
+            rewardInfo: 'Reward Distribution (3 Years)',
             totalEmission: 'Total Emission',
             total: 'Total',
-            rewardNote: 'Rewards are distributed proportionally based on your stake and uptime. Validators earn the highest share. Pool: 1.4 Billion TPIX over 5 years.',
+            rewardNote: 'Rewards are distributed proportionally based on your stake and uptime. Validators earn the highest share. Pool: 1.4 Billion TPIX over 3 years (ending 2028).',
         },
         wallet: {
             setupTitle: 'Set Up Your Wallet',
@@ -91,7 +91,7 @@ const LANG = {
                 'Help secure and decentralize the TPIX Chain',
                 'More nodes = more stable network (fewer outages)',
                 'Support the TPIX ecosystem and community',
-                'Validators earn 12-15% APY on staked TPIX',
+                'Earn 4-20% APY depending on node tier',
             ],
         },
         logs: { empty: 'No logs yet. Start the node to see activity.' },
@@ -325,10 +325,10 @@ const LANG = {
             stake: 'ต้อง Stake',
             reward: 'ผลตอบแทน',
             launchNode: 'เริ่มรันโหนด',
-            rewardInfo: 'การแจกรางวัล (5 ปี)',
+            rewardInfo: 'การแจกรางวัล (3 ปี)',
             totalEmission: 'จำนวนที่ปล่อย',
             total: 'รวม',
-            rewardNote: 'รางวัลจะแจกตามสัดส่วนของ stake และ uptime ของคุณ Validator ได้ส่วนแบ่งมากที่สุด พูลรวม: 1,400 ล้าน TPIX ตลอด 5 ปี',
+            rewardNote: 'รางวัลจะแจกตามสัดส่วนของ stake และ uptime ของคุณ Validator ได้ส่วนแบ่งมากที่สุด พูลรวม: 1,400 ล้าน TPIX ตลอด 3 ปี (สิ้นสุด 2028)',
         },
         wallet: {
             setupTitle: 'ตั้งค่ากระเป๋าเงิน',
@@ -361,7 +361,7 @@ const LANG = {
                 'ช่วยรักษาความปลอดภัยและกระจายอำนาจ TPIX Chain',
                 'ยิ่งมี node มาก = เครือข่ายยิ่งเสถียร (ล่มน้อยลง)',
                 'สนับสนุนระบบนิเวศและชุมชน TPIX',
-                'Validator ได้ผลตอบแทน 12-15% APY จาก TPIX ที่ stake',
+                'รับผลตอบแทน 4-20% APY ตามระดับโหนด',
             ],
         },
         logs: { empty: 'ยังไม่มีบันทึก เริ่มโหนดเพื่อดูกิจกรรม' },
@@ -592,21 +592,30 @@ const app = createApp({
             },
             {
                 id: 'sentinel', name: 'Sentinel Node', stake: 100000,
-                apy: '7-10% APY',
-                monthlyReward: Math.round(100000 * 0.085 / 12),
-                yearlyReward: Math.round(100000 * 0.085),
+                apy: '7-9% APY',
+                monthlyReward: Math.round(100000 * 0.08 / 12),
+                yearlyReward: Math.round(100000 * 0.08),
                 features: lang.value === 'th'
                     ? ['ผลตอบแทนปานกลาง', 'ล็อค 30 วัน', 'ค่าปรับ 5%', 'สูงสุด 500 โหนด']
                     : ['Medium rewards', '30-day lock', '5% slashing', 'Max 500 nodes'],
             },
             {
-                id: 'validator', name: 'Validator Node', stake: 1000000,
-                apy: '12-15% APY',
-                monthlyReward: Math.round(1000000 * 0.135 / 12),
-                yearlyReward: Math.round(1000000 * 0.135),
+                id: 'guardian', name: 'Guardian Node', stake: 1000000,
+                apy: '10-12% APY',
+                monthlyReward: Math.round(1000000 * 0.11 / 12),
+                yearlyReward: Math.round(1000000 * 0.11),
                 features: lang.value === 'th'
-                    ? ['ผลตอบแทนสูงสุด', 'ล็อค 90 วัน', 'ค่าปรับ 10%', 'สูงสุด 100 โหนด', 'ช่วยผลิตบล็อก']
-                    : ['Highest rewards', '90-day lock', '10% slashing', 'Max 100 nodes', 'Produces blocks'],
+                    ? ['ผลตอบแทนสูง', 'ล็อค 90 วัน', 'ค่าปรับ 10%', 'สูงสุด 100 โหนด']
+                    : ['High rewards', '90-day lock', '10% slashing', 'Max 100 nodes'],
+            },
+            {
+                id: 'validator', name: 'Validator Node', stake: 10000000,
+                apy: '15-20% APY',
+                monthlyReward: Math.round(10000000 * 0.175 / 12),
+                yearlyReward: Math.round(10000000 * 0.175),
+                features: lang.value === 'th'
+                    ? ['ผลตอบแทนสูงสุด', 'ล็อค 180 วัน', 'ค่าปรับ 15%', 'สูงสุด 21 โหนด', 'IBFT2 Block Sealer', 'สิทธิ์โหวต Governance', 'ต้อง KYC บริษัท']
+                    : ['Highest rewards', '180-day lock', '15% slashing', 'Max 21 nodes', 'IBFT2 Block Sealer', 'Governance voting', 'Company KYC required'],
             },
         ]);
 
@@ -734,7 +743,7 @@ const app = createApp({
 
         // ─── Masternode Map State ────────────────
         const masternodeData = ref([]);
-        const masternodeStats = ref({ total: 0, countries: 0, byType: { light: 0, sentinel: 0, validator: 0 } });
+        const masternodeStats = ref({ total: 0, countries: 0, byType: { light: 0, sentinel: 0, guardian: 0, validator: 0 } });
         const mnFilterType = ref('all');
         const mnFilterCountry = ref('all');
         const selectedNodeReward = ref(null);
@@ -1277,13 +1286,13 @@ const app = createApp({
         function loadMasternodes() {
             const flag = (code) => String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
             const nodes = [
-                { id: 1, type: 'validator', addr: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD4e', country: 'TH', countryName: 'Thailand', lat: 13.75, lng: 100.5, city: 'Bangkok', ip: '203.150.45.12', online: true, totalRewards: '12,450', rewards: [
-                    { block: 1250000, amount: '2.5', time: '2026-03-25 14:30' }, { block: 1249800, amount: '2.5', time: '2026-03-25 14:20' }, { block: 1249600, amount: '2.5', time: '2026-03-25 14:10' },
+                { id: 1, type: 'validator', addr: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD4e', country: 'TH', countryName: 'Thailand', lat: 13.75, lng: 100.5, city: 'Bangkok', ip: '203.150.45.12', online: true, totalRewards: '45,200', rewards: [
+                    { block: 1250000, amount: '8.5', time: '2026-03-25 14:30' }, { block: 1249800, amount: '8.5', time: '2026-03-25 14:20' }, { block: 1249600, amount: '8.5', time: '2026-03-25 14:10' },
                 ]},
-                { id: 2, type: 'validator', addr: '0x8Ba1f109551bD432803012645Hac136c9b7c31A5', country: 'TH', countryName: 'Thailand', lat: 18.79, lng: 98.98, city: 'Chiang Mai', ip: '203.150.78.34', online: true, totalRewards: '10,230', rewards: [
+                { id: 2, type: 'guardian', addr: '0x8Ba1f109551bD432803012645Hac136c9b7c31A5', country: 'TH', countryName: 'Thailand', lat: 18.79, lng: 98.98, city: 'Chiang Mai', ip: '203.150.78.34', online: true, totalRewards: '10,230', rewards: [
                     { block: 1250001, amount: '2.5', time: '2026-03-25 14:30' }, { block: 1249801, amount: '2.5', time: '2026-03-25 14:20' },
                 ]},
-                { id: 3, type: 'validator', addr: '0x1aF5b3E2A31c4e7FBc65A32Da0F7e53c9712E4eB', country: 'SG', countryName: 'Singapore', lat: 1.35, lng: 103.82, city: 'Singapore', ip: '128.199.142.78', online: true, totalRewards: '11,800', rewards: [
+                { id: 3, type: 'guardian', addr: '0x1aF5b3E2A31c4e7FBc65A32Da0F7e53c9712E4eB', country: 'SG', countryName: 'Singapore', lat: 1.35, lng: 103.82, city: 'Singapore', ip: '128.199.142.78', online: true, totalRewards: '11,800', rewards: [
                     { block: 1250002, amount: '2.5', time: '2026-03-25 14:30' },
                 ]},
                 { id: 4, type: 'sentinel', addr: '0x3cD2fC9d5dBe97BAc69f4e7d76D2fA5E3a1E5b7A', country: 'JP', countryName: 'Japan', lat: 35.68, lng: 139.69, city: 'Tokyo', ip: '45.76.198.45', online: true, totalRewards: '5,120', rewards: [
@@ -1296,7 +1305,7 @@ const app = createApp({
                 { id: 7, type: 'light', addr: '0x2dC4E5f6A7b8C9d0E1F2a3B4c5D6e7F8a9B0C1De', country: 'DE', countryName: 'Germany', lat: 52.52, lng: 13.41, city: 'Berlin', ip: '195.201.45.167', online: true, totalRewards: '1,230', rewards: []},
                 { id: 8, type: 'light', addr: '0x6fE1a2B3c4D5e6F7a8B9c0D1e2F3a4B5c6D7e8Ab', country: 'GB', countryName: 'United Kingdom', lat: 51.51, lng: -0.13, city: 'London', ip: '51.158.98.201', online: false, totalRewards: '980', rewards: []},
                 { id: 9, type: 'light', addr: '0x4aB7c8D9e0F1a2B3c4D5e6F7a8B9c0D1e2F312Cd', country: 'AU', countryName: 'Australia', lat: -33.87, lng: 151.21, city: 'Sydney', ip: '103.16.128.45', online: true, totalRewards: '1,100', rewards: []},
-                { id: 10, type: 'validator', addr: '0x7cE9a0B1c2D3e4F5a6B7c8D9e0F1a2B3c4D556Fg', country: 'TH', countryName: 'Thailand', lat: 7.88, lng: 98.39, city: 'Phuket', ip: '203.150.92.56', online: true, totalRewards: '9,750', rewards: [
+                { id: 10, type: 'guardian', addr: '0x7cE9a0B1c2D3e4F5a6B7c8D9e0F1a2B3c4D556Fg', country: 'TH', countryName: 'Thailand', lat: 7.88, lng: 98.39, city: 'Phuket', ip: '203.150.92.56', online: true, totalRewards: '9,750', rewards: [
                     { block: 1250003, amount: '2.5', time: '2026-03-25 14:30' },
                 ]},
                 { id: 11, type: 'light', addr: '0x8dA2b3C4d5E6f7A8b9C0d1E2f3A4b5C6d7E834Hi', country: 'VN', countryName: 'Vietnam', lat: 10.82, lng: 106.63, city: 'Ho Chi Minh', ip: '113.190.45.78', online: true, totalRewards: '890', rewards: []},
@@ -1308,7 +1317,7 @@ const app = createApp({
 
             masternodeData.value = nodes;
 
-            const byType = { light: 0, sentinel: 0, validator: 0 };
+            const byType = { light: 0, sentinel: 0, guardian: 0, validator: 0 };
             const countrySet = new Set();
             nodes.forEach(n => { byType[n.type]++; countrySet.add(n.country); });
             masternodeStats.value = { total: nodes.length, countries: countrySet.size, byType };

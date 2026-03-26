@@ -232,24 +232,24 @@ npm run deploy:identity
 
 ## Master Node Tiers & Rewards
 
-| Tier | Stake Required | APY | Lock Period | Max Nodes | Hardware |
-|------|---------------|-----|-------------|-----------|----------|
-| **Validator** | 1,000,000 TPIX | 12-15% | 90 days | 100 | 8 CPU, 16GB RAM, 500GB SSD |
-| **Sentinel** | 100,000 TPIX | 7-10% | 30 days | 500 | 4 CPU, 8GB RAM, 200GB SSD |
-| **Light** | 10,000 TPIX | 4-6% | 7 days | Unlimited | 2 CPU, 4GB RAM, 100GB SSD |
+| Tier | Stake Required | APY | Lock Period | Max Nodes | Role |
+|------|---------------|-----|-------------|-----------|------|
+| **Validator** | 10,000,000 TPIX | 15-20% | 180 days | 21 | IBFT2 block sealer + governance |
+| **Guardian** | 1,000,000 TPIX | 10-12% | 90 days | 100 | Premium masternode |
+| **Sentinel** | 100,000 TPIX | 7-9% | 30 days | 500 | Standard masternode |
+| **Light** | 10,000 TPIX | 4-6% | 7 days | Unlimited | Light node |
 
-**Reward Distribution**: 50% Validator (block producer), 30% Sentinel nodes, 20% Light nodes.
-**Total Reward Pool**: 1.4 Billion TPIX over 5 years with decreasing annual emission.
+**Reward Distribution**: 20% Validator (IBFT2 sealers), 35% Guardian, 30% Sentinel, 15% Light.
+**Total Reward Pool**: 1.4 Billion TPIX over 3 years (ending 2028) with decreasing annual emission.
+**Validator Governance**: Validators form the chain's "board of directors" — vote on protocol changes, new admissions, and contract upgrades. Requires 10M TPIX + company KYC (PDPA-compliant).
 
 ### Annual Emission Schedule
 
-| Year | Emission | Per Block | Share |
-|------|---------|-----------|-------|
-| Year 1 | 400,000,000 TPIX | ~25.5 TPIX | 28.6% |
-| Year 2 | 350,000,000 TPIX | ~22.3 TPIX | 25.0% |
-| Year 3 | 300,000,000 TPIX | ~19.1 TPIX | 21.4% |
-| Year 4 | 200,000,000 TPIX | ~12.7 TPIX | 14.3% |
-| Year 5 | 150,000,000 TPIX | ~9.6 TPIX | 10.7% |
+| Year | Period | Emission | Per Block | Share |
+|------|--------|---------|-----------|-------|
+| Year 1 | 2025-2026 | 600,000,000 TPIX | ~38.3 TPIX | 42.9% |
+| Year 2 | 2026-2027 | 500,000,000 TPIX | ~31.9 TPIX | 35.7% |
+| Year 3 | 2027-2028 | 300,000,000 TPIX | ~19.1 TPIX | 21.4% |
 
 ---
 

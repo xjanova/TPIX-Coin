@@ -22,12 +22,12 @@
 
 ## What is TPIX Master Node?
 
-TPIX Master Node is a software that allows you to participate in the TPIX blockchain network as a validator, earn rewards by securing the network, and contribute to decentralization.
+TPIX Master Node is a software that allows you to participate in the TPIX blockchain network, earn rewards by securing the network, and contribute to decentralization.
 
 ### Key Features
 
-- **Earn Rewards** — Stake TPIX and earn 4-15% APY from block validation
-- **3-Tier System** — Choose Validator, Sentinel, or Light node based on your resources
+- **Earn Rewards** — Stake TPIX and earn 4-20% APY from network participation
+- **4-Tier System** — Choose Validator, Guardian, Sentinel, or Light node based on your resources
 - **Cross-Platform** — Runs on Windows Server, Linux, and Docker
 - **Web Dashboard** — Beautiful real-time monitoring at `http://localhost:3847`
 - **Auto-Updates** — Stay current with automatic update checks
@@ -37,20 +37,23 @@ TPIX Master Node is a software that allows you to participate in the TPIX blockc
 
 ## Node Tiers
 
-| Tier | Min Stake | APY | Lock | Max Nodes | Reward Share |
-|------|-----------|-----|------|-----------|--------------|
-| **Validator** | 1,000,000 TPIX | 12-15% | 90 days | 100 | 50% of block reward |
-| **Sentinel** | 100,000 TPIX | 7-10% | 30 days | 500 | 30% of block reward |
-| **Light** | 10,000 TPIX | 4-6% | 7 days | Unlimited | 20% of block reward |
+| Tier | Min Stake | APY | Lock | Max Nodes | Reward Share | Role |
+|------|-----------|-----|------|-----------|--------------|------|
+| **Validator** | 10,000,000 TPIX | 15-20% | 180 days | 21 | 20% | IBFT2 sealer + governance |
+| **Guardian** | 1,000,000 TPIX | 10-12% | 90 days | 100 | 35% | Premium masternode |
+| **Sentinel** | 100,000 TPIX | 7-9% | 30 days | 500 | 30% | Standard masternode |
+| **Light** | 10,000 TPIX | 4-6% | 7 days | Unlimited | 15% | Light node |
+
+> **Validator tier** requires company KYC (PDPA-compliant), admin review, and existing validator vote. Validators form the chain's governance council ("board of directors").
 
 ### Hardware Requirements
 
-| | Validator | Sentinel | Light |
-|---|-----------|----------|-------|
-| CPU | 8 cores | 4 cores | 2 cores |
-| RAM | 16 GB | 8 GB | 4 GB |
-| Storage | 500 GB SSD | 200 GB SSD | 100 GB SSD |
-| Network | 100 Mbps | 50 Mbps | 20 Mbps |
+| | Validator | Guardian | Sentinel | Light |
+|---|-----------|----------|----------|-------|
+| CPU | 16 cores | 8 cores | 4 cores | 2 cores |
+| RAM | 32 GB | 16 GB | 8 GB | 4 GB |
+| Storage | 1 TB SSD | 500 GB SSD | 200 GB SSD | 100 GB SSD |
+| Network | 200 Mbps | 100 Mbps | 50 Mbps | 20 Mbps |
 
 ---
 
@@ -58,26 +61,25 @@ TPIX Master Node is a software that allows you to participate in the TPIX blockc
 
 **Total Reward Pool: 1,400,000,000 TPIX** (20% of 7B total supply)
 
-Distributed over 5 years with decreasing emission:
+Distributed over 3 years (ending 2028) with decreasing emission:
 
-| Year | Reward | Per Block (~2s) | % of Pool |
-|------|--------|-----------------|-----------|
-| Year 1 | 400,000,000 TPIX | ~25.5 TPIX | 28.6% |
-| Year 2 | 350,000,000 TPIX | ~22.3 TPIX | 25.0% |
-| Year 3 | 300,000,000 TPIX | ~19.1 TPIX | 21.4% |
-| Year 4 | 200,000,000 TPIX | ~12.7 TPIX | 14.3% |
-| Year 5 | 150,000,000 TPIX | ~9.6 TPIX | 10.7% |
+| Year | Period | Reward | Per Block (~2s) | % of Pool |
+|------|--------|--------|-----------------|-----------|
+| Year 1 | 2025-2026 | 600,000,000 TPIX | ~38.3 TPIX | 42.9% |
+| Year 2 | 2026-2027 | 500,000,000 TPIX | ~31.9 TPIX | 35.7% |
+| Year 3 | 2027-2028 | 300,000,000 TPIX | ~19.1 TPIX | 21.4% |
 
 ### Block Reward Distribution
 
 ```
 Each Block Reward:
-├── 50% → Validator (block producer)
+├── 20% → Validator (IBFT2 block sealers + governance)
+├── 35% → Guardian nodes (premium masternodes)
 ├── 30% → Sentinel nodes (shared equally)
-└── 20% → Light nodes (weighted by stake & uptime)
+└── 15% → Light nodes (weighted by stake & uptime)
 ```
 
-### After Year 5
+### After Year 3
 
 Sustainable rewards from:
 - Transaction fee sharing (dApp/token creator fees)

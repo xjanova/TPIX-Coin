@@ -217,7 +217,8 @@
         <div id="page-network" style="display:none">
             <div class="grid grid-4">
                 <div class="card"><div class="card-label">Total Nodes</div><div class="card-value cyan" id="n-total">0</div></div>
-                <div class="card"><div class="card-label">Validators</div><div class="card-value yellow" id="n-val">0</div></div>
+                <div class="card"><div class="card-label">Validators</div><div class="card-value" style="color:#ef4444" id="n-val">0</div></div>
+                <div class="card"><div class="card-label">Guardians</div><div class="card-value yellow" id="n-guard">0</div></div>
                 <div class="card"><div class="card-label">Sentinels</div><div class="card-value purple" id="n-sent">0</div></div>
                 <div class="card"><div class="card-label">Light Nodes</div><div class="card-value cyan" id="n-light">0</div></div>
             </div>
@@ -254,8 +255,9 @@
                         <div class="form-group">
                             <label class="form-label">Node Tier</label>
                             <select class="form-select" id="cfg-tier">
-                                <option value="Validator">Validator (1M TPIX, 12-15% APY)</option>
-                                <option value="Sentinel">Sentinel (100K TPIX, 7-10% APY)</option>
+                                <option value="Validator">Validator (10M TPIX, 15-20% APY — KYC Required)</option>
+                                <option value="Guardian">Guardian (1M TPIX, 10-12% APY)</option>
+                                <option value="Sentinel">Sentinel (100K TPIX, 7-9% APY)</option>
                                 <option value="Light" selected>Light (10K TPIX, 4-6% APY)</option>
                             </select>
                         </div>

@@ -286,7 +286,8 @@ class NodeManager extends EventEmitter {
         args.push('--max-peers', String(this.config.maxPeers));
         args.push('--block-gas-target', '20000000');
 
-        // Only validators seal blocks
+        // Only real Validator-tier nodes (IBFT2 sealers) seal blocks
+        // Guardian, Sentinel, Light nodes do NOT seal
         if (this.config.tier === 'validator') {
             args.push('--seal');
         }

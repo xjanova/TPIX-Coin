@@ -32,15 +32,16 @@ show_help() {
     echo "Usage: ./install.sh [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --tier=TYPE     Node tier: validator, sentinel, light (default: light)"
+    echo "  --tier=TYPE     Node tier: validator, guardian, sentinel, light (default: light)"
     echo "  --wallet=ADDR   Your TPIX wallet address (0x...)"
     echo "  --name=NAME     Node display name"
     echo "  --help          Show this help"
     echo ""
     echo "Tiers:"
-    echo "  validator  1,000,000 TPIX stake  12-15% APY  (max 100 nodes)"
-    echo "  sentinel     100,000 TPIX stake   7-10% APY  (max 500 nodes)"
-    echo "  light         10,000 TPIX stake    4-6% APY  (unlimited)"
+    echo "  validator  10,000,000 TPIX stake  15-20% APY  (max 21 nodes, KYC required)"
+    echo "  guardian    1,000,000 TPIX stake  10-12% APY  (max 100 nodes)"
+    echo "  sentinel      100,000 TPIX stake   7-9% APY   (max 500 nodes)"
+    echo "  light          10,000 TPIX stake    4-6% APY   (unlimited)"
 }
 
 # Parse arguments

@@ -998,7 +998,8 @@ body {
 }
 .tier-light { background: rgba(100, 200, 255, 0.15); color: #64c8ff; }
 .tier-sentinel { background: rgba(168, 85, 247, 0.15); color: var(--purple); }
-.tier-validator { background: rgba(245, 158, 11, 0.15); color: var(--yellow); }
+.tier-guardian { background: rgba(245, 158, 11, 0.15); color: var(--yellow); }
+.tier-validator { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
 .tier-stake { font-size: 22px; font-weight: 800; color: var(--text-primary); margin-bottom: 4px; }
 .tier-apy { font-size: 14px; color: var(--green); font-weight: 600; margin-bottom: 12px; }
 .tier-reward {
