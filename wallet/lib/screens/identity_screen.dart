@@ -30,7 +30,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     _shieldController = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
     _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true);
     _progressController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
-    _loadStatus();
+    _loadStatus(showSpinner: true);
   }
 
   @override
@@ -41,10 +41,11 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     super.dispose();
   }
 
-  Future<void> _loadStatus() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadStatus({bool showSpinner = false}) async {
+    if (showSpinner) setState(() => _isLoading = true);
     final status = await _identityService.getStatus();
     final locations = await _identityService.getLocationLabels();
+    if (!mounted) return;
     setState(() {
       _status = status;
       _locationLabels = locations;
@@ -571,8 +572,19 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
   );
 
-  void _showSecurityQuestionsDialog(LocaleProvider l) {
+  void _showSecurityQuestionsDialog(LocaleProvider l) async {
+    final hasExisting = _status['hasQuestions'] as bool? ?? false;
     final controllers = List.generate(3, (_) => [TextEditingController(), TextEditingController()]);
+
+    // Pre-fill existing questions (answers stay empty — they're hashed)
+    if (hasExisting) {
+      final existingQuestions = await _identityService.getQuestions();
+      for (int i = 0; i < min(existingQuestions.length, 3); i++) {
+        controllers[i][0].text = existingQuestions[i];
+      }
+    }
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -614,6 +626,29 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 ],
               ),
               const SizedBox(height: 20),
+              if (hasExisting) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    color: AppTheme.warm.withValues(alpha: 0.08),
+                    border: Border.all(color: AppTheme.warm.withValues(alpha: 0.15)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 16, color: AppTheme.warm.withValues(alpha: 0.8)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          l.isThai ? 'การบันทึกจะแทนที่คำถามเดิม ต้องใส่คำตอบใหม่ทั้งหมด' : 'Saving will replace existing questions. Re-enter all answers.',
+                          style: TextStyle(fontSize: 11, color: AppTheme.warm.withValues(alpha: 0.8)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               ...List.generate(3, (i) => Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Column(
@@ -661,7 +696,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     _showSnack(l.t('identity.questionsSaved'), AppTheme.success);
                     await _loadStatus();
                   } catch (e) {
-                    _showSnack(e.toString(), AppTheme.danger);
+                    _showSnack(_cleanError(e), AppTheme.danger);
                   }
                 },
               ),
@@ -871,7 +906,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   _showSnack(l.t('identity.pinSaved'), AppTheme.success);
                   await _loadStatus();
                 } catch (e) {
-                  _showSnack(e.toString(), AppTheme.danger);
+                  _showSnack(_cleanError(e), AppTheme.danger);
                 }
               },
             ),
@@ -1050,6 +1085,13 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     );
   }
 
+  /// Strip "Exception: " prefix from error messages for clean display
+  String _cleanError(dynamic e) {
+    final msg = e.toString();
+    if (msg.startsWith('Exception: ')) return msg.substring(11);
+    return msg;
+  }
+
   void _showSnack(String msg, Color color) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1122,7 +1164,8 @@ class _LocationRegisterButtonState extends State<_LocationRegisterButton> {
           await widget.identityService.registerLocation(label);
           widget.onSuccess();
         } catch (e) {
-          widget.onError(e.toString());
+          final msg = e.toString();
+          widget.onError(msg.startsWith('Exception: ') ? msg.substring(11) : msg);
         } finally {
           if (mounted) setState(() => _registering = false);
         }
@@ -1170,7 +1213,7 @@ class _RecoveryTestButtonState extends State<_RecoveryTestButton> {
             final answers = widget.answerControllers.map((c) => c.text).toList();
             final pin = widget.pinController.text.trim().isNotEmpty ? widget.pinController.text.trim() : null;
 
-            final result = await widget.identityService.attemptRecovery(answers: answers, recoveryPin: pin);
+            final result = await widget.identityService.attemptRecovery(answers: answers, recoveryPin: pin, isTest: true);
 
             if (!mounted) return;
 

@@ -206,19 +206,23 @@ class IdentityService {
 
   /// Attempt recovery: questions + location (or recovery PIN as fallback)
   /// Returns: { success, reason, securityLevel }
+  /// Set [isTest] = true for self-test mode (skips rate limit counting)
   Future<Map<String, dynamic>> attemptRecovery({
     required List<String> answers,
     bool useLocation = true,
     String? recoveryPin,
+    bool isTest = false,
   }) async {
-    // Rate limiting check
-    final rateLimitResult = await _checkRateLimit();
-    if (!rateLimitResult['allowed']) {
-      return {
-        'success': false,
-        'reason': 'Too many attempts. Try again in ${rateLimitResult['remainingMinutes']} minutes.',
-        'locked': true,
-      };
+    // Rate limiting check (skip for self-tests)
+    if (!isTest) {
+      final rateLimitResult = await _checkRateLimit();
+      if (!rateLimitResult['allowed']) {
+        return {
+          'success': false,
+          'reason': 'Too many attempts. Try again in ${rateLimitResult['remainingMinutes']} minutes.',
+          'locked': true,
+        };
+      }
     }
 
     // Step 1: Verify security questions (need 3+ correct)
@@ -227,7 +231,7 @@ class IdentityService {
     final minRequired = (questions.length * 0.6).ceil(); // 60% must be correct
 
     if (correctAnswers < minRequired) {
-      await _recordAttempt(false);
+      if (!isTest) await _recordAttempt(false);
       return {
         'success': false,
         'reason': 'Incorrect answers ($correctAnswers/${questions.length} correct, need $minRequired)',
@@ -251,7 +255,7 @@ class IdentityService {
     }
 
     if (!locationVerified && !pinVerified) {
-      await _recordAttempt(false);
+      if (!isTest) await _recordAttempt(false);
       return {
         'success': false,
         'reason': recoveryPin != null
@@ -263,7 +267,7 @@ class IdentityService {
     }
 
     // Success!
-    await _recordAttempt(true);
+    if (!isTest) await _recordAttempt(true);
     return {
       'success': true,
       'correctAnswers': correctAnswers,
@@ -379,9 +383,10 @@ class IdentityService {
     return (coord * factor).roundToDouble() / factor;
   }
 
-  /// Hash grid coordinates
+  /// Hash grid coordinates — uses toStringAsFixed to guarantee
+  /// identical string representation across devices/runtimes
   String _hashLocation(double gridLat, double gridLng) {
-    final input = 'tpix-loc:$gridLat:$gridLng';
+    final input = 'tpix-loc:${gridLat.toStringAsFixed(gridPrecision)}:${gridLng.toStringAsFixed(gridPrecision)}';
     final bytes = sha256.convert(utf8.encode(input)).bytes;
     return base64Encode(bytes);
   }
