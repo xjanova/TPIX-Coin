@@ -272,7 +272,7 @@ body {
     transform: translateX(-50%);
     width: 140px;
     height: 140px;
-    background: url('logomasternode.png') center/contain no-repeat;
+    background: url('logomasternode.webp') center/contain no-repeat;
     opacity: 0.06;
     pointer-events: none;
     filter: grayscale(30%) brightness(1.2);
