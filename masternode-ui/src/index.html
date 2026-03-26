@@ -670,6 +670,133 @@
                     </div>
                 </div>
 
+                <!-- ========== EXPLORER ========== -->
+                <div v-if="activeTab === 'explorer'" class="page">
+                    <h1 class="page-title">{{ i18n.explorer.title }}</h1>
+
+                    <!-- Search -->
+                    <div class="explorer-search">
+                        <input v-model="explorerSearch" class="input-field" :placeholder="i18n.explorer.searchPlaceholder" @keyup.enter="explorerSearchAction">
+                        <button @click="explorerSearchAction" class="btn btn-primary btn-sm">{{ i18n.explorer.search }}</button>
+                    </div>
+
+                    <!-- Block List View -->
+                    <div v-if="explorerView === 'list'">
+                        <div class="section-header">
+                            <h3 class="section-title">{{ i18n.explorer.latestBlocks }}</h3>
+                            <button @click="loadLatestBlocks" class="btn btn-ghost btn-sm" :disabled="explorerLoading">&#8635;</button>
+                        </div>
+                        <div v-if="explorerLoading" class="empty-state"><div class="spinner"></div> {{ i18n.explorer.loading }}</div>
+                        <div v-else-if="explorerBlocks.length" class="explorer-blocks">
+                            <div v-for="b in explorerBlocks" :key="b.hash" class="explorer-block-row" @click="viewBlock(hexToNum(b.number))">
+                                <div class="block-num">
+                                    <span class="text-cyan">#{{ hexToNum(b.number).toLocaleString() }}</span>
+                                </div>
+                                <div class="block-info">
+                                    <span class="block-time">{{ formatBlockTime(b.timestamp) }}</span>
+                                    <span class="block-txcount">{{ (b.transactions || []).length }} txs</span>
+                                </div>
+                                <div class="block-hash">{{ b.hash ? b.hash.slice(0, 16) + '...' : '' }}</div>
+                            </div>
+                        </div>
+                        <div v-else class="empty-state">{{ i18n.explorer.noBlocks }}</div>
+                    </div>
+
+                    <!-- Block Detail View -->
+                    <div v-if="explorerView === 'block'">
+                        <button @click="explorerBack" class="btn btn-ghost btn-sm mb-2">&larr; {{ i18n.explorer.back }}</button>
+                        <div v-if="explorerLoading" class="empty-state"><div class="spinner"></div></div>
+                        <div v-else-if="explorerBlock" class="section-card">
+                            <h3 class="section-title">{{ i18n.explorer.blockDetail }} #{{ hexToNum(explorerBlock.number).toLocaleString() }}</h3>
+                            <div class="detail-grid">
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.blockNumber }}</span><span class="detail-value text-cyan">{{ hexToNum(explorerBlock.number).toLocaleString() }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.timestamp }}</span><span class="detail-value">{{ formatBlockTime(explorerBlock.timestamp) }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.txCount }}</span><span class="detail-value">{{ (explorerBlock.transactions || []).length }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.gasUsed }}</span><span class="detail-value">{{ hexToNum(explorerBlock.gasUsed).toLocaleString() }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.hash }}</span><span class="detail-value mono" style="font-size:11px;word-break:break-all">{{ explorerBlock.hash }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.parentHash }}</span><span class="detail-value mono" style="font-size:11px;word-break:break-all">{{ explorerBlock.parentHash }}</span></div>
+                                <div class="detail-row"><span class="detail-label">Miner</span><span class="detail-value mono">{{ explorerBlock.miner }}</span></div>
+                            </div>
+                            <!-- Transactions in block -->
+                            <div v-if="explorerBlock.transactions && explorerBlock.transactions.length" class="mt-4">
+                                <h4 class="section-title">{{ i18n.explorer.txCount }}: {{ explorerBlock.transactions.length }}</h4>
+                                <div class="explorer-tx-list">
+                                    <div v-for="tx in explorerBlock.transactions" :key="tx.hash || tx" class="explorer-tx-row" @click="viewTx(tx.hash || tx)">
+                                        <span class="tx-hash-short">{{ (tx.hash || tx).slice(0, 20) }}...</span>
+                                        <span v-if="tx.from" class="tx-addr-mini">{{ shortAddr(tx.from) }} &rarr; {{ shortAddr(tx.to) }}</span>
+                                        <span v-if="tx.value" class="tx-val-mini text-cyan">{{ hexToTpix(tx.value) }} TPIX</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Transaction Detail View -->
+                    <div v-if="explorerView === 'tx'">
+                        <button @click="explorerBack" class="btn btn-ghost btn-sm mb-2">&larr; {{ i18n.explorer.back }}</button>
+                        <div v-if="explorerLoading" class="empty-state"><div class="spinner"></div></div>
+                        <div v-else-if="explorerTx && explorerTx.tx" class="section-card">
+                            <h3 class="section-title">{{ i18n.explorer.txDetail }}</h3>
+                            <div class="detail-grid">
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.hash }}</span><span class="detail-value mono" style="font-size:11px;word-break:break-all">{{ explorerTx.tx.hash }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.status }}</span><span class="detail-value" :class="explorerTx.receipt && explorerTx.receipt.status === '0x1' ? 'text-green' : 'text-red'">{{ explorerTx.receipt && explorerTx.receipt.status === '0x1' ? i18n.explorer.success : i18n.explorer.failed }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.blockNumber }}</span><span class="detail-value text-cyan cursor-pointer" @click="viewBlock(hexToNum(explorerTx.tx.blockNumber))">{{ hexToNum(explorerTx.tx.blockNumber).toLocaleString() }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.from }}</span><span class="detail-value mono">{{ explorerTx.tx.from }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.to }}</span><span class="detail-value mono">{{ explorerTx.tx.to }}</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.value }}</span><span class="detail-value text-cyan">{{ hexToTpix(explorerTx.tx.value) }} TPIX</span></div>
+                                <div class="detail-row"><span class="detail-label">{{ i18n.explorer.gasUsed }}</span><span class="detail-value">{{ explorerTx.receipt ? hexToNum(explorerTx.receipt.gasUsed).toLocaleString() : '-' }}</span></div>
+                                <div class="detail-row"><span class="detail-label">Nonce</span><span class="detail-value">{{ hexToNum(explorerTx.tx.nonce) }}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========== MASTERNODES MAP ========== -->
+                <div v-if="activeTab === 'masternodes'" class="page">
+                    <h1 class="page-title">{{ i18n.masternodeMap.title }}</h1>
+
+                    <!-- Stats -->
+                    <div class="stats-grid">
+                        <div class="stat-card"><div class="stat-label">{{ i18n.masternodeMap.totalNodes }}</div><div class="stat-value text-cyan">{{ masternodeStats.total }}</div></div>
+                        <div class="stat-card"><div class="stat-label">{{ i18n.masternodeMap.countries }}</div><div class="stat-value text-purple">{{ masternodeStats.countries }}</div></div>
+                        <div class="stat-card"><div class="stat-label">{{ i18n.masternodeMap.types }}</div>
+                            <div class="node-type-counts">
+                                <span class="type-badge type-validator">{{ masternodeStats.byType.validator }} {{ i18n.masternodeMap.validator }}</span>
+                                <span class="type-badge type-sentinel">{{ masternodeStats.byType.sentinel }} {{ i18n.masternodeMap.sentinel }}</span>
+                                <span class="type-badge type-light">{{ masternodeStats.byType.light }} {{ i18n.masternodeMap.light }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3D Globe -->
+                    <div class="globe-container glass-card">
+                        <h3 class="section-title">{{ i18n.masternodeMap.mapTitle }}</h3>
+                        <div class="globe-wrapper">
+                            <canvas id="globe-canvas"></canvas>
+                        </div>
+                        <div class="globe-legend">
+                            <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span> {{ i18n.masternodeMap.validator }}</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#a855f7"></span> {{ i18n.masternodeMap.sentinel }}</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#06b6d4"></span> {{ i18n.masternodeMap.light }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Node List by Country -->
+                    <div class="section-card mt-4">
+                        <h3 class="section-title">{{ i18n.masternodeMap.location }}</h3>
+                        <div class="masternode-list">
+                            <div v-for="node in masternodeData" :key="node.id" class="masternode-row">
+                                <span class="mn-flag">{{ node.flag }}</span>
+                                <div class="mn-info">
+                                    <span class="mn-city">{{ node.city }}, {{ node.countryName }}</span>
+                                    <span class="mn-addr mono">{{ node.addr }}</span>
+                                </div>
+                                <span :class="['type-badge', 'type-' + node.type]">{{ node.type }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ========== LINKS ========== -->
                 <div v-if="activeTab === 'links'" class="page">
                     <h1 class="page-title">{{ i18n.tabs.links }}</h1>

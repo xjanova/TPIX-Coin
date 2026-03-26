@@ -376,6 +376,50 @@ function setupIPC() {
     });
 
     // ═══════════════════════════════════════════════════════════
+    //  EXPLORER — Block Browser via RPC
+    // ═══════════════════════════════════════════════════════════
+
+    ipcMain.handle('explorer:getBlock', async (_, blockNumber) => {
+        try {
+            const { rpcCall } = require('./rpc-client');
+            const hexBlock = typeof blockNumber === 'number' ? '0x' + blockNumber.toString(16) : blockNumber;
+            const block = await rpcCall('eth_getBlockByNumber', [hexBlock, true], 15000);
+            return { success: true, data: block };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('explorer:getLatestBlocks', async (_, count) => {
+        try {
+            const { rpcCall } = require('./rpc-client');
+            const latestHex = await rpcCall('eth_blockNumber', [], 10000);
+            const latest = parseInt(latestHex, 16);
+            const blocks = [];
+            const fetchCount = Math.min(count || 20, 50);
+            for (let i = 0; i < fetchCount && (latest - i) >= 0; i++) {
+                const hex = '0x' + (latest - i).toString(16);
+                const block = await rpcCall('eth_getBlockByNumber', [hex, false], 10000);
+                if (block) blocks.push(block);
+            }
+            return { success: true, data: blocks };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('explorer:getTx', async (_, txHash) => {
+        try {
+            const { rpcCall } = require('./rpc-client');
+            const tx = await rpcCall('eth_getTransactionByHash', [txHash], 10000);
+            const receipt = await rpcCall('eth_getTransactionReceipt', [txHash], 10000);
+            return { success: true, data: { tx, receipt } };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════
     //  SETTINGS (SQLite)
     // ═══════════════════════════════════════════════════════════
 

@@ -99,6 +99,13 @@ contextBridge.exposeInMainWorld('tpix', {
         getRewards: (walletId) => ipcRenderer.invoke('wallet:getRewards', walletId),
     },
 
+    // Explorer
+    explorer: {
+        getBlock: (num) => ipcRenderer.invoke('explorer:getBlock', num),
+        getLatestBlocks: (count) => ipcRenderer.invoke('explorer:getLatestBlocks', count),
+        getTx: (hash) => ipcRenderer.invoke('explorer:getTx', hash),
+    },
+
     // Living Identity
     identity: {
         getStatus: (walletId) => ipcRenderer.invoke('identity:getStatus', walletId),

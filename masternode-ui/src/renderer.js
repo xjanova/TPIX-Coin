@@ -16,6 +16,8 @@ const LANG = {
             setup: 'Run a Node',
             wallet: 'Wallet',
             network: 'Network',
+            explorer: 'Explorer',
+            masternodes: 'Masternodes',
             links: 'Links',
             logs: 'Logs',
             settings: 'Settings',
@@ -227,6 +229,42 @@ const LANG = {
             scanBtn: 'Scan QR',
             stopScan: 'Stop',
         },
+        explorer: {
+            title: 'Block Explorer',
+            latestBlocks: 'Latest Blocks',
+            blockDetail: 'Block Detail',
+            txDetail: 'Transaction Detail',
+            blockNumber: 'Block',
+            timestamp: 'Time',
+            txCount: 'Transactions',
+            validator: 'Validator',
+            gasUsed: 'Gas Used',
+            hash: 'Hash',
+            parentHash: 'Parent Hash',
+            from: 'From',
+            to: 'To',
+            value: 'Value',
+            status: 'Status',
+            success: 'Success',
+            failed: 'Failed',
+            loading: 'Loading...',
+            noBlocks: 'No blocks found',
+            searchPlaceholder: 'Block number or Tx hash...',
+            search: 'Search',
+            back: 'Back',
+            viewTx: 'View Transaction',
+        },
+        masternodeMap: {
+            title: 'Masternode Network',
+            totalNodes: 'Total Nodes',
+            countries: 'Countries',
+            types: 'Node Types',
+            light: 'Light',
+            sentinel: 'Sentinel',
+            validator: 'Validator',
+            location: 'Location',
+            mapTitle: 'Global Network Map',
+        },
         status: { stopped: 'Stopped', starting: 'Starting...', running: 'Running', syncing: 'Syncing', error: 'Error' },
     },
     th: {
@@ -236,6 +274,8 @@ const LANG = {
             setup: 'ตั้งค่าโหนด',
             wallet: 'กระเป๋าเงิน',
             network: 'เครือข่าย',
+            explorer: 'สำรวจบล็อก',
+            masternodes: 'มาสเตอร์โหนด',
             links: 'ลิงก์',
             logs: 'บันทึก',
             settings: 'ตั้งค่า',
@@ -447,6 +487,42 @@ const LANG = {
             scanBtn: 'สแกน QR',
             stopScan: 'หยุด',
         },
+        explorer: {
+            title: 'สำรวจบล็อก',
+            latestBlocks: 'บล็อกล่าสุด',
+            blockDetail: 'รายละเอียดบล็อก',
+            txDetail: 'รายละเอียดธุรกรรม',
+            blockNumber: 'บล็อก',
+            timestamp: 'เวลา',
+            txCount: 'ธุรกรรม',
+            validator: 'ผู้ตรวจสอบ',
+            gasUsed: 'Gas ที่ใช้',
+            hash: 'แฮช',
+            parentHash: 'แฮชพ่อ',
+            from: 'จาก',
+            to: 'ถึง',
+            value: 'จำนวน',
+            status: 'สถานะ',
+            success: 'สำเร็จ',
+            failed: 'ล้มเหลว',
+            loading: 'กำลังโหลด...',
+            noBlocks: 'ไม่พบบล็อก',
+            searchPlaceholder: 'เลขบล็อกหรือ Tx hash...',
+            search: 'ค้นหา',
+            back: 'กลับ',
+            viewTx: 'ดูธุรกรรม',
+        },
+        masternodeMap: {
+            title: 'เครือข่ายมาสเตอร์โหนด',
+            totalNodes: 'โหนดทั้งหมด',
+            countries: 'ประเทศ',
+            types: 'ประเภทโหนด',
+            light: 'ไลท์',
+            sentinel: 'เซนติเนล',
+            validator: 'วาลิเดเตอร์',
+            location: 'ตำแหน่ง',
+            mapTitle: 'แผนที่เครือข่ายโลก',
+        },
         status: { stopped: 'หยุด', starting: 'กำลังเริ่ม...', running: 'ทำงาน', syncing: 'กำลังซิงค์', error: 'ข้อผิดพลาด' },
     },
 };
@@ -466,6 +542,8 @@ const app = createApp({
             { id: 'setup',     icon: '&#9881;' },
             { id: 'wallet',    icon: '&#128176;' },
             { id: 'network',   icon: '&#127760;' },
+            { id: 'explorer',  icon: '&#128270;' },
+            { id: 'masternodes', icon: '&#127758;' },
             { id: 'links',     icon: '&#128279;' },
             { id: 'logs',      icon: '&#128196;' },
             { id: 'settings',  icon: '&#9881;' },
@@ -622,6 +700,18 @@ const app = createApp({
         const recoveryKeyForm = reactive({ pin: '', hint: '' });
         const identitySaving = ref(false);
 
+        // ─── Explorer State ──────────────────────
+        const explorerBlocks = ref([]);
+        const explorerBlock = ref(null);
+        const explorerTx = ref(null);
+        const explorerLoading = ref(false);
+        const explorerSearch = ref('');
+        const explorerView = ref('list'); // 'list', 'block', 'tx'
+
+        // ─── Masternode Map State ────────────────
+        const masternodeData = ref([]);
+        const masternodeStats = ref({ total: 0, countries: 0, byType: { light: 0, sentinel: 0, validator: 0 } });
+
         // ─── Update State ─────────────────────────
         const updateStatus = ref({
             checking: false, updateAvailable: false, updateDownloaded: false,
@@ -676,9 +766,11 @@ const app = createApp({
             } catch {}
         }
         async function createWallet() {
+            const password = prompt(lang.value === 'th' ? 'ใส่รหัสผ่าน' : 'Enter password');
+            if (password === null) return;
             walletLoading.value = true;
             try {
-                const result = await window.tpix.wallet.create();
+                const result = await window.tpix.wallet.create(password);
                 if (result.success) {
                     newWalletData.value = result.data;
                     if (result.data.mnemonic) {
@@ -696,6 +788,8 @@ const app = createApp({
                             newWalletData.value = { ...newWalletData.value, privateKey: null };
                         }
                     }, 60000);
+                } else {
+                    alert(result.error || 'Failed to create wallet');
                 }
             } finally { walletLoading.value = false; }
         }
@@ -760,12 +854,17 @@ const app = createApp({
         }
 
         async function addNewWallet() {
+            const password = prompt(lang.value === 'th' ? 'ใส่รหัสผ่าน' : 'Enter password');
+            if (password === null) return;
             walletLoading.value = true;
             try {
-                const result = await window.tpix.wallet.create();
+                const result = await window.tpix.wallet.create(password);
                 if (result.success) {
                     newWalletData.value = result.data;
                     await loadWallets();
+                    await refreshBalance();
+                } else {
+                    alert(result.error || 'Failed to create wallet');
                 }
             } finally { walletLoading.value = false; }
         }
@@ -1062,6 +1161,264 @@ const app = createApp({
             }
         }
 
+        // ─── Explorer ────────────────────────────
+        async function loadLatestBlocks() {
+            explorerLoading.value = true;
+            try {
+                const result = await window.tpix.explorer.getLatestBlocks(20);
+                if (result.success) explorerBlocks.value = result.data;
+            } catch {} finally { explorerLoading.value = false; }
+        }
+
+        async function viewBlock(blockNum) {
+            explorerLoading.value = true;
+            explorerView.value = 'block';
+            try {
+                const result = await window.tpix.explorer.getBlock(blockNum);
+                if (result.success) explorerBlock.value = result.data;
+            } catch {} finally { explorerLoading.value = false; }
+        }
+
+        async function viewTx(txHash) {
+            explorerLoading.value = true;
+            explorerView.value = 'tx';
+            try {
+                const result = await window.tpix.explorer.getTx(txHash);
+                if (result.success) explorerTx.value = result.data;
+            } catch {} finally { explorerLoading.value = false; }
+        }
+
+        async function explorerSearchAction() {
+            const q = explorerSearch.value.trim();
+            if (!q) return;
+            if (q.startsWith('0x') && q.length === 66) {
+                await viewTx(q);
+            } else {
+                const num = parseInt(q);
+                if (!isNaN(num)) await viewBlock(num);
+            }
+        }
+
+        function explorerBack() {
+            explorerView.value = 'list';
+            explorerBlock.value = null;
+            explorerTx.value = null;
+        }
+
+        function formatBlockTime(hex) {
+            if (!hex) return '';
+            const ts = parseInt(hex, 16) * 1000;
+            return new Date(ts).toLocaleString();
+        }
+
+        function hexToNum(hex) {
+            if (!hex) return 0;
+            return parseInt(hex, 16);
+        }
+
+        function hexToTpix(hex) {
+            if (!hex || hex === '0x0') return '0';
+            try {
+                const wei = BigInt(hex);
+                const whole = wei / BigInt(1e18);
+                const frac = wei % BigInt(1e18);
+                if (frac === 0n) return whole.toString();
+                const fracStr = frac.toString().padStart(18, '0').slice(0, 6).replace(/0+$/, '');
+                return whole + (fracStr ? '.' + fracStr : '');
+            } catch { return '0'; }
+        }
+
+        // ─── Masternode Map ──────────────────────
+        function loadMasternodes() {
+            // Demo data — will be replaced with on-chain registry query
+            // Country flags use Unicode regional indicators
+            const flag = (code) => String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+            const nodes = [
+                { id: 1, type: 'validator', addr: '0x742d...35Fa', country: 'TH', countryName: 'Thailand', lat: 13.75, lng: 100.5, city: 'Bangkok' },
+                { id: 2, type: 'validator', addr: '0x8Ba1...92Cd', country: 'TH', countryName: 'Thailand', lat: 18.79, lng: 98.98, city: 'Chiang Mai' },
+                { id: 3, type: 'validator', addr: '0x1aF5...48Be', country: 'SG', countryName: 'Singapore', lat: 1.35, lng: 103.82, city: 'Singapore' },
+                { id: 4, type: 'sentinel', addr: '0x3cD2...71Aa', country: 'JP', countryName: 'Japan', lat: 35.68, lng: 139.69, city: 'Tokyo' },
+                { id: 5, type: 'sentinel', addr: '0x9eF8...23Bc', country: 'KR', countryName: 'South Korea', lat: 37.57, lng: 126.98, city: 'Seoul' },
+                { id: 6, type: 'sentinel', addr: '0x5bA3...67De', country: 'US', countryName: 'United States', lat: 37.77, lng: -122.42, city: 'San Francisco' },
+                { id: 7, type: 'light', addr: '0x2dC4...89Ef', country: 'DE', countryName: 'Germany', lat: 52.52, lng: 13.41, city: 'Berlin' },
+                { id: 8, type: 'light', addr: '0x6fE1...45Ab', country: 'GB', countryName: 'United Kingdom', lat: 51.51, lng: -0.13, city: 'London' },
+                { id: 9, type: 'light', addr: '0x4aB7...12Cd', country: 'AU', countryName: 'Australia', lat: -33.87, lng: 151.21, city: 'Sydney' },
+                { id: 10, type: 'validator', addr: '0x7cE9...56Fg', country: 'TH', countryName: 'Thailand', lat: 7.88, lng: 98.39, city: 'Phuket' },
+                { id: 11, type: 'light', addr: '0x8dA2...34Hi', country: 'VN', countryName: 'Vietnam', lat: 10.82, lng: 106.63, city: 'Ho Chi Minh' },
+                { id: 12, type: 'sentinel', addr: '0x1bC5...78Jk', country: 'MY', countryName: 'Malaysia', lat: 3.14, lng: 101.69, city: 'Kuala Lumpur' },
+                { id: 13, type: 'light', addr: '0x3eD8...90Lm', country: 'IN', countryName: 'India', lat: 19.08, lng: 72.88, city: 'Mumbai' },
+                { id: 14, type: 'sentinel', addr: '0x5fA1...23No', country: 'CA', countryName: 'Canada', lat: 43.65, lng: -79.38, city: 'Toronto' },
+                { id: 15, type: 'light', addr: '0x9gB4...56Pq', country: 'BR', countryName: 'Brazil', lat: -23.55, lng: -46.63, city: 'Sao Paulo' },
+            ].map(n => ({ ...n, flag: flag(n.country) }));
+
+            masternodeData.value = nodes;
+
+            const byType = { light: 0, sentinel: 0, validator: 0 };
+            const countrySet = new Set();
+            nodes.forEach(n => { byType[n.type]++; countrySet.add(n.country); });
+            masternodeStats.value = { total: nodes.length, countries: countrySet.size, byType };
+        }
+
+        function initGlobe() {
+            // Will be called after Vue renders the canvas
+            Vue.nextTick(() => {
+                const canvas = document.getElementById('globe-canvas');
+                if (!canvas) return;
+                // Cleanup previous globe animation if any
+                if (canvas._globeCleanup) canvas._globeCleanup();
+                drawGlobe(canvas, masternodeData.value);
+            });
+        }
+
+        function drawGlobe(canvas, nodes) {
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width = canvas.parentElement.clientWidth || 600;
+            const H = canvas.height = 400;
+            const cx = W / 2, cy = H / 2;
+            const R = Math.min(W, H) * 0.38;
+
+            let rotation = 0;
+            let animId = null;
+
+            function toScreen(lat, lng) {
+                const phi = (90 - lat) * Math.PI / 180;
+                const theta = (lng + rotation) * Math.PI / 180;
+                const x = R * Math.sin(phi) * Math.cos(theta);
+                const y = R * Math.cos(phi);
+                const z = R * Math.sin(phi) * Math.sin(theta);
+                return { x: cx + x, y: cy - y, z, visible: z > -R * 0.1 };
+            }
+
+            // Simplified world outline (major landmasses as line segments)
+            const coastline = [
+                // North America
+                [[70,-170],[65,-168],[60,-150],[58,-135],[48,-125],[35,-120],[25,-110],[20,-105],[18,-90],[25,-80],[30,-82],[35,-75],[40,-74],[42,-70],[47,-60],[50,-55],[55,-60],[60,-65],[65,-90],[70,-100],[75,-120],[70,-170]],
+                // South America
+                [[10,-75],[5,-77],[0,-80],[-5,-81],[-10,-78],[-15,-75],[-20,-70],[-25,-65],[-30,-60],[-35,-57],[-40,-65],[-45,-70],[-52,-70],[-55,-68],[-50,-60],[-40,-55],[-35,-50],[-25,-45],[-20,-40],[-10,-35],[-5,-35],[0,-50],[5,-60],[10,-75]],
+                // Europe
+                [[36,-10],[38,-8],[40,-3],[43,3],[45,7],[48,2],[50,3],[52,5],[55,8],[57,10],[60,5],[62,6],[65,14],[70,20],[72,30],[68,40],[60,30],[55,20],[50,15],[48,8],[45,12],[42,15],[40,20],[38,24],[36,28],[35,25],[36,15],[38,10],[36,-5],[36,-10]],
+                // Africa
+                [[35,-5],[37,10],[33,12],[30,32],[25,35],[20,37],[15,42],[12,44],[5,42],[0,42],[-5,40],[-10,35],[-15,40],[-25,35],[-30,30],[-35,20],[-35,18],[-30,15],[-20,12],[-10,14],[0,10],[5,0],[5,-5],[10,-15],[15,-17],[20,-17],[25,-15],[30,-10],[35,-5]],
+                // Asia
+                [[30,35],[35,36],[40,40],[42,50],[45,55],[50,55],[55,60],[60,70],[55,75],[50,80],[45,85],[40,75],[35,70],[30,65],[25,60],[20,55],[15,50],[10,45],[5,44],[0,42]],
+                [[40,75],[45,90],[50,90],[55,100],[55,110],[50,120],[45,130],[40,130],[35,140],[45,145],[50,155],[55,165],[60,170],[65,180],[70,180],[72,170],[70,140],[65,120],[60,110],[55,85],[50,80]],
+                [[35,105],[30,100],[25,95],[22,90],[20,92],[18,98],[15,100],[10,105],[5,103],[0,105],[-5,106],[-8,115]],
+                // Australia
+                [[-15,130],[-12,135],[-15,140],[-20,148],[-25,153],[-30,153],[-35,150],[-38,145],[-35,137],[-32,135],[-30,130],[-25,114],[-22,114],[-20,118],[-15,125],[-15,130]],
+            ];
+
+            function draw() {
+                ctx.clearRect(0, 0, W, H);
+
+                // Globe background
+                const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.5);
+                bgGrad.addColorStop(0, 'rgba(6, 182, 212, 0.08)');
+                bgGrad.addColorStop(1, 'transparent');
+                ctx.fillStyle = bgGrad;
+                ctx.fillRect(0, 0, W, H);
+
+                // Globe sphere
+                const grad = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.3, R * 0.05, cx, cy, R);
+                grad.addColorStop(0, 'rgba(6, 182, 212, 0.15)');
+                grad.addColorStop(0.7, 'rgba(6, 182, 212, 0.05)');
+                grad.addColorStop(1, 'rgba(6, 182, 212, 0.02)');
+                ctx.beginPath();
+                ctx.arc(cx, cy, R, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(6, 182, 212, 0.2)';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // Grid lines (meridians and parallels)
+                ctx.strokeStyle = 'rgba(6, 182, 212, 0.07)';
+                ctx.lineWidth = 0.5;
+                for (let lat = -60; lat <= 60; lat += 30) {
+                    ctx.beginPath();
+                    for (let lng = 0; lng <= 360; lng += 5) {
+                        const p = toScreen(lat, lng);
+                        if (p.visible) {
+                            if (lng === 0 || !toScreen(lat, lng - 5).visible) ctx.moveTo(p.x, p.y);
+                            else ctx.lineTo(p.x, p.y);
+                        }
+                    }
+                    ctx.stroke();
+                }
+                for (let lng = 0; lng < 360; lng += 30) {
+                    ctx.beginPath();
+                    for (let lat = -90; lat <= 90; lat += 5) {
+                        const p = toScreen(lat, lng);
+                        if (p.visible) {
+                            if (lat === -90 || !toScreen(lat - 5, lng).visible) ctx.moveTo(p.x, p.y);
+                            else ctx.lineTo(p.x, p.y);
+                        }
+                    }
+                    ctx.stroke();
+                }
+
+                // Draw coastlines
+                ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
+                ctx.lineWidth = 1;
+                coastline.forEach(line => {
+                    ctx.beginPath();
+                    let started = false;
+                    line.forEach(([lat, lng]) => {
+                        const p = toScreen(lat, lng);
+                        if (p.visible) {
+                            if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+                            else ctx.lineTo(p.x, p.y);
+                        } else { started = false; }
+                    });
+                    ctx.stroke();
+                });
+
+                // Draw nodes
+                const typeColors = { validator: '#00e676', sentinel: '#a855f7', light: '#06b6d4' };
+                const typeSizes = { validator: 6, sentinel: 5, light: 4 };
+
+                // Sort by z for depth ordering (back first)
+                const sortedNodes = nodes.map(n => ({ ...n, screen: toScreen(n.lat, n.lng) }))
+                    .filter(n => n.screen.visible)
+                    .sort((a, b) => a.screen.z - b.screen.z);
+
+                sortedNodes.forEach(n => {
+                    const { x, y, z } = n.screen;
+                    const size = typeSizes[n.type] || 4;
+                    const alpha = 0.4 + 0.6 * ((z + R) / (2 * R));
+
+                    // Glow
+                    const glow = ctx.createRadialGradient(x, y, 0, x, y, size * 3);
+                    glow.addColorStop(0, typeColors[n.type] + Math.round(alpha * 80).toString(16).padStart(2, '0'));
+                    glow.addColorStop(1, 'transparent');
+                    ctx.fillStyle = glow;
+                    ctx.fillRect(x - size * 3, y - size * 3, size * 6, size * 6);
+
+                    // Dot
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fillStyle = typeColors[n.type];
+                    ctx.globalAlpha = alpha;
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+
+                    // Label
+                    ctx.fillStyle = '#e2e8f0';
+                    ctx.font = '10px monospace';
+                    ctx.globalAlpha = alpha * 0.8;
+                    ctx.fillText(n.flag + ' ' + n.city, x + size + 4, y + 3);
+                    ctx.globalAlpha = 1;
+                });
+
+                rotation += 0.15;
+                animId = requestAnimationFrame(draw);
+            }
+
+            draw();
+
+            // Store cleanup ref
+            canvas._globeCleanup = () => { if (animId) cancelAnimationFrame(animId); };
+        }
+
         // ─── Format Helpers ──────────────────────
         function formatTpix(weiString) {
             if (!weiString) return '0';
@@ -1155,8 +1512,14 @@ const app = createApp({
                 window.tpix.update.onProgress(p => { updateStatus.value = { ...updateStatus.value, downloadProgress: p }; });
                 try { const s = await window.tpix.update.getStatus(); if (s) updateStatus.value = s; } catch {}
             }
+            loadMasternodes();
         });
         onUnmounted(() => { clearInterval(networkInterval); clearInterval(metricsInterval); clearInterval(uptimeInterval); stopQRScan(); });
+
+        watch(activeTab, (tab) => {
+            if (tab === 'explorer' && explorerBlocks.value.length === 0) loadLatestBlocks();
+            if (tab === 'masternodes') { loadMasternodes(); Vue.nextTick(() => initGlobe()); }
+        });
 
         return {
             appVersion, lang, i18n, toggleLang,
@@ -1190,6 +1553,12 @@ const app = createApp({
             openSendModal, estimateGasFee, confirmSend,
             openReceiveModal, loadTransactions, loadRewards,
             formatTpix,
+            // Explorer
+            explorerBlocks, explorerBlock, explorerTx, explorerLoading, explorerSearch, explorerView,
+            loadLatestBlocks, viewBlock, viewTx, explorerSearchAction, explorerBack,
+            formatBlockTime, hexToNum, hexToTpix,
+            // Masternodes
+            masternodeData, masternodeStats, loadMasternodes, initGlobe,
             // Settings & utils
             loadConfig, saveSettings, openDataDir, openLink, loadLogs,
             formatNumber, formatDuration, formatMB, formatLogTime,
