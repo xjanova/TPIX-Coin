@@ -1,0 +1,91 @@
+# TPIX Chain Block Explorer — Blockscout
+# docker-compose up -d เพื่อเริ่ม explorer
+# Developed by Xman Studio
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database สำหรับ Blockscout
+  db:
+    image: postgres:16-alpine
+    container_name: tpix-explorer-db
+    environment:
+      POSTGRES_DB: blockscout
+      POSTGRES_USER: blockscout
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGE_ME_GENERATE_STRONG_PASSWORD}
+    volumes:
+      - explorer-db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - explorer-net
+    restart: unless-stopped
+
+  # Blockscout Backend
+  backend:
+    image: blockscout/blockscout:latest
+    container_name: tpix-explorer-backend
+    command: sh -c "bin/blockscout eval 'Elixir.Explorer.ReleaseTasks.create_and_migrate()' && bin/blockscout start"
+    environment:
+      # Database
+      DATABASE_URL: postgresql://blockscout:${DB_PASSWORD:-CHANGE_ME_GENERATE_STRONG_PASSWORD}@db:5432/blockscout
+
+      # Chain RPC — เชื่อมต่อกับ TPIX Chain validator node
+      ETHEREUM_JSONRPC_VARIANT: geth
+      ETHEREUM_JSONRPC_HTTP_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      ETHEREUM_JSONRPC_WS_URL: ${WS_URL:-ws://host.docker.internal:8545}
+      ETHEREUM_JSONRPC_TRACE_URL: ${RPC_URL:-http://host.docker.internal:8545}
+
+      # Chain Config
+      CHAIN_ID: "4289"
+      NETWORK: "TPIX Chain"
+      SUBNETWORK: "Mainnet"
+      COIN: "TPIX"
+      COIN_NAME: "TPIX"
+
+      # Branding
+      LOGO: /images/tpix-logo.png
+      LOGO_FOOTER: /images/tpix-logo.png
+      SUPPORTED_CHAINS: '[]'
+      SHOW_PRICE_CHART: "false"
+
+      # Features
+      DISABLE_EXCHANGE_RATES: "true"
+      DISABLE_KNOWN_TOKENS: "true"
+      ENABLE_TXS_STATS: "true"
+      SHOW_TXS_CHART: "true"
+      HISTORY_FETCH_INTERVAL: "10"
+      BLOCK_TRANSFORMER: "base"
+
+      # API
+      API_V2_ENABLED: "true"
+      API_RATE_LIMIT: "50"
+
+      # Security
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-CHANGE_ME_TO_A_RANDOM_64_CHAR_STRING_FOR_PRODUCTION_USE}
+    ports:
+      - "4000:4000"
+    networks:
+      - explorer-net
+    depends_on:
+      - db
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Smart Contract Verification Service
+  smart-contract-verifier:
+    image: ghcr.io/blockscout/smart-contract-verifier:latest
+    container_name: tpix-verifier
+    ports:
+      - "8050:8050"
+    networks:
+      - explorer-net
+    restart: unless-stopped
+
+volumes:
+  explorer-db-data:
+
+networks:
+  explorer-net:
+    driver: bridge

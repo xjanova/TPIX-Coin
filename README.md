@@ -61,7 +61,13 @@ TPIX-Coin/
 │   └── hardhat.config.js
 ├── infrastructure/         # Genesis config & Docker deployment
 │   ├── genesis.json        # Chain genesis (4 validators, 7B supply)
-│   └── docker-compose.yml  # 4-node IBFT cluster
+│   ├── docker-compose.yml  # 4-node IBFT cluster
+│   └── blockscout/         # Block Explorer (Blockscout)
+│       ├── docker-compose.yml  # Explorer + PostgreSQL + Verifier
+│       └── .env.example    # Environment configuration
+├── scripts/
+│   └── blockchain/
+│       └── create-token.js # Token Factory deployment script
 ├── masternode/             # Polygon Edge node config & install scripts
 ├── masternode-app/         # Master Node CLI tools (Go/Wails)
 ├── masternode-ui/          # Master Node Electron GUI (Windows)
@@ -71,6 +77,10 @@ TPIX-Coin/
 │       ├── services/       # wallet_service, identity_service
 │       ├── screens/        # UI screens (home, send, identity, etc.)
 │       └── providers/      # State management
+├── docs/                   # Documentation
+│   ├── WHITEPAPER.md       # Comprehensive whitepaper (v2.0)
+│   ├── CARBON-CREDIT.md    # Carbon Credit system documentation
+│   └── EXPLORER.md         # Block Explorer setup guide
 ├── .github/workflows/      # CI/CD — auto-build APK + EXE on tag push
 └── LICENSE
 ```
@@ -116,6 +126,30 @@ Decentralized exchange at [tpix.online](https://tpix.online) — Uniswap V2 fork
 - Token swap with 0.3% fee (0.25% to LPs, 0.05% to protocol)
 - Liquidity provision with LP token rewards
 - Multi-chain support: TPIX Chain, BSC, Ethereum, Polygon
+
+### Block Explorer (Blockscout)
+
+Self-hosted block explorer at [explorer.tpix.online](https://explorer.tpix.online) powered by Blockscout.
+
+- **Transaction & Address Search** — Look up any tx, address, or token
+- **Smart Contract Verification** — Verify Solidity source code
+- **Token Tracker** — List all ERC-20 tokens on TPIX Chain
+- **API v2** — REST API for programmatic access
+- **Real-Time Stats** — Transaction charts, network activity
+
+**Setup guide**: [docs/EXPLORER.md](docs/EXPLORER.md) | **Docker**: `infrastructure/blockscout/docker-compose.yml`
+
+### Carbon Credit System
+
+On-chain carbon credit trading with IoT verification at [tpix.online/carbon-credits](https://tpix.online/carbon-credits).
+
+- **Verified Credits** — VCS, Gold Standard, CDM, ACR standards
+- **IoT Integration** — Real-time sensor verification
+- **Fractional Trading** — Buy as little as 0.001 tCO₂e
+- **Zero Gas Fees** — Trade and retire credits for free
+- **Retirement Certificates** — On-chain NFT proof of carbon offset
+
+**Documentation**: [docs/CARBON-CREDIT.md](docs/CARBON-CREDIT.md) | **Whitepaper**: [tpix.online/carbon-credits/whitepaper](https://tpix.online/carbon-credits/whitepaper)
 
 ---
 
@@ -305,9 +339,13 @@ npm run verify
 | **TPIX TRADE (DEX)** | [tpix.online](https://tpix.online) |
 | **Block Explorer** | [explorer.tpix.online](https://explorer.tpix.online) |
 | **Whitepaper** | [tpix.online/whitepaper](https://tpix.online/whitepaper) |
+| **Carbon Credits** | [tpix.online/carbon-credits](https://tpix.online/carbon-credits) |
 | **Token Sale** | [tpix.online/token-sale](https://tpix.online/token-sale) |
 | **Master Node Guide** | [tpix.online/masternode/guide](https://tpix.online/masternode/guide) |
 | **Download Apps** | [tpix.online/download](https://tpix.online/download) |
+| **Whitepaper (MD)** | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) |
+| **Carbon Credit Docs** | [docs/CARBON-CREDIT.md](docs/CARBON-CREDIT.md) |
+| **Explorer Setup** | [docs/EXPLORER.md](docs/EXPLORER.md) |
 
 ---
 
