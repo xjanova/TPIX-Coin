@@ -44,8 +44,8 @@ services:
       COIN_NAME: "TPIX"
 
       # Branding
-      LOGO: /images/tpix-logo.png
-      LOGO_FOOTER: /images/tpix-logo.png
+      LOGO: /images/logotpixexplorer.webp
+      LOGO_FOOTER: /images/logotpixexplorer.webp
       SUPPORTED_CHAINS: '[]'
       SHOW_PRICE_CHART: "false"
 
