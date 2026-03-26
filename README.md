@@ -51,24 +51,28 @@ The native **TPIX coin** (7 billion fixed supply, 18 decimals) powers the entire
 
 ```
 TPIX-Coin/
-├── contracts/           # Solidity smart contracts
-│   ├── TPIXTokenSale.sol
-│   ├── bridge/          # Cross-chain bridge contracts
-│   ├── dex/             # DEX (Uniswap V2 fork) contracts
-│   └── masternode/      # Node registry & staking
-├── docs/                # Technical documentation
-├── infrastructure/      # Genesis config & deployment
-│   ├── genesis.json     # Chain genesis configuration
-│   └── deploy/          # Node deployment scripts
-├── masternode/          # Polygon Edge node config
-├── masternode-app/      # Master Node CLI tools
-├── masternode-ui/       # Master Node Electron GUI (Windows)
-├── wallet/              # TPIX Wallet — Flutter mobile app
-│   ├── lib/             # Dart source code
-│   ├── android/         # Android build config
-│   └── ios/             # iOS build config
-├── .github/workflows/   # CI/CD — auto-build on release
-└── LICENSE              # MIT License
+├── contracts/              # Solidity smart contracts (Hardhat)
+│   ├── identity/           # Living Identity recovery contract
+│   │   └── TPIXIdentity.sol
+│   ├── masternode/         # Node registry & staking
+│   ├── bridge/             # Cross-chain bridge (BSC)
+│   ├── dex/                # DEX router (Uniswap V2 fork)
+│   ├── scripts/            # Deploy & verify scripts
+│   └── hardhat.config.js
+├── infrastructure/         # Genesis config & Docker deployment
+│   ├── genesis.json        # Chain genesis (4 validators, 7B supply)
+│   └── docker-compose.yml  # 4-node IBFT cluster
+├── masternode/             # Polygon Edge node config & install scripts
+├── masternode-app/         # Master Node CLI tools (Go/Wails)
+├── masternode-ui/          # Master Node Electron GUI (Windows)
+│   └── electron/           # HD wallet, identity manager, SQLite
+├── wallet/                 # TPIX Wallet — Flutter mobile app
+│   └── lib/
+│       ├── services/       # wallet_service, identity_service
+│       ├── screens/        # UI screens (home, send, identity, etc.)
+│       └── providers/      # State management
+├── .github/workflows/      # CI/CD — auto-build APK + EXE on tag push
+└── LICENSE
 ```
 
 ---
@@ -79,10 +83,12 @@ TPIX-Coin/
 
 Secure mobile wallet for TPIX Chain with premium 3D animated UI.
 
-- **Security**: AES-256 encrypted keystore, PIN + biometric protection
-- **Wallet**: Create/import with 12-word BIP39 seed phrase
-- **Transactions**: Send & receive TPIX with animated confirmations
-- **QR Code**: Generate and scan for easy payments
+- **Multi-Wallet**: HD wallet with BIP-39/BIP-44 derivation (up to 128 wallets)
+- **Living Identity Recovery**: Recover wallet without seed phrase using security questions + GPS location verification
+- **QR Scanner**: Scan QR codes to send TPIX instantly
+- **Transaction History**: Local storage + blockchain scanning
+- **Security**: AES-256 encrypted keystore, PIN protection, 6-digit recovery PIN
+- **Bilingual**: Thai + English with one-tap switching
 - **Auto-update**: Check GitHub Releases for latest version
 
 **Download**: [Latest Release](https://github.com/xjanova/TPIX-Coin/releases/latest)
@@ -91,9 +97,12 @@ Secure mobile wallet for TPIX Chain with premium 3D animated UI.
 
 Desktop application to run TPIX Chain validator nodes.
 
+- **HD Wallet**: BIP-39 seed phrase with multi-wallet management (128 slots)
+- **Living Identity**: Security questions + recovery PIN protection
+- **QR Scanner**: Camera-based address scanning for sending TPIX
 - **One-click setup**: Auto-configuration with smart port/IP allocation
 - **Multi-node**: Run multiple nodes on different ports
-- **Dashboard**: Real-time network monitoring
+- **Dashboard**: Real-time network monitoring with SQLite persistence
 - **3 Tiers**: Light (10K TPIX), Sentinel (100K), Validator (1M)
 - **Rewards**: Up to 15% APY from 1.4B reward pool
 
@@ -114,6 +123,7 @@ Decentralized exchange at [tpix.online](https://tpix.online) — Uniswap V2 fork
 
 | Contract | Description |
 |----------|-------------|
+| `TPIXIdentity` | **Living Identity** — on-chain wallet recovery without seed phrase |
 | `TPIXDEXFactory` | Creates and manages trading pair contracts |
 | `TPIXDEXRouter02` | Handles multi-hop swaps and liquidity operations |
 | `TPIXDEXPair` | Individual liquidity pool with ERC-20 LP tokens |
@@ -122,6 +132,28 @@ Decentralized exchange at [tpix.online](https://tpix.online) — Uniswap V2 fork
 | `NodeRegistry` | Validator node registration and management |
 | `StakingPool` | TPIX staking for node operators |
 | `RewardDistributor` | Block reward distribution to validators |
+
+### Living Identity (TPIXIdentity.sol)
+
+A novel wallet recovery system that eliminates the need for seed phrases — **no other blockchain wallet has this**.
+
+**How it works:**
+1. User registers identity on-chain: `hash(security_questions + GPS_locations + recovery_PIN)` — only 32 bytes stored
+2. User loses device or forgets seed phrase
+3. User answers security questions + stands at registered GPS location
+4. Smart contract starts **48-hour time-lock** recovery
+5. Original owner can cancel within 48 hours (theft protection)
+6. After 48 hours, wallet control transfers to new address
+
+**Deploy:**
+```bash
+cd contracts
+npm install
+export DEPLOYER_KEY=0x...your_private_key...
+npm run deploy:identity
+```
+
+**Gas cost:** FREE (TPIX Chain has zero gas fees)
 
 ---
 
@@ -216,10 +248,11 @@ https://tpix.online/tpixlogo.webp
 | **Foundation** | Q1-Q2 2023 | Done | Whitepaper, architecture, team formation |
 | **Blockchain** | Q3-Q4 2023 | Done | Polygon Edge, TPIX coin, IBFT consensus, testnet |
 | **Integration** | Q1-Q2 2024 | Done | Laravel services, REST API, block explorer |
-| **Ecosystem** | Q3-Q4 2024 | In Progress | DEX, master node network, SDK development |
-| **Real-World** | Q1-Q2 2025 | In Progress | FoodPassport, delivery, IoT, AI bots |
-| **Scale** | Q3-Q4 2025 | Planned | Cross-chain bridge, 10+ partners, mobile apps |
-| **Enterprise** | Q1-Q2 2026 | Planned | Enterprise toolkit, government compliance |
+| **Ecosystem** | Q3-Q4 2024 | Done | DEX, master node network, SDK development |
+| **Real-World** | Q1-Q2 2025 | Done | FoodPassport, delivery, IoT, AI bots |
+| **Scale** | Q3-Q4 2025 | Done | Cross-chain bridge, mobile wallet app, multi-wallet |
+| **Identity** | Q1 2026 | Done | Living Identity recovery, GPS verification, on-chain identity contract |
+| **Enterprise** | Q2 2026 | In Progress | Enterprise toolkit, government compliance |
 | **Global** | Q3-Q4 2026 | Planned | ASEAN expansion, 100+ dApps, multi-language |
 
 ---
@@ -228,9 +261,9 @@ https://tpix.online/tpixlogo.webp
 
 ### Prerequisites
 
-- **Wallet**: Flutter 3.x, Dart 3.x, Android SDK
-- **Master Node UI**: Node.js 18+, Electron
-- **Contracts**: Solidity 0.8.x, Hardhat
+- **Wallet**: Flutter 3.38+, Dart 3.x, Android SDK 34+
+- **Master Node UI**: Node.js 20+, Electron
+- **Contracts**: Node.js 20+, Hardhat (Solidity 0.8.20)
 
 ### Build Wallet APK
 
@@ -246,6 +279,21 @@ flutter build apk --release
 cd masternode-ui
 npm install
 npm run build
+```
+
+### Deploy Smart Contracts
+
+```bash
+cd contracts
+npm install
+
+# Deploy Living Identity contract to TPIX Chain
+export DEPLOYER_KEY=0x...your_private_key...
+npm run deploy:identity
+
+# Verify deployment
+export IDENTITY_CONTRACT=0x...deployed_address...
+npm run verify
 ```
 
 ---
