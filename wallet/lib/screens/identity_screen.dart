@@ -271,7 +271,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   }
 
   Widget _buildStepLine(int step, int level, Color color) {
-    final active = step < level - 1 || (step < level);
+    final active = step < level;
     return Container(
       width: 40, height: 2,
       margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -460,9 +460,24 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               const SizedBox(width: 6),
               GestureDetector(
                 onTap: () async {
-                  await _identityService.removeLocation(idx);
-                  await _loadStatus();
-                  SynthService.playTap();
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: const Color(0xFF0D1321),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      title: const Text('Remove Location?', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      content: Text('Remove "${loc['label']}"?', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted))),
+                        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: AppTheme.danger))),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) {
+                    await _identityService.removeLocation(idx);
+                    await _loadStatus();
+                    SynthService.playTap();
+                  }
                 },
                 child: Icon(Icons.close_rounded, size: 14, color: AppTheme.accent.withValues(alpha: 0.5)),
               ),
@@ -729,35 +744,19 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               decoration: _inputDeco(hint: l.t('identity.locationLabel'), prefix: Icons.label_outline_rounded),
             ),
             const SizedBox(height: 16),
-            StatefulBuilder(
-              builder: (context, setButtonState) {
-                bool registering = false;
-                return _buildGradientButton(
-                  label: l.t('identity.registerHere'),
-                  icon: Icons.my_location_rounded,
-                  colors: const [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
-                  isLoading: registering,
-                  onTap: () async {
-                    final label = labelController.text.trim();
-                    if (label.isEmpty) {
-                      _showSnack(l.t('identity.needLabel'), AppTheme.danger);
-                      return;
-                    }
-                    setButtonState(() => registering = true);
-                    try {
-                      await _identityService.registerLocation(label);
-                      SynthService.playSendSuccess();
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      _showSnack(l.t('identity.locationSaved'), AppTheme.success);
-                      await _loadStatus();
-                    } catch (e) {
-                      _showSnack(e.toString(), AppTheme.danger);
-                    } finally {
-                      if (ctx.mounted) setButtonState(() => registering = false);
-                    }
-                  },
-                );
+            _LocationRegisterButton(
+              labelController: labelController,
+              identityService: _identityService,
+              l: l,
+              colors: const [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
+              onSuccess: () async {
+                SynthService.playSendSuccess();
+                if (ctx.mounted) Navigator.pop(ctx);
+                _showSnack(l.t('identity.locationSaved'), AppTheme.success);
+                await _loadStatus();
               },
+              onError: (e) => _showSnack(e, AppTheme.danger),
+              buildButton: _buildGradientButton,
             ),
           ],
         ),
@@ -1002,70 +1001,12 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               ),
               const SizedBox(height: 16),
 
-              StatefulBuilder(
-                builder: (context, setButtonState) {
-                  bool testing = false;
-                  String? resultText;
-                  Color? resultColor;
-
-                  return Column(
-                    children: [
-                      _buildGradientButton(
-                        label: l.t('identity.verify'),
-                        icon: Icons.fingerprint_rounded,
-                        isLoading: testing,
-                        colors: const [Color(0xFF06B6D4), Color(0xFF8B5CF6)],
-                        onTap: () async {
-                          setButtonState(() { testing = true; resultText = null; });
-
-                          final answers = answerControllers.map((c) => c.text).toList();
-                          final pin = pinController.text.trim().isNotEmpty ? pinController.text.trim() : null;
-
-                          final result = await _identityService.attemptRecovery(answers: answers, recoveryPin: pin);
-
-                          if (result['success'] == true) {
-                            SynthService.playSendSuccess();
-                            setButtonState(() {
-                              testing = false;
-                              resultText = l.t('identity.testSuccess');
-                              resultColor = AppTheme.success;
-                            });
-                          } else {
-                            SynthService.playError();
-                            setButtonState(() {
-                              testing = false;
-                              resultText = result['reason'] as String? ?? l.t('identity.testFailed');
-                              resultColor = AppTheme.danger;
-                            });
-                          }
-                        },
-                      ),
-                      if (resultText != null) ...[
-                        const SizedBox(height: 14),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            color: resultColor!.withValues(alpha: 0.08),
-                            border: Border.all(color: resultColor!.withValues(alpha: 0.25)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                resultColor == AppTheme.success ? Icons.celebration_rounded : Icons.error_outline_rounded,
-                                color: resultColor, size: 22,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(resultText!, style: TextStyle(fontSize: 13, color: resultColor, fontWeight: FontWeight.w600)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  );
-                },
+              _RecoveryTestButton(
+                answerControllers: answerControllers,
+                pinController: pinController,
+                identityService: _identityService,
+                l: l,
+                buildButton: _buildGradientButton,
               ),
             ],
           ),
@@ -1085,15 +1026,14 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     required VoidCallback onTap,
     bool isLoading = false,
   }) {
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: LinearGradient(colors: colors),
-          boxShadow: [BoxShadow(color: colors[0].withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
-        ),
-        child: ElevatedButton.icon(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: LinearGradient(colors: colors),
+        boxShadow: [BoxShadow(color: colors[0].withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      child: ElevatedButton.icon(
           onPressed: isLoading ? null : onTap,
           icon: isLoading
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -1107,7 +1047,6 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
         ),
-      ),
     );
   }
 
@@ -1131,6 +1070,151 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
         margin: const EdgeInsets.all(16),
         duration: const Duration(seconds: 2),
       ),
+    );
+  }
+}
+
+// ================================================================
+// Extracted StatefulWidgets (proper state management)
+// ================================================================
+
+class _LocationRegisterButton extends StatefulWidget {
+  final TextEditingController labelController;
+  final IdentityService identityService;
+  final LocaleProvider l;
+  final List<Color> colors;
+  final VoidCallback onSuccess;
+  final void Function(String) onError;
+  final Widget Function({required String label, IconData? icon, required List<Color> colors, required VoidCallback onTap, bool isLoading}) buildButton;
+
+  const _LocationRegisterButton({
+    required this.labelController,
+    required this.identityService,
+    required this.l,
+    required this.colors,
+    required this.onSuccess,
+    required this.onError,
+    required this.buildButton,
+  });
+
+  @override
+  State<_LocationRegisterButton> createState() => _LocationRegisterButtonState();
+}
+
+class _LocationRegisterButtonState extends State<_LocationRegisterButton> {
+  bool _registering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.buildButton(
+      label: widget.l.t('identity.registerHere'),
+      icon: Icons.my_location_rounded,
+      colors: widget.colors,
+      isLoading: _registering,
+      onTap: () async {
+        final label = widget.labelController.text.trim();
+        if (label.isEmpty) {
+          widget.onError(widget.l.t('identity.needLabel'));
+          return;
+        }
+        setState(() => _registering = true);
+        try {
+          await widget.identityService.registerLocation(label);
+          widget.onSuccess();
+        } catch (e) {
+          widget.onError(e.toString());
+        } finally {
+          if (mounted) setState(() => _registering = false);
+        }
+      },
+    );
+  }
+}
+
+class _RecoveryTestButton extends StatefulWidget {
+  final List<TextEditingController> answerControllers;
+  final TextEditingController pinController;
+  final IdentityService identityService;
+  final LocaleProvider l;
+  final Widget Function({required String label, IconData? icon, required List<Color> colors, required VoidCallback onTap, bool isLoading}) buildButton;
+
+  const _RecoveryTestButton({
+    required this.answerControllers,
+    required this.pinController,
+    required this.identityService,
+    required this.l,
+    required this.buildButton,
+  });
+
+  @override
+  State<_RecoveryTestButton> createState() => _RecoveryTestButtonState();
+}
+
+class _RecoveryTestButtonState extends State<_RecoveryTestButton> {
+  bool _testing = false;
+  String? _resultText;
+  Color? _resultColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        widget.buildButton(
+          label: widget.l.t('identity.verify'),
+          icon: Icons.fingerprint_rounded,
+          isLoading: _testing,
+          colors: const [Color(0xFF06B6D4), Color(0xFF8B5CF6)],
+          onTap: () async {
+            setState(() { _testing = true; _resultText = null; });
+
+            final answers = widget.answerControllers.map((c) => c.text).toList();
+            final pin = widget.pinController.text.trim().isNotEmpty ? widget.pinController.text.trim() : null;
+
+            final result = await widget.identityService.attemptRecovery(answers: answers, recoveryPin: pin);
+
+            if (!mounted) return;
+
+            if (result['success'] == true) {
+              SynthService.playSendSuccess();
+              setState(() {
+                _testing = false;
+                _resultText = widget.l.t('identity.testSuccess');
+                _resultColor = AppTheme.success;
+              });
+            } else {
+              SynthService.playError();
+              setState(() {
+                _testing = false;
+                _resultText = result['reason'] as String? ?? widget.l.t('identity.testFailed');
+                _resultColor = AppTheme.danger;
+              });
+            }
+          },
+        ),
+        if (_resultText != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: _resultColor!.withValues(alpha: 0.08),
+              border: Border.all(color: _resultColor!.withValues(alpha: 0.25)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _resultColor == AppTheme.success ? Icons.celebration_rounded : Icons.error_outline_rounded,
+                  color: _resultColor, size: 22,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(_resultText!, style: TextStyle(fontSize: 13, color: _resultColor, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

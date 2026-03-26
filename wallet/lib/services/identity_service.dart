@@ -254,11 +254,11 @@ class IdentityService {
       await _recordAttempt(false);
       return {
         'success': false,
-        'reason': locationVerified
+        'reason': recoveryPin != null
             ? 'Recovery PIN incorrect'
             : 'Location mismatch. Use Recovery PIN as backup.',
         'correctAnswers': correctAnswers,
-        'needsPin': !locationVerified,
+        'needsPin': true,
       };
     }
 
