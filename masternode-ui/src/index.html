@@ -6,6 +6,8 @@
     <title>TPIX Master Node</title>
     <script src="vue.global.prod.js"></script>
     <script src="jsQR.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -759,7 +761,8 @@
                     <div class="stats-grid">
                         <div class="stat-card"><div class="stat-label">{{ i18n.masternodeMap.totalNodes }}</div><div class="stat-value text-cyan">{{ masternodeStats.total }}</div></div>
                         <div class="stat-card"><div class="stat-label">{{ i18n.masternodeMap.countries }}</div><div class="stat-value text-purple">{{ masternodeStats.countries }}</div></div>
-                        <div class="stat-card"><div class="stat-label">{{ i18n.masternodeMap.types }}</div>
+                        <div class="stat-card">
+                            <div class="stat-label">{{ i18n.masternodeMap.types }}</div>
                             <div class="node-type-counts">
                                 <span class="type-badge type-validator">{{ masternodeStats.byType.validator }} {{ i18n.masternodeMap.validator }}</span>
                                 <span class="type-badge type-sentinel">{{ masternodeStats.byType.sentinel }} {{ i18n.masternodeMap.sentinel }}</span>
@@ -768,12 +771,15 @@
                         </div>
                     </div>
 
-                    <!-- 3D Globe -->
-                    <div class="globe-container glass-card">
-                        <h3 class="section-title">{{ i18n.masternodeMap.mapTitle }}</h3>
-                        <div class="globe-wrapper">
-                            <canvas id="globe-canvas"></canvas>
+                    <!-- Interactive Map -->
+                    <div class="map-container glass-card">
+                        <div class="map-header">
+                            <h3 class="section-title">{{ i18n.masternodeMap.mapTitle }}</h3>
+                            <div class="map-controls">
+                                <button @click="mapZoomAll" class="btn btn-ghost btn-sm">&#127760; {{ i18n.masternodeMap.zoomAll }}</button>
+                            </div>
                         </div>
+                        <div id="leaflet-map" class="leaflet-map-container"></div>
                         <div class="globe-legend">
                             <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span> {{ i18n.masternodeMap.validator }}</span>
                             <span class="legend-item"><span class="legend-dot" style="background:#a855f7"></span> {{ i18n.masternodeMap.sentinel }}</span>
@@ -781,17 +787,92 @@
                         </div>
                     </div>
 
-                    <!-- Node List by Country -->
+                    <!-- Node Reporting Section -->
                     <div class="section-card mt-4">
-                        <h3 class="section-title">{{ i18n.masternodeMap.location }}</h3>
-                        <div class="masternode-list">
-                            <div v-for="node in masternodeData" :key="node.id" class="masternode-row">
-                                <span class="mn-flag">{{ node.flag }}</span>
-                                <div class="mn-info">
-                                    <span class="mn-city">{{ node.city }}, {{ node.countryName }}</span>
-                                    <span class="mn-addr mono">{{ node.addr }}</span>
+                        <div class="section-header">
+                            <h3 class="section-title">{{ i18n.masternodeMap.nodeReport }}</h3>
+                            <div class="node-filter-controls">
+                                <select v-model="mnFilterType" class="input-field input-sm">
+                                    <option value="all">{{ i18n.masternodeMap.allTypes }}</option>
+                                    <option value="validator">{{ i18n.masternodeMap.validator }}</option>
+                                    <option value="sentinel">{{ i18n.masternodeMap.sentinel }}</option>
+                                    <option value="light">{{ i18n.masternodeMap.light }}</option>
+                                </select>
+                                <select v-model="mnFilterCountry" class="input-field input-sm">
+                                    <option value="all">{{ i18n.masternodeMap.allCountries }}</option>
+                                    <option v-for="c in masternodeCountries" :key="c.code" :value="c.code">{{ c.flag }} {{ c.name }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Node List Table -->
+                        <div class="mn-table-wrapper">
+                            <table class="mn-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>{{ i18n.masternodeMap.location }}</th>
+                                        <th>{{ i18n.masternodeMap.types }}</th>
+                                        <th>{{ i18n.masternodeMap.wallet }}</th>
+                                        <th>IP</th>
+                                        <th>{{ i18n.masternodeMap.status }}</th>
+                                        <th>{{ i18n.masternodeMap.rewards }}</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="node in filteredMasternodes" :key="node.id" class="mn-table-row" @click="mapFocusNode(node)">
+                                        <td class="mn-id">{{ node.id }}</td>
+                                        <td class="mn-location">
+                                            <span class="mn-flag">{{ node.flag }}</span>
+                                            <div class="mn-loc-info">
+                                                <span class="mn-city">{{ node.city }}</span>
+                                                <span class="mn-country-name">{{ node.countryName }}</span>
+                                            </div>
+                                        </td>
+                                        <td><span :class="['type-badge', 'type-' + node.type]">{{ node.type }}</span></td>
+                                        <td class="mn-addr-cell mono">{{ node.addr }}</td>
+                                        <td class="mn-ip mono">{{ node.ip }}</td>
+                                        <td>
+                                            <span :class="['status-dot', node.online ? 'online' : 'offline']"></span>
+                                            {{ node.online ? (lang === 'th' ? 'ออนไลน์' : 'Online') : (lang === 'th' ? 'ออฟไลน์' : 'Offline') }}
+                                        </td>
+                                        <td class="text-cyan">{{ node.totalRewards }} TPIX</td>
+                                        <td>
+                                            <button @click.stop="checkNodeRewards(node)" class="btn btn-ghost btn-xs" :title="i18n.masternodeMap.checkRewards">&#128270;</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Node Reward Detail Modal -->
+                    <div v-if="selectedNodeReward" class="modal-overlay" @click.self="selectedNodeReward = null">
+                        <div class="modal-content modal-wide">
+                            <h3>{{ i18n.masternodeMap.rewardDetail }}</h3>
+                            <div class="node-reward-header">
+                                <span class="mn-flag" style="font-size:32px">{{ selectedNodeReward.flag }}</span>
+                                <div>
+                                    <div class="text-cyan">{{ selectedNodeReward.city }}, {{ selectedNodeReward.countryName }}</div>
+                                    <div class="mono" style="font-size:12px">{{ selectedNodeReward.addr }}</div>
+                                    <span :class="['type-badge', 'type-' + selectedNodeReward.type]">{{ selectedNodeReward.type }}</span>
                                 </div>
-                                <span :class="['type-badge', 'type-' + node.type]">{{ node.type }}</span>
+                            </div>
+                            <div class="reward-summary-box mt-4">
+                                <div class="reward-stat"><span>{{ i18n.masternodeMap.totalRewardsLabel }}</span><strong class="text-cyan">{{ selectedNodeReward.totalRewards }} TPIX</strong></div>
+                                <div class="reward-stat"><span>{{ i18n.masternodeMap.blocksProduced }}</span><strong>{{ selectedNodeReward.rewards.length }}</strong></div>
+                            </div>
+                            <div class="reward-blocks-list mt-4">
+                                <div class="section-title" style="font-size:13px">{{ i18n.masternodeMap.rewardHistory }}</div>
+                                <div v-for="r in selectedNodeReward.rewards" :key="r.block" class="reward-block-row">
+                                    <span class="text-cyan">Block #{{ r.block.toLocaleString() }}</span>
+                                    <span class="text-green">+{{ r.amount }} TPIX</span>
+                                    <span class="text-muted" style="font-size:11px">{{ r.time }}</span>
+                                </div>
+                            </div>
+                            <div class="modal-actions mt-4">
+                                <button @click="selectedNodeReward = null" class="btn btn-primary">{{ i18n.send.close }}</button>
                             </div>
                         </div>
                     </div>

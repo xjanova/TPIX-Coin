@@ -1888,18 +1888,47 @@ body {
 .type-validator { background: rgba(0, 230, 118, 0.15); color: #00e676; }
 .type-sentinel { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
 .type-light { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
-.globe-container { padding: 16px; margin-top: 16px; }
-.globe-wrapper { width: 100%; background: rgba(0, 0, 0, 0.3); border-radius: 12px; overflow: hidden; margin: 12px 0; }
-.globe-wrapper canvas { width: 100%; height: 400px; display: block; }
 .globe-legend { display: flex; gap: 16px; justify-content: center; padding: 8px 0; }
 .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.masternode-list { display: flex; flex-direction: column; gap: 4px; }
-.masternode-row {
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
-}
-.mn-flag { font-size: 24px; }
-.mn-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.mn-city { font-size: 13px; color: var(--text-primary); }
-.mn-addr { font-size: 11px; color: var(--text-muted); }
+
+/* ─── Leaflet Map ─────────────────────── */
+.map-container { padding: 16px; margin-top: 16px; }
+.map-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.map-controls { display: flex; gap: 8px; }
+.leaflet-map-container { width: 100%; height: 450px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+.mn-map-marker { background: transparent !important; border: none !important; }
+.mn-popup .leaflet-popup-content-wrapper { background: #0a0f1e; border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 12px; box-shadow: 0 0 20px rgba(6, 182, 212, 0.15); }
+.mn-popup .leaflet-popup-tip { background: #0a0f1e; border: 1px solid rgba(6, 182, 212, 0.3); }
+.mn-popup .leaflet-popup-content { margin: 0; }
+
+/* ─── Node Report Table ────────────── */
+.node-filter-controls { display: flex; gap: 8px; }
+.input-sm { padding: 4px 8px !important; font-size: 12px !important; min-width: 120px; }
+.mn-table-wrapper { overflow-x: auto; margin-top: 12px; }
+.mn-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mn-table thead th { padding: 8px 10px; text-align: left; color: var(--text-secondary); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.mn-table-row { cursor: pointer; transition: background 0.2s; }
+.mn-table-row:hover { background: rgba(6, 182, 212, 0.06); }
+.mn-table-row td { padding: 8px 10px; border-bottom: 1px solid rgba(6, 182, 212, 0.06); vertical-align: middle; }
+.mn-id { color: var(--text-muted); width: 30px; }
+.mn-location { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.mn-flag { font-size: 20px; line-height: 1; }
+.mn-loc-info { display: flex; flex-direction: column; gap: 1px; }
+.mn-city { color: var(--text-primary); font-weight: 500; }
+.mn-country-name { color: var(--text-muted); font-size: 10px; }
+.mn-addr-cell { font-size: 10px; color: var(--text-secondary); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mn-ip { font-size: 11px; color: var(--text-muted); }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.status-dot.online { background: #00e676; box-shadow: 0 0 6px #00e676; }
+.status-dot.offline { background: #ff1744; box-shadow: 0 0 6px #ff1744; }
+.btn-xs { padding: 2px 6px; font-size: 11px; }
+
+/* ─── Reward Detail Modal ──────────── */
+.node-reward-header { display: flex; gap: 16px; align-items: center; margin-top: 12px; }
+.reward-summary-box { display: flex; gap: 24px; padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; }
+.reward-stat { display: flex; flex-direction: column; gap: 4px; }
+.reward-stat span { font-size: 11px; color: var(--text-muted); }
+.reward-stat strong { font-size: 16px; }
+.reward-blocks-list { max-height: 300px; overflow-y: auto; }
+.reward-block-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(6, 182, 212, 0.06); font-size: 12px; }

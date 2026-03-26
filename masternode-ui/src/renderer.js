@@ -264,6 +264,18 @@ const LANG = {
             validator: 'Validator',
             location: 'Location',
             mapTitle: 'Global Network Map',
+            zoomAll: 'World View',
+            nodeReport: 'Node Report',
+            allTypes: 'All Types',
+            allCountries: 'All Countries',
+            wallet: 'Wallet',
+            status: 'Status',
+            rewards: 'Rewards',
+            checkRewards: 'Check Rewards',
+            rewardDetail: 'Reward Detail',
+            totalRewardsLabel: 'Total Rewards',
+            blocksProduced: 'Blocks Produced',
+            rewardHistory: 'Reward History',
         },
         status: { stopped: 'Stopped', starting: 'Starting...', running: 'Running', syncing: 'Syncing', error: 'Error' },
     },
@@ -522,6 +534,18 @@ const LANG = {
             validator: 'วาลิเดเตอร์',
             location: 'ตำแหน่ง',
             mapTitle: 'แผนที่เครือข่ายโลก',
+            zoomAll: 'มุมมองโลก',
+            nodeReport: 'รายงานโหนด',
+            allTypes: 'ทุกประเภท',
+            allCountries: 'ทุกประเทศ',
+            wallet: 'กระเป๋า',
+            status: 'สถานะ',
+            rewards: 'รางวัล',
+            checkRewards: 'ตรวจรางวัล',
+            rewardDetail: 'รายละเอียดรางวัล',
+            totalRewardsLabel: 'รางวัลทั้งหมด',
+            blocksProduced: 'บล็อกที่ผลิต',
+            rewardHistory: 'ประวัติรางวัล',
         },
         status: { stopped: 'หยุด', starting: 'กำลังเริ่ม...', running: 'ทำงาน', syncing: 'กำลังซิงค์', error: 'ข้อผิดพลาด' },
     },
@@ -711,6 +735,27 @@ const app = createApp({
         // ─── Masternode Map State ────────────────
         const masternodeData = ref([]);
         const masternodeStats = ref({ total: 0, countries: 0, byType: { light: 0, sentinel: 0, validator: 0 } });
+        const mnFilterType = ref('all');
+        const mnFilterCountry = ref('all');
+        const selectedNodeReward = ref(null);
+        let leafletMap = null;
+        let leafletMarkers = [];
+
+        const masternodeCountries = computed(() => {
+            const map = {};
+            masternodeData.value.forEach(n => {
+                if (!map[n.country]) map[n.country] = { code: n.country, name: n.countryName, flag: n.flag };
+            });
+            return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+        });
+
+        const filteredMasternodes = computed(() => {
+            return masternodeData.value.filter(n => {
+                if (mnFilterType.value !== 'all' && n.type !== mnFilterType.value) return false;
+                if (mnFilterCountry.value !== 'all' && n.country !== mnFilterCountry.value) return false;
+                return true;
+            });
+        });
 
         // ─── Update State ─────────────────────────
         const updateStatus = ref({
@@ -1230,25 +1275,35 @@ const app = createApp({
 
         // ─── Masternode Map ──────────────────────
         function loadMasternodes() {
-            // Demo data — will be replaced with on-chain registry query
-            // Country flags use Unicode regional indicators
             const flag = (code) => String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
             const nodes = [
-                { id: 1, type: 'validator', addr: '0x742d...35Fa', country: 'TH', countryName: 'Thailand', lat: 13.75, lng: 100.5, city: 'Bangkok' },
-                { id: 2, type: 'validator', addr: '0x8Ba1...92Cd', country: 'TH', countryName: 'Thailand', lat: 18.79, lng: 98.98, city: 'Chiang Mai' },
-                { id: 3, type: 'validator', addr: '0x1aF5...48Be', country: 'SG', countryName: 'Singapore', lat: 1.35, lng: 103.82, city: 'Singapore' },
-                { id: 4, type: 'sentinel', addr: '0x3cD2...71Aa', country: 'JP', countryName: 'Japan', lat: 35.68, lng: 139.69, city: 'Tokyo' },
-                { id: 5, type: 'sentinel', addr: '0x9eF8...23Bc', country: 'KR', countryName: 'South Korea', lat: 37.57, lng: 126.98, city: 'Seoul' },
-                { id: 6, type: 'sentinel', addr: '0x5bA3...67De', country: 'US', countryName: 'United States', lat: 37.77, lng: -122.42, city: 'San Francisco' },
-                { id: 7, type: 'light', addr: '0x2dC4...89Ef', country: 'DE', countryName: 'Germany', lat: 52.52, lng: 13.41, city: 'Berlin' },
-                { id: 8, type: 'light', addr: '0x6fE1...45Ab', country: 'GB', countryName: 'United Kingdom', lat: 51.51, lng: -0.13, city: 'London' },
-                { id: 9, type: 'light', addr: '0x4aB7...12Cd', country: 'AU', countryName: 'Australia', lat: -33.87, lng: 151.21, city: 'Sydney' },
-                { id: 10, type: 'validator', addr: '0x7cE9...56Fg', country: 'TH', countryName: 'Thailand', lat: 7.88, lng: 98.39, city: 'Phuket' },
-                { id: 11, type: 'light', addr: '0x8dA2...34Hi', country: 'VN', countryName: 'Vietnam', lat: 10.82, lng: 106.63, city: 'Ho Chi Minh' },
-                { id: 12, type: 'sentinel', addr: '0x1bC5...78Jk', country: 'MY', countryName: 'Malaysia', lat: 3.14, lng: 101.69, city: 'Kuala Lumpur' },
-                { id: 13, type: 'light', addr: '0x3eD8...90Lm', country: 'IN', countryName: 'India', lat: 19.08, lng: 72.88, city: 'Mumbai' },
-                { id: 14, type: 'sentinel', addr: '0x5fA1...23No', country: 'CA', countryName: 'Canada', lat: 43.65, lng: -79.38, city: 'Toronto' },
-                { id: 15, type: 'light', addr: '0x9gB4...56Pq', country: 'BR', countryName: 'Brazil', lat: -23.55, lng: -46.63, city: 'Sao Paulo' },
+                { id: 1, type: 'validator', addr: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD4e', country: 'TH', countryName: 'Thailand', lat: 13.75, lng: 100.5, city: 'Bangkok', ip: '203.150.45.12', online: true, totalRewards: '12,450', rewards: [
+                    { block: 1250000, amount: '2.5', time: '2026-03-25 14:30' }, { block: 1249800, amount: '2.5', time: '2026-03-25 14:20' }, { block: 1249600, amount: '2.5', time: '2026-03-25 14:10' },
+                ]},
+                { id: 2, type: 'validator', addr: '0x8Ba1f109551bD432803012645Hac136c9b7c31A5', country: 'TH', countryName: 'Thailand', lat: 18.79, lng: 98.98, city: 'Chiang Mai', ip: '203.150.78.34', online: true, totalRewards: '10,230', rewards: [
+                    { block: 1250001, amount: '2.5', time: '2026-03-25 14:30' }, { block: 1249801, amount: '2.5', time: '2026-03-25 14:20' },
+                ]},
+                { id: 3, type: 'validator', addr: '0x1aF5b3E2A31c4e7FBc65A32Da0F7e53c9712E4eB', country: 'SG', countryName: 'Singapore', lat: 1.35, lng: 103.82, city: 'Singapore', ip: '128.199.142.78', online: true, totalRewards: '11,800', rewards: [
+                    { block: 1250002, amount: '2.5', time: '2026-03-25 14:30' },
+                ]},
+                { id: 4, type: 'sentinel', addr: '0x3cD2fC9d5dBe97BAc69f4e7d76D2fA5E3a1E5b7A', country: 'JP', countryName: 'Japan', lat: 35.68, lng: 139.69, city: 'Tokyo', ip: '45.76.198.45', online: true, totalRewards: '5,120', rewards: [
+                    { block: 1249500, amount: '1.2', time: '2026-03-25 13:50' },
+                ]},
+                { id: 5, type: 'sentinel', addr: '0x9eF8A2D3c45b67E8f901d2C34B56a78E9f0123BC', country: 'KR', countryName: 'South Korea', lat: 37.57, lng: 126.98, city: 'Seoul', ip: '121.170.56.89', online: true, totalRewards: '4,890', rewards: [
+                    { block: 1249000, amount: '1.2', time: '2026-03-25 13:00' },
+                ]},
+                { id: 6, type: 'sentinel', addr: '0x5bA3D7e8f901C23d45E67F89a01b2C34D56E78Fe', country: 'US', countryName: 'United States', lat: 37.77, lng: -122.42, city: 'San Francisco', ip: '104.238.167.12', online: true, totalRewards: '4,560', rewards: []},
+                { id: 7, type: 'light', addr: '0x2dC4E5f6A7b8C9d0E1F2a3B4c5D6e7F8a9B0C1De', country: 'DE', countryName: 'Germany', lat: 52.52, lng: 13.41, city: 'Berlin', ip: '195.201.45.167', online: true, totalRewards: '1,230', rewards: []},
+                { id: 8, type: 'light', addr: '0x6fE1a2B3c4D5e6F7a8B9c0D1e2F3a4B5c6D7e8Ab', country: 'GB', countryName: 'United Kingdom', lat: 51.51, lng: -0.13, city: 'London', ip: '51.158.98.201', online: false, totalRewards: '980', rewards: []},
+                { id: 9, type: 'light', addr: '0x4aB7c8D9e0F1a2B3c4D5e6F7a8B9c0D1e2F312Cd', country: 'AU', countryName: 'Australia', lat: -33.87, lng: 151.21, city: 'Sydney', ip: '103.16.128.45', online: true, totalRewards: '1,100', rewards: []},
+                { id: 10, type: 'validator', addr: '0x7cE9a0B1c2D3e4F5a6B7c8D9e0F1a2B3c4D556Fg', country: 'TH', countryName: 'Thailand', lat: 7.88, lng: 98.39, city: 'Phuket', ip: '203.150.92.56', online: true, totalRewards: '9,750', rewards: [
+                    { block: 1250003, amount: '2.5', time: '2026-03-25 14:30' },
+                ]},
+                { id: 11, type: 'light', addr: '0x8dA2b3C4d5E6f7A8b9C0d1E2f3A4b5C6d7E834Hi', country: 'VN', countryName: 'Vietnam', lat: 10.82, lng: 106.63, city: 'Ho Chi Minh', ip: '113.190.45.78', online: true, totalRewards: '890', rewards: []},
+                { id: 12, type: 'sentinel', addr: '0x1bC5d6E7f8A9b0C1d2E3f4A5b6C7d8E9f0A178Jk', country: 'MY', countryName: 'Malaysia', lat: 3.14, lng: 101.69, city: 'Kuala Lumpur', ip: '175.143.67.89', online: true, totalRewards: '3,450', rewards: []},
+                { id: 13, type: 'light', addr: '0x3eD8f9A0b1C2d3E4f5A6b7C8d9E0f1A2b3C490Lm', country: 'IN', countryName: 'India', lat: 19.08, lng: 72.88, city: 'Mumbai', ip: '49.36.145.23', online: false, totalRewards: '670', rewards: []},
+                { id: 14, type: 'sentinel', addr: '0x5fA1b2C3d4E5f6A7b8C9d0E1f2A3b4C5d6E723No', country: 'CA', countryName: 'Canada', lat: 43.65, lng: -79.38, city: 'Toronto', ip: '198.55.100.34', online: true, totalRewards: '4,120', rewards: []},
+                { id: 15, type: 'light', addr: '0x9gB4c5D6e7F8a9B0c1D2e3F4a5B6c7D8e9F056Pq', country: 'BR', countryName: 'Brazil', lat: -23.55, lng: -46.63, city: 'Sao Paulo', ip: '187.45.223.67', online: true, totalRewards: '540', rewards: []},
             ].map(n => ({ ...n, flag: flag(n.country) }));
 
             masternodeData.value = nodes;
@@ -1259,164 +1314,93 @@ const app = createApp({
             masternodeStats.value = { total: nodes.length, countries: countrySet.size, byType };
         }
 
-        function initGlobe() {
-            // Will be called after Vue renders the canvas
+        function initLeafletMap() {
             Vue.nextTick(() => {
-                const canvas = document.getElementById('globe-canvas');
-                if (!canvas) return;
-                // Cleanup previous globe animation if any
-                if (canvas._globeCleanup) canvas._globeCleanup();
-                drawGlobe(canvas, masternodeData.value);
+                const container = document.getElementById('leaflet-map');
+                if (!container || leafletMap) return;
+
+                // Dark theme map
+                leafletMap = L.map('leaflet-map', {
+                    center: [20, 100],
+                    zoom: 3,
+                    minZoom: 2,
+                    maxZoom: 15,
+                    zoomControl: true,
+                    attributionControl: false,
+                });
+
+                // Dark tile layer (free, no API key)
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    subdomains: 'abcd',
+                    maxZoom: 19,
+                }).addTo(leafletMap);
+
+                // Add attribution manually
+                L.control.attribution({ prefix: false }).addAttribution('&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://osm.org/">OSM</a>').addTo(leafletMap);
+
+                addMapMarkers();
             });
         }
 
-        function drawGlobe(canvas, nodes) {
-            const ctx = canvas.getContext('2d');
-            const W = canvas.width = canvas.parentElement.clientWidth || 600;
-            const H = canvas.height = 400;
-            const cx = W / 2, cy = H / 2;
-            const R = Math.min(W, H) * 0.38;
+        function addMapMarkers() {
+            if (!leafletMap) return;
 
-            let rotation = 0;
-            let animId = null;
+            // Clear existing markers
+            leafletMarkers.forEach(m => leafletMap.removeLayer(m));
+            leafletMarkers = [];
 
-            function toScreen(lat, lng) {
-                const phi = (90 - lat) * Math.PI / 180;
-                const theta = (lng + rotation) * Math.PI / 180;
-                const x = R * Math.sin(phi) * Math.cos(theta);
-                const y = R * Math.cos(phi);
-                const z = R * Math.sin(phi) * Math.sin(theta);
-                return { x: cx + x, y: cy - y, z, visible: z > -R * 0.1 };
-            }
+            const typeColors = { validator: '#00e676', sentinel: '#a855f7', light: '#06b6d4' };
+            const typeSizes = { validator: 12, sentinel: 10, light: 8 };
 
-            // Simplified world outline (major landmasses as line segments)
-            const coastline = [
-                // North America
-                [[70,-170],[65,-168],[60,-150],[58,-135],[48,-125],[35,-120],[25,-110],[20,-105],[18,-90],[25,-80],[30,-82],[35,-75],[40,-74],[42,-70],[47,-60],[50,-55],[55,-60],[60,-65],[65,-90],[70,-100],[75,-120],[70,-170]],
-                // South America
-                [[10,-75],[5,-77],[0,-80],[-5,-81],[-10,-78],[-15,-75],[-20,-70],[-25,-65],[-30,-60],[-35,-57],[-40,-65],[-45,-70],[-52,-70],[-55,-68],[-50,-60],[-40,-55],[-35,-50],[-25,-45],[-20,-40],[-10,-35],[-5,-35],[0,-50],[5,-60],[10,-75]],
-                // Europe
-                [[36,-10],[38,-8],[40,-3],[43,3],[45,7],[48,2],[50,3],[52,5],[55,8],[57,10],[60,5],[62,6],[65,14],[70,20],[72,30],[68,40],[60,30],[55,20],[50,15],[48,8],[45,12],[42,15],[40,20],[38,24],[36,28],[35,25],[36,15],[38,10],[36,-5],[36,-10]],
-                // Africa
-                [[35,-5],[37,10],[33,12],[30,32],[25,35],[20,37],[15,42],[12,44],[5,42],[0,42],[-5,40],[-10,35],[-15,40],[-25,35],[-30,30],[-35,20],[-35,18],[-30,15],[-20,12],[-10,14],[0,10],[5,0],[5,-5],[10,-15],[15,-17],[20,-17],[25,-15],[30,-10],[35,-5]],
-                // Asia
-                [[30,35],[35,36],[40,40],[42,50],[45,55],[50,55],[55,60],[60,70],[55,75],[50,80],[45,85],[40,75],[35,70],[30,65],[25,60],[20,55],[15,50],[10,45],[5,44],[0,42]],
-                [[40,75],[45,90],[50,90],[55,100],[55,110],[50,120],[45,130],[40,130],[35,140],[45,145],[50,155],[55,165],[60,170],[65,180],[70,180],[72,170],[70,140],[65,120],[60,110],[55,85],[50,80]],
-                [[35,105],[30,100],[25,95],[22,90],[20,92],[18,98],[15,100],[10,105],[5,103],[0,105],[-5,106],[-8,115]],
-                // Australia
-                [[-15,130],[-12,135],[-15,140],[-20,148],[-25,153],[-30,153],[-35,150],[-38,145],[-35,137],[-32,135],[-30,130],[-25,114],[-22,114],[-20,118],[-15,125],[-15,130]],
-            ];
+            masternodeData.value.forEach(node => {
+                const color = typeColors[node.type] || '#06b6d4';
+                const size = typeSizes[node.type] || 8;
 
-            function draw() {
-                ctx.clearRect(0, 0, W, H);
-
-                // Globe background
-                const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.5);
-                bgGrad.addColorStop(0, 'rgba(6, 182, 212, 0.08)');
-                bgGrad.addColorStop(1, 'transparent');
-                ctx.fillStyle = bgGrad;
-                ctx.fillRect(0, 0, W, H);
-
-                // Globe sphere
-                const grad = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.3, R * 0.05, cx, cy, R);
-                grad.addColorStop(0, 'rgba(6, 182, 212, 0.15)');
-                grad.addColorStop(0.7, 'rgba(6, 182, 212, 0.05)');
-                grad.addColorStop(1, 'rgba(6, 182, 212, 0.02)');
-                ctx.beginPath();
-                ctx.arc(cx, cy, R, 0, Math.PI * 2);
-                ctx.fillStyle = grad;
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(6, 182, 212, 0.2)';
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
-
-                // Grid lines (meridians and parallels)
-                ctx.strokeStyle = 'rgba(6, 182, 212, 0.07)';
-                ctx.lineWidth = 0.5;
-                for (let lat = -60; lat <= 60; lat += 30) {
-                    ctx.beginPath();
-                    for (let lng = 0; lng <= 360; lng += 5) {
-                        const p = toScreen(lat, lng);
-                        if (p.visible) {
-                            if (lng === 0 || !toScreen(lat, lng - 5).visible) ctx.moveTo(p.x, p.y);
-                            else ctx.lineTo(p.x, p.y);
-                        }
-                    }
-                    ctx.stroke();
-                }
-                for (let lng = 0; lng < 360; lng += 30) {
-                    ctx.beginPath();
-                    for (let lat = -90; lat <= 90; lat += 5) {
-                        const p = toScreen(lat, lng);
-                        if (p.visible) {
-                            if (lat === -90 || !toScreen(lat - 5, lng).visible) ctx.moveTo(p.x, p.y);
-                            else ctx.lineTo(p.x, p.y);
-                        }
-                    }
-                    ctx.stroke();
-                }
-
-                // Draw coastlines
-                ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
-                ctx.lineWidth = 1;
-                coastline.forEach(line => {
-                    ctx.beginPath();
-                    let started = false;
-                    line.forEach(([lat, lng]) => {
-                        const p = toScreen(lat, lng);
-                        if (p.visible) {
-                            if (!started) { ctx.moveTo(p.x, p.y); started = true; }
-                            else ctx.lineTo(p.x, p.y);
-                        } else { started = false; }
-                    });
-                    ctx.stroke();
+                const icon = L.divIcon({
+                    className: 'mn-map-marker',
+                    html: '<div style="width:' + size + 'px;height:' + size + 'px;background:' + color + ';border-radius:50%;box-shadow:0 0 ' + (size * 2) + 'px ' + color + ', 0 0 ' + (size * 4) + 'px ' + color + '40;border:2px solid ' + color + '80;"></div>',
+                    iconSize: [size + 4, size + 4],
+                    iconAnchor: [(size + 4) / 2, (size + 4) / 2],
                 });
 
-                // Draw nodes
-                const typeColors = { validator: '#00e676', sentinel: '#a855f7', light: '#06b6d4' };
-                const typeSizes = { validator: 6, sentinel: 5, light: 4 };
+                const marker = L.marker([node.lat, node.lng], { icon }).addTo(leafletMap);
 
-                // Sort by z for depth ordering (back first)
-                const sortedNodes = nodes.map(n => ({ ...n, screen: toScreen(n.lat, n.lng) }))
-                    .filter(n => n.screen.visible)
-                    .sort((a, b) => a.screen.z - b.screen.z);
+                // Popup with node info
+                const statusDot = node.online ? '<span style="color:#00e676">&#9679;</span>' : '<span style="color:#ff1744">&#9679;</span>';
+                const statusText = node.online ? 'Online' : 'Offline';
+                marker.bindPopup(
+                    '<div style="font-family:monospace;font-size:12px;min-width:220px;color:#e2e8f0;background:#0a0f1e;padding:8px;border-radius:8px;border:1px solid rgba(6,182,212,0.3)">' +
+                    '<div style="font-size:18px;text-align:center">' + node.flag + '</div>' +
+                    '<div style="font-weight:600;color:#06b6d4;margin:4px 0">' + node.city + ', ' + node.countryName + '</div>' +
+                    '<div><span style="background:' + color + '20;color:' + color + ';padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600">' + node.type.toUpperCase() + '</span> ' + statusDot + ' ' + statusText + '</div>' +
+                    '<hr style="border:none;border-top:1px solid rgba(6,182,212,0.15);margin:6px 0">' +
+                    '<div style="font-size:10px;color:#94a3b8">Wallet</div>' +
+                    '<div style="font-size:11px;word-break:break-all">' + node.addr + '</div>' +
+                    '<div style="font-size:10px;color:#94a3b8;margin-top:4px">IP: ' + node.ip + '</div>' +
+                    '<div style="color:#06b6d4;margin-top:4px;font-weight:600">Rewards: ' + node.totalRewards + ' TPIX</div>' +
+                    '</div>',
+                    { className: 'mn-popup', maxWidth: 300 }
+                );
 
-                sortedNodes.forEach(n => {
-                    const { x, y, z } = n.screen;
-                    const size = typeSizes[n.type] || 4;
-                    const alpha = 0.4 + 0.6 * ((z + R) / (2 * R));
+                leafletMarkers.push(marker);
+            });
+        }
 
-                    // Glow
-                    const glow = ctx.createRadialGradient(x, y, 0, x, y, size * 3);
-                    glow.addColorStop(0, typeColors[n.type] + Math.round(alpha * 80).toString(16).padStart(2, '0'));
-                    glow.addColorStop(1, 'transparent');
-                    ctx.fillStyle = glow;
-                    ctx.fillRect(x - size * 3, y - size * 3, size * 6, size * 6);
+        function mapZoomAll() {
+            if (leafletMap) leafletMap.setView([20, 100], 2);
+        }
 
-                    // Dot
-                    ctx.beginPath();
-                    ctx.arc(x, y, size, 0, Math.PI * 2);
-                    ctx.fillStyle = typeColors[n.type];
-                    ctx.globalAlpha = alpha;
-                    ctx.fill();
-                    ctx.globalAlpha = 1;
-
-                    // Label
-                    ctx.fillStyle = '#e2e8f0';
-                    ctx.font = '10px monospace';
-                    ctx.globalAlpha = alpha * 0.8;
-                    ctx.fillText(n.flag + ' ' + n.city, x + size + 4, y + 3);
-                    ctx.globalAlpha = 1;
-                });
-
-                rotation += 0.15;
-                animId = requestAnimationFrame(draw);
+        function mapFocusNode(node) {
+            if (leafletMap) {
+                leafletMap.setView([node.lat, node.lng], 10);
+                // Open popup for this node
+                const marker = leafletMarkers.find((m, i) => masternodeData.value[i]?.id === node.id);
+                if (marker) marker.openPopup();
             }
+        }
 
-            draw();
-
-            // Store cleanup ref
-            canvas._globeCleanup = () => { if (animId) cancelAnimationFrame(animId); };
+        function checkNodeRewards(node) {
+            selectedNodeReward.value = { ...node };
         }
 
         // ─── Format Helpers ──────────────────────
@@ -1518,7 +1502,11 @@ const app = createApp({
 
         watch(activeTab, (tab) => {
             if (tab === 'explorer' && explorerBlocks.value.length === 0) loadLatestBlocks();
-            if (tab === 'masternodes') { loadMasternodes(); Vue.nextTick(() => initGlobe()); }
+            if (tab === 'masternodes') {
+                loadMasternodes();
+                if (leafletMap) { Vue.nextTick(() => leafletMap.invalidateSize()); addMapMarkers(); }
+                else { initLeafletMap(); }
+            }
         });
 
         return {
@@ -1558,7 +1546,10 @@ const app = createApp({
             loadLatestBlocks, viewBlock, viewTx, explorerSearchAction, explorerBack,
             formatBlockTime, hexToNum, hexToTpix,
             // Masternodes
-            masternodeData, masternodeStats, loadMasternodes, initGlobe,
+            masternodeData, masternodeStats, loadMasternodes,
+            masternodeCountries, filteredMasternodes,
+            mnFilterType, mnFilterCountry, selectedNodeReward,
+            mapZoomAll, mapFocusNode, checkNodeRewards,
             // Settings & utils
             loadConfig, saveSettings, openDataDir, openLink, loadLogs,
             formatNumber, formatDuration, formatMB, formatLogTime,
