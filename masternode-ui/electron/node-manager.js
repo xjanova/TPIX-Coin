@@ -57,6 +57,7 @@ class NodeManager extends EventEmitter {
                 nodeName: `tpix-node-${Math.random().toString(36).slice(2, 8)}`,
                 tier: 'light',
                 walletAddress: '',
+                rewardWallet: '', // wallet address to receive node rewards (defaults to walletAddress if empty)
                 rpcUrl: TPIX_RPC,
                 chainId: CHAIN_ID,
                 p2pPort: 30303,
@@ -72,7 +73,7 @@ class NodeManager extends EventEmitter {
 
     saveConfig(newConfig) {
         // Whitelist allowed config keys to prevent injection
-        const ALLOWED = ['nodeName', 'tier', 'walletAddress', 'rpcUrl', 'chainId', 'p2pPort', 'rpcPort', 'dashboardPort', 'maxPeers', 'autoStart', 'bootnodes'];
+        const ALLOWED = ['nodeName', 'tier', 'walletAddress', 'rewardWallet', 'rpcUrl', 'chainId', 'p2pPort', 'rpcPort', 'dashboardPort', 'maxPeers', 'autoStart', 'bootnodes'];
         if (newConfig) {
             for (const key of Object.keys(newConfig)) {
                 if (ALLOWED.includes(key)) {
@@ -107,6 +108,7 @@ class NodeManager extends EventEmitter {
         this.addLog('info', `Starting TPIX Master Node "${this.config.nodeName}"...`);
         this.addLog('info', `Tier: ${this.config.tier} | Chain: ${this.config.chainId}`);
         this.addLog('info', `Wallet: ${this.config.walletAddress || 'Not set'}`);
+        this.addLog('info', `Reward Wallet: ${this.config.rewardWallet || this.config.walletAddress || 'Not set'}`);
 
         // Determine the binary path
         const binPath = this.findBinary();

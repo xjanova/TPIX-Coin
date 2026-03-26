@@ -4,7 +4,7 @@
  * Developed by Xman Studio
  */
 
-const { createApp, ref, reactive, computed, onMounted, onUnmounted, watch } = Vue;
+const { createApp, ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
 
 // ─── Translations ───────────────────────────────────────────
 
@@ -671,7 +671,7 @@ const app = createApp({
         const metrics = ref(null);
         const logs = ref([]);
         const config = reactive({
-            nodeName: '', tier: 'light', walletAddress: '',
+            nodeName: '', tier: 'light', walletAddress: '', rewardWallet: '',
             rpcUrl: 'https://rpc.tpix.online', p2pPort: 30303, maxPeers: 50,
         });
 
@@ -685,6 +685,39 @@ const app = createApp({
         const importKeyInput = ref('');
         const importError = ref('');
         const exportedKey = ref(null);
+
+        // ─── Password Prompt Modal ─────────────────
+        const showPasswordModal = ref(false);
+        const passwordModalTitle = ref('');
+        const passwordModalInput = ref('');
+        const passwordModalError = ref('');
+        let passwordModalResolve = null;
+
+        function askPassword(title) {
+            return new Promise((resolve) => {
+                passwordModalTitle.value = title || (lang.value === 'th' ? 'ใส่รหัสผ่าน' : 'Enter password');
+                passwordModalInput.value = '';
+                passwordModalError.value = '';
+                passwordModalResolve = resolve;
+                showPasswordModal.value = true;
+                nextTick(() => {
+                    const el = document.querySelector('.modal-overlay input[type="password"]');
+                    if (el) el.focus();
+                });
+            });
+        }
+        function confirmPasswordModal() {
+            showPasswordModal.value = false;
+            if (passwordModalResolve) passwordModalResolve(passwordModalInput.value);
+            passwordModalResolve = null;
+            passwordModalInput.value = '';
+        }
+        function cancelPasswordModal() {
+            showPasswordModal.value = false;
+            if (passwordModalResolve) passwordModalResolve(null);
+            passwordModalResolve = null;
+            passwordModalInput.value = '';
+        }
 
         // ─── Multi-Wallet State ──────────────────
         const wallets = ref([]);
@@ -820,7 +853,7 @@ const app = createApp({
             } catch {}
         }
         async function createWallet() {
-            const password = prompt(lang.value === 'th' ? 'ใส่รหัสผ่าน' : 'Enter password');
+            const password = await askPassword(lang.value === 'th' ? 'ใส่รหัสผ่านสำหรับกระเป๋า' : 'Set a password for your wallet');
             if (password === null) return;
             walletLoading.value = true;
             try {
@@ -866,7 +899,7 @@ const app = createApp({
             try { walletBalance.value = await window.tpix.wallet.getBalance(); } catch { walletBalance.value = '0'; }
         }
         async function showExportKey() {
-            const password = prompt(lang.value === 'th' ? 'ใส่รหัสผ่านเพื่อดู Private Key' : 'Enter password to export Private Key');
+            const password = await askPassword(lang.value === 'th' ? 'ใส่รหัสผ่านเพื่อดู Private Key' : 'Enter password to export Private Key');
             if (password === null) return;
             try {
                 const result = await window.tpix.wallet.exportKey(undefined, password);
@@ -908,7 +941,7 @@ const app = createApp({
         }
 
         async function addNewWallet() {
-            const password = prompt(lang.value === 'th' ? 'ใส่รหัสผ่าน' : 'Enter password');
+            const password = await askPassword(lang.value === 'th' ? 'ใส่รหัสผ่านสำหรับกระเป๋าใหม่' : 'Set a password for new wallet');
             if (password === null) return;
             walletLoading.value = true;
             try {
@@ -938,7 +971,7 @@ const app = createApp({
         }
 
         async function deleteWalletConfirm(id) {
-            const password = prompt(i18n.value.multiWallet.confirmDelete);
+            const password = await askPassword(i18n.value.multiWallet.confirmDelete);
             if (password === null) return; // User cancelled
             // Empty password is valid (default for wallets created without password)
             try {
@@ -1177,7 +1210,7 @@ const app = createApp({
         }
 
         async function viewMnemonic() {
-            const password = prompt(lang.value === 'th' ? 'ใส่รหัสผ่านเพื่อดู Seed Phrase' : 'Enter password to view Seed Phrase');
+            const password = await askPassword(lang.value === 'th' ? 'ใส่รหัสผ่านเพื่อดู Seed Phrase' : 'Enter password to view Seed Phrase');
             if (password === null) return;
             try {
                 const result = await window.tpix.wallet.getMnemonic(password);
@@ -1526,6 +1559,9 @@ const app = createApp({
             network, metrics, logs, config,
             walletAddress, walletBalance, walletLoading,
             newWalletData, showPrivateKey, showImportModal, importKeyInput, importError, exportedKey,
+            // Password prompt modal
+            showPasswordModal, passwordModalTitle, passwordModalInput, passwordModalError,
+            confirmPasswordModal, cancelPasswordModal,
             // Multi-wallet state
             wallets, walletCount, activeWallet, walletBalances,
             showSendModal, showReceiveModal, showWalletList,
