@@ -2,7 +2,89 @@
 
 ## Project Overview
 TPIX Chain: EVM blockchain (Polygon Edge/IBFT2, Chain ID 4289, zero gas, 2s blocks).
-Products: Flutter wallet (Android/iOS), Electron masternode UI (Windows), Hardhat smart contracts, Uniswap V2 DEX.
+Version: 1.5.0
+
+### Products
+| Product | Tech | Platform |
+|---------|------|----------|
+| **Flutter Wallet** | Flutter 3.38+, Dart 3.x, Provider | Android/iOS |
+| **Masternode UI** | Electron 29, Vue 3.5, SQLite, ethers 6 | Windows x64 |
+| **Masternode Backend** | Go 1.22, go-ethereum, gorilla/mux | Linux/Docker |
+| **Smart Contracts** | Hardhat 2.22, Solidity 0.8.20, OpenZeppelin 5.6 | EVM |
+
+### Repository Structure
+```
+TPIX-Coin/
+├── wallet/              # Flutter mobile wallet (Android/iOS)
+├── masternode-ui/       # Electron desktop GUI (Windows)
+│   ├── electron/        # Main process (node-manager, wallet-manager, database, identity, tx, auto-updater)
+│   └── src/             # Vue 3 SPA (renderer.js, index.html, styles.css)
+├── masternode/          # Go backend (API server, monitoring, Docker)
+├── contracts/           # Hardhat smart contracts
+│   ├── masternode/      # NodeRegistry, NodeRegistryV2, ValidatorGovernance, ValidatorKYC
+│   ├── identity/        # TPIXIdentity
+│   ├── dex/             # TPIXRouter, IUniswapV2Router02
+│   ├── bridge/          # WTPIX_BEP20
+│   └── TPIXTokenSale.sol
+├── infrastructure/      # Infra setup
+├── scripts/             # Utility scripts
+├── docs/                # Documentation
+└── .github/workflows/   # CI/CD (build-apk, build-masternode, release-masternode-ui)
+```
+
+## Masternode UI Architecture
+
+### Backend (Electron Main Process)
+| File | Role |
+|------|------|
+| `main.js` | Window management, 50+ IPC handlers, tray icon |
+| `node-manager.js` | Polygon Edge process lifecycle, RPC, metrics, **reward accrual system** |
+| `wallet-manager.js` | Multi-wallet HD (BIP-39/BIP-44), AES-256-GCM encryption, up to 128 wallets |
+| `transaction-manager.js` | TX signing, broadcasting, confirmation polling, scan |
+| `database.js` | SQLite schema v3: wallets, transactions, rewards, **node_staking**, hd_seeds, identity |
+| `identity-manager.js` | Living Identity: security questions, recovery keys, rate limiting |
+| `rpc-client.js` | JSON-RPC wrapper for TPIX Chain |
+| `auto-updater.js` | GitHub Releases auto-update (xjanova/TPIX-Coin) |
+
+### Frontend (Vue 3 SPA)
+- **10 tabs**: Dashboard, Setup (3-step wizard), Wallet, Network, Explorer, Masternodes, Links, Logs, Settings, About
+- **Navigation**: `activeTab` ref with `v-if` per page (DOM destroyed on switch)
+- **Map**: Leaflet 1.9.4 with CARTO dark tiles — **must destroy/recreate on tab switch** because `v-if` removes DOM
+
+### Staking & Reward System
+- **4 tiers**: Light (10K, 4-6% APY), Sentinel (100K, 7-9%), Guardian (1M, 10-12%), Validator (10M, 15-20%)
+- **Balance validation**: RPC `eth_getBalance` check before node launch
+- **Staking registration**: Stored in SQLite `node_staking` table (wallet, tier, stake_amount, reward_wallet, uptime)
+- **Reward accrual**: Every 60s while node is running, calculates `stake × avgAPY × elapsed / year` in wei precision (BigInt)
+- **Reward storage**: Inserted to `rewards` table per accrual cycle
+- **Reward wallet**: User can direct rewards to a different wallet than staking wallet
+- **Dashboard**: Shows staking card with tier, staked amount, total rewards, uptime
+- **Masternodes map**: User's own node appears with green star highlight (`isMyNode: true`)
+
+### Key Patterns (Masternode UI)
+| Pattern | Details |
+|---------|---------|
+| **Leaflet map lifecycle** | `v-if` destroys DOM → must call `leafletMap.remove()` and set to null → recreate via `initLeafletMap()` on tab return |
+| **Double-tap guards** | `startNode`, `stopNode`, `confirmSend` all have early-return guards |
+| **Timer cleanup** | `onUnmounted` clears: networkInterval, metricsInterval, uptimeInterval, gasEstimateTimer, leafletMap |
+| **Password modal** | Promise-based `askPassword()` with resolve/reject for wallet operations |
+| **BigInt math** | All TPIX amounts in wei (18 decimals), use BigInt for precision, never Number for storage |
+
+## Tech Stack
+- **Wallet**: Flutter 3.38+, Dart 3.x, Provider, web3dart, bip39/bip32, flutter_secure_storage
+- **Masternode UI**: Electron 29, Vue 3.5, better-sqlite3, ethers 6.11, Leaflet 1.9.4, qrcode, jsQR
+- **Masternode Backend**: Go 1.22, go-ethereum 1.14, gorilla/mux, gopsutil
+- **Contracts**: Hardhat 2.22, Solidity 0.8.20, OpenZeppelin 5.6.1, ethers v6
+- **CI/CD**: GitHub Actions — `v*` tag triggers builds (APK, Go binaries, Electron installer/portable)
+
+## Conventions
+- Commit messages: `type: description` (feat, fix, chore, docs)
+- Thai + English bilingual UI
+  - Wallet: `LocaleProvider` with `l.t('key')`
+  - Masternode UI: `LANG[lang.value]` with computed `i18n`
+- Dark theme with glass-morphism (gradients, rgba borders, box-shadows)
+- Wallet security: FlutterSecureStorage with AndroidOptions(encryptedSharedPreferences: true)
+- Masternode UI security: AES-256-GCM per wallet, PBKDF2 key derivation, contextIsolation: true
 
 ## Code Review Protocol: Scenario-Based Testing
 
@@ -13,30 +95,33 @@ Products: Flutter wallet (Android/iOS), Electron masternode UI (Windows), Hardha
 Before marking any feature code as "done", walk through these scenario categories:
 
 #### 1. State Management Scenarios
-- [ ] **StatefulBuilder trap**: Any `StatefulBuilder` that declares variables inside `builder:` will reset them on every rebuild. Extract to a proper `StatefulWidget` if state must persist across rebuilds.
-- [ ] **setState after async**: Every `await` followed by `setState` must check `if (!mounted) return` first.
-- [ ] **Loading state flash**: Avoid showing full-screen loading spinners for incremental updates. Use `showSpinner` flags to distinguish initial load from refresh.
+- [ ] **Leaflet map lifecycle**: `v-if` destroys DOM. Map instance must be destroyed and recreated on tab return.
+- [ ] **Loading state flash**: Avoid showing full-screen loading spinners for incremental updates.
+- [ ] **BigInt precision**: Never convert wei amounts to Number for storage or comparison. Use BigInt throughout.
 
 #### 2. User Flow Scenarios
 - [ ] **First-time user**: Screen with no data — does it look correct and guide the user?
 - [ ] **Returning user**: User already has data — are fields pre-filled? Is there an overwrite warning?
-- [ ] **Fat-finger protection**: Destructive actions (delete, overwrite) require confirmation dialogs.
+- [ ] **Fat-finger protection**: Destructive actions (delete, overwrite, send) require confirmation. All async buttons have double-tap guards.
 - [ ] **Error messages**: Never show raw `Exception: ...` to users. Strip prefixes, use localized messages.
 - [ ] **Rapid taps**: Can the user double-tap a button and trigger duplicate operations?
+- [ ] **Balance validation**: Before staking, wallet balance must be validated via RPC against tier requirement.
 
 #### 3. Security Scenarios
 - [ ] **Rate limiting scope**: Self-tests and diagnostics must NOT count against security rate limits.
-- [ ] **Multi-wallet isolation**: Identity/security data — is it per-wallet or global? Document which and why.
-- [ ] **Ternary logic in failure branches**: When you're inside `if (!x && !y)`, don't check `x` in the ternary — it's always false there. Check the actual discriminator.
+- [ ] **Multi-wallet isolation**: Identity/security data is per-wallet. Staking is per-wallet.
+- [ ] **Private key auto-clear**: Wallet creation private key auto-clears from memory after 60 seconds.
+- [ ] **Exported key auto-clear**: Exported key auto-clears after 30 seconds.
 
 #### 4. Cross-Device / Cross-Platform Scenarios
 - [ ] **Float-to-string consistency**: Never use `double.toString()` for values that will be hashed or compared across devices. Use `toStringAsFixed(n)`.
-- [ ] **GPS variance**: GPS readings vary ±10m per reading. Grid-hash with neighbor checking handles this.
-- [ ] **Storage key collisions**: If the app supports multiple wallets, storage keys must include wallet identifier or be documented as intentionally global.
+- [ ] **Storage key collisions**: Multi-wallet storage keys must include wallet identifier.
 
 #### 5. Resource Management
-- [ ] **TextEditingController disposal**: Controllers created in dialogs/bottom sheets must be disposed or the dialog must handle cleanup.
-- [ ] **AnimationController disposal**: All animation controllers created in `initState` must be disposed in `dispose()`.
+- [ ] **Timer cleanup**: All intervals/timeouts (network, metrics, uptime, gas, rewards) must be cleared in `onUnmounted`.
+- [ ] **Leaflet cleanup**: Map instance must be removed in `onUnmounted`.
+- [ ] **QR scanner cleanup**: Camera stream and scan interval must be stopped.
+- [ ] **TextEditingController disposal** (Flutter): Controllers created in dialogs must be disposed.
 - [ ] **Subscription cleanup**: Stream subscriptions must be cancelled in `dispose()`.
 
 ### How to Apply
@@ -49,22 +134,9 @@ For each screen/feature:
   3. User has existing data and re-opens (edit mode)
   4. User does something wrong (error handling)
   5. User cancels mid-operation (cleanup)
-  6. User loses network/GPS during operation (timeout)
+  6. User loses network during operation (timeout)
   7. User switches wallet/language during operation
   8. User rapid-taps buttons (debounce)
-  9. Screen is disposed during async operation (mounted check)
-  10. Data is accessed from a different device (consistency)
+  9. Tab switch and return (DOM lifecycle for v-if pages)
+  10. Insufficient balance for staking tier
 ```
-
-## Tech Stack
-- **Wallet**: Flutter 3.38+, Dart 3.x, Provider state management
-- **Masternode UI**: Electron, Node.js 20+, SQLite
-- **Contracts**: Hardhat, Solidity 0.8.20, ethers v6
-- **CI/CD**: GitHub Actions — `v*` tag triggers builds
-
-## Conventions
-- Commit messages: `type: description` (feat, fix, chore, docs)
-- Thai + English bilingual UI (LocaleProvider with `l.t('key')`)
-- Dark theme with gradients (AppTheme.primary, AppTheme.accent)
-- SynthService for UI sounds (playTap, playSendSuccess, playError)
-- FlutterSecureStorage with AndroidOptions(encryptedSharedPreferences: true)
