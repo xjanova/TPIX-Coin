@@ -13,7 +13,7 @@ const fs = require('fs');
 const DATA_DIR = path.join(os.homedir(), '.tpix-node');
 const DB_FILE = path.join(DATA_DIR, 'tpix-wallets.db');
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const MAX_WALLETS = 128;
 
 class TpixDatabase {
@@ -100,6 +100,25 @@ class TpixDatabase {
             );
 
             -- Identity tables are created by IdentityManager._ensureTables()
+
+            CREATE TABLE IF NOT EXISTS node_staking (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_id INTEGER NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
+                wallet_address TEXT NOT NULL,
+                reward_wallet TEXT,
+                tier TEXT NOT NULL DEFAULT 'light',
+                stake_amount TEXT NOT NULL DEFAULT '0',
+                node_name TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                registered_at TEXT NOT NULL,
+                stopped_at TEXT,
+                total_uptime_seconds INTEGER DEFAULT 0,
+                last_reward_block INTEGER DEFAULT 0,
+                last_reward_time INTEGER DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_staking_wallet ON node_staking(wallet_id);
+            CREATE INDEX IF NOT EXISTS idx_staking_status ON node_staking(status);
         `);
 
         // Set schema version if not exists
@@ -123,6 +142,32 @@ class TpixDatabase {
             try {
                 this.db.exec(`ALTER TABLE wallets ADD COLUMN seed_id INTEGER DEFAULT NULL`);
             } catch { /* column may already exist */ }
+        }
+
+        if (currentVer < 3) {
+            // v3: Node staking table (created in _initSchema)
+            // Ensure it exists for upgrades from v2
+            try {
+                this.db.exec(`
+                    CREATE TABLE IF NOT EXISTS node_staking (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        wallet_id INTEGER NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
+                        wallet_address TEXT NOT NULL,
+                        reward_wallet TEXT,
+                        tier TEXT NOT NULL DEFAULT 'light',
+                        stake_amount TEXT NOT NULL DEFAULT '0',
+                        node_name TEXT,
+                        status TEXT NOT NULL DEFAULT 'active',
+                        registered_at TEXT NOT NULL,
+                        stopped_at TEXT,
+                        total_uptime_seconds INTEGER DEFAULT 0,
+                        last_reward_block INTEGER DEFAULT 0,
+                        last_reward_time INTEGER DEFAULT 0
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_staking_wallet ON node_staking(wallet_id);
+                    CREATE INDEX IF NOT EXISTS idx_staking_status ON node_staking(status);
+                `);
+            } catch { /* table may already exist */ }
         }
 
         if (currentVer < SCHEMA_VERSION) {
@@ -296,6 +341,46 @@ class TpixDatabase {
         const fracStr = frac.toString().padStart(18, '0').slice(0, 6).replace(/0+$/, '');
         const result = fracStr ? `${whole}.${fracStr}` : `${whole}`;
         return parseFloat(result);
+    }
+
+    // ─── Node Staking ────────────────────────────────────────────
+
+    insertStaking({ walletId, walletAddress, rewardWallet, tier, stakeAmount, nodeName }) {
+        // Deactivate any previous staking for this wallet
+        this.db.prepare("UPDATE node_staking SET status = 'stopped', stopped_at = ? WHERE wallet_id = ? AND status = 'active'")
+            .run(new Date().toISOString(), walletId);
+
+        const stmt = this.db.prepare(`
+            INSERT INTO node_staking (wallet_id, wallet_address, reward_wallet, tier, stake_amount, node_name, status, registered_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+        `);
+        const result = stmt.run(walletId, walletAddress, rewardWallet || walletAddress, tier, stakeAmount, nodeName, new Date().toISOString());
+        return result.lastInsertRowid;
+    }
+
+    getActiveStaking(walletId) {
+        if (walletId) {
+            return this.db.prepare("SELECT * FROM node_staking WHERE wallet_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1").get(walletId);
+        }
+        return this.db.prepare("SELECT * FROM node_staking WHERE status = 'active' ORDER BY id DESC LIMIT 1").get();
+    }
+
+    getStakingHistory(walletId) {
+        return this.db.prepare('SELECT * FROM node_staking WHERE wallet_id = ? ORDER BY id DESC LIMIT 20').all(walletId);
+    }
+
+    updateStakingUptime(stakingId, uptimeSeconds) {
+        this.db.prepare('UPDATE node_staking SET total_uptime_seconds = ? WHERE id = ?').run(uptimeSeconds, stakingId);
+    }
+
+    updateStakingRewardCheckpoint(stakingId, blockNumber, timestamp) {
+        this.db.prepare('UPDATE node_staking SET last_reward_block = ?, last_reward_time = ? WHERE id = ?')
+            .run(blockNumber, timestamp, stakingId);
+    }
+
+    stopStaking(walletId) {
+        this.db.prepare("UPDATE node_staking SET status = 'stopped', stopped_at = ? WHERE wallet_id = ? AND status = 'active'")
+            .run(new Date().toISOString(), walletId);
     }
 
     // ─── Settings ───────────────────────────────────────────────

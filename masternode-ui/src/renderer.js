@@ -254,6 +254,21 @@ const LANG = {
             back: 'Back',
             viewTx: 'View Transaction',
         },
+        staking: {
+            stakingActive: 'Staking Active',
+            stakingStopped: 'Not Staking',
+            tier: 'Tier',
+            stakeAmount: 'Staked',
+            rewardWallet: 'Reward Wallet',
+            totalRewards: 'Total Rewards Earned',
+            uptime: 'Total Uptime',
+            registeredAt: 'Registered',
+            insufficientBalance: 'Insufficient balance. Required:',
+            validating: 'Checking balance...',
+            balanceOk: 'Balance sufficient',
+            stakingRequired: 'You must stake TPIX to run a node',
+            myNode: 'My Node',
+        },
         masternodeMap: {
             title: 'Masternode Network',
             totalNodes: 'Total Nodes',
@@ -261,6 +276,7 @@ const LANG = {
             types: 'Node Types',
             light: 'Light',
             sentinel: 'Sentinel',
+            guardian: 'Guardian',
             validator: 'Validator',
             location: 'Location',
             mapTitle: 'Global Network Map',
@@ -524,6 +540,21 @@ const LANG = {
             back: 'กลับ',
             viewTx: 'ดูธุรกรรม',
         },
+        staking: {
+            stakingActive: 'กำลัง Stake',
+            stakingStopped: 'ยังไม่ได้ Stake',
+            tier: 'ระดับ',
+            stakeAmount: 'จำนวนที่ Stake',
+            rewardWallet: 'กระเป๋ารับรางวัล',
+            totalRewards: 'รางวัลที่ได้รับทั้งหมด',
+            uptime: 'เวลาออนไลน์รวม',
+            registeredAt: 'ลงทะเบียนเมื่อ',
+            insufficientBalance: 'ยอดเงินไม่เพียงพอ ต้องการ:',
+            validating: 'กำลังตรวจสอบยอดเงิน...',
+            balanceOk: 'ยอดเงินเพียงพอ',
+            stakingRequired: 'ต้อง Stake TPIX เพื่อรันโหนด',
+            myNode: 'โหนดของฉัน',
+        },
         masternodeMap: {
             title: 'เครือข่ายมาสเตอร์โหนด',
             totalNodes: 'โหนดทั้งหมด',
@@ -531,6 +562,7 @@ const LANG = {
             types: 'ประเภทโหนด',
             light: 'ไลท์',
             sentinel: 'เซนติเนล',
+            guardian: 'การ์เดียน',
             validator: 'วาลิเดเตอร์',
             location: 'ตำแหน่ง',
             mapTitle: 'แผนที่เครือข่ายโลก',
@@ -799,6 +831,12 @@ const app = createApp({
             });
         });
 
+        // ─── Staking State ───────────────────────────
+        const stakingInfo = ref(null);      // Active staking record
+        const stakingValidation = ref(null); // Balance validation result
+        const stakingLoading = ref(false);
+        const stakingError = ref('');
+
         // ─── Update State ─────────────────────────
         const updateStatus = ref({
             checking: false, updateAvailable: false, updateDownloaded: false,
@@ -812,6 +850,7 @@ const app = createApp({
 
         // ─── Actions ──────────────────────────────
         async function startNode() {
+            if (nodeStatus.value === 'starting') return;
             const cfg = { ...config };
             if (walletAddress.value) cfg.walletAddress = walletAddress.value;
             nodeStatus.value = 'starting';
@@ -821,12 +860,24 @@ const app = createApp({
                 logs.value.push({ time: new Date().toISOString(), level: 'error', message: result.error });
             }
         }
+        let stoppingNode = false;
         async function stopNode() {
-            await window.tpix.node.stop();
-            nodeStatus.value = 'stopped';
-            nodeUptime.value = 0;
+            if (stoppingNode) return;
+            stoppingNode = true;
+            try {
+                await window.tpix.node.stop();
+                await stopStaking();
+                nodeStatus.value = 'stopped';
+                nodeUptime.value = 0;
+            } finally { stoppingNode = false; }
         }
-        function launchNode() {
+        async function launchNode() {
+            stakingError.value = '';
+
+            // Register staking first
+            const registered = await registerStaking();
+            if (!registered) return;
+
             activeTab.value = 'dashboard';
             startNode();
         }
@@ -1012,6 +1063,7 @@ const app = createApp({
         }
 
         async function confirmSend() {
+            if (sendForm.sending) return;
             sendForm.error = '';
             if (!sendForm.toAddress || !sendForm.toAddress.startsWith('0x') || sendForm.toAddress.length !== 42) {
                 sendForm.error = i18n.value.send.invalidAddress; return;
@@ -1078,6 +1130,8 @@ const app = createApp({
                 const walletId = activeWallet.value ? activeWallet.value.id : undefined;
                 const result = await window.tpix.wallet.getRewards(walletId);
                 if (result) rewards.value = result;
+                // Also load staking info
+                await loadStakingInfo();
             } catch {}
         }
 
@@ -1318,7 +1372,7 @@ const app = createApp({
         // ─── Masternode Map ──────────────────────
         function loadMasternodes() {
             const flag = (code) => String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
-            const nodes = [
+            let nodes = [
                 { id: 1, type: 'validator', addr: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD4e', country: 'TH', countryName: 'Thailand', lat: 13.75, lng: 100.5, city: 'Bangkok', ip: '203.150.45.12', online: true, totalRewards: '45,200', rewards: [
                     { block: 1250000, amount: '8.5', time: '2026-03-25 14:30' }, { block: 1249800, amount: '8.5', time: '2026-03-25 14:20' }, { block: 1249600, amount: '8.5', time: '2026-03-25 14:10' },
                 ]},
@@ -1347,6 +1401,34 @@ const app = createApp({
                 { id: 14, type: 'sentinel', addr: '0x5fA1b2C3d4E5f6A7b8C9d0E1f2A3b4C5d6E723No', country: 'CA', countryName: 'Canada', lat: 43.65, lng: -79.38, city: 'Toronto', ip: '198.55.100.34', online: true, totalRewards: '4,120', rewards: []},
                 { id: 15, type: 'light', addr: '0x9gB4c5D6e7F8a9B0c1D2e3F4a5B6c7D8e9F056Pq', country: 'BR', countryName: 'Brazil', lat: -23.55, lng: -46.63, city: 'Sao Paulo', ip: '187.45.223.67', online: true, totalRewards: '540', rewards: []},
             ].map(n => ({ ...n, flag: flag(n.country) }));
+
+            // Add user's own node if staking is active
+            if (stakingInfo.value && stakingInfo.value.status === 'active') {
+                const s = stakingInfo.value;
+                const myNode = {
+                    id: 999,
+                    type: s.tier,
+                    addr: s.wallet_address,
+                    country: 'TH',
+                    countryName: 'Thailand',
+                    lat: 13.75 + (Math.random() - 0.5) * 0.1,
+                    lng: 100.5 + (Math.random() - 0.5) * 0.1,
+                    city: 'My Node',
+                    ip: '127.0.0.1',
+                    online: nodeStatus.value === 'running' || nodeStatus.value === 'syncing',
+                    totalRewards: rewards.value.total ? String(rewards.value.total) : '0',
+                    rewards: (rewards.value.rewards || []).slice(0, 5).map(r => ({
+                        block: r.block_number,
+                        amount: (Number(r.amount) / 1e18).toFixed(4),
+                        time: new Date(r.timestamp * 1000).toLocaleString(),
+                    })),
+                    isMyNode: true,
+                    flag: flag('TH'),
+                };
+                // Remove duplicate if exists
+                nodes = nodes.filter(n => n.id !== 999);
+                nodes.unshift(myNode);
+            }
 
             masternodeData.value = nodes;
 
@@ -1391,8 +1473,8 @@ const app = createApp({
             leafletMarkers.forEach(m => leafletMap.removeLayer(m));
             leafletMarkers = [];
 
-            const typeColors = { validator: '#00e676', sentinel: '#a855f7', light: '#06b6d4' };
-            const typeSizes = { validator: 12, sentinel: 10, light: 8 };
+            const typeColors = { validator: '#00e676', guardian: '#f59e0b', sentinel: '#a855f7', light: '#06b6d4' };
+            const typeSizes = { validator: 12, guardian: 11, sentinel: 10, light: 8 };
 
             masternodeData.value.forEach(node => {
                 const color = typeColors[node.type] || '#06b6d4';
@@ -1460,6 +1542,85 @@ const app = createApp({
                 if (!fracStr) return whole.toLocaleString();
                 return whole.toLocaleString() + '.' + fracStr;
             } catch { return '0'; }
+        }
+
+        // ─── Staking Functions ────────────────────
+        async function validateStakeBalance() {
+            if (!walletAddress.value || !config.tier) return;
+            stakingValidation.value = null;
+            stakingError.value = '';
+            try {
+                const result = await window.tpix.staking.validateBalance(walletAddress.value, config.tier);
+                stakingValidation.value = result;
+                return result;
+            } catch (err) {
+                stakingError.value = err.message;
+                return null;
+            }
+        }
+
+        async function loadStakingInfo() {
+            try {
+                const active = await window.tpix.staking.getActive();
+                stakingInfo.value = active;
+            } catch {}
+        }
+
+        async function registerStaking() {
+            if (stakingLoading.value) return;
+            stakingError.value = '';
+            stakingLoading.value = true;
+            try {
+                // Validate balance first
+                const validation = await validateStakeBalance();
+                if (!validation || !validation.valid) {
+                    stakingError.value = validation?.error ||
+                        (lang.value === 'th'
+                            ? `ยอดเงินไม่เพียงพอ ต้องการ ${validation?.requiredTpix?.toLocaleString() || '?'} TPIX`
+                            : `Insufficient balance. Required: ${validation?.requiredTpix?.toLocaleString() || '?'} TPIX`);
+                    return false;
+                }
+
+                // Get wallet info
+                const active = activeWallet.value;
+                if (!active) {
+                    stakingError.value = lang.value === 'th' ? 'ไม่มีกระเป๋าที่เลือก' : 'No active wallet';
+                    return false;
+                }
+
+                // Calculate stake in wei
+                const tierStakes = { light: 10000, sentinel: 100000, guardian: 1000000, validator: 10000000 };
+                const stakeAmount = BigInt(tierStakes[config.tier] || 10000) * BigInt('1000000000000000000');
+
+                const result = await window.tpix.staking.register({
+                    walletId: active.id,
+                    walletAddress: active.address,
+                    rewardWallet: config.rewardWallet || active.address,
+                    tier: config.tier,
+                    stakeAmount: stakeAmount.toString(),
+                    nodeName: config.nodeName,
+                });
+
+                if (result.success) {
+                    await loadStakingInfo();
+                    return true;
+                } else {
+                    stakingError.value = result.error;
+                    return false;
+                }
+            } catch (err) {
+                stakingError.value = err.message;
+                return false;
+            } finally {
+                stakingLoading.value = false;
+            }
+        }
+
+        async function stopStaking() {
+            try {
+                await window.tpix.staking.stop();
+                stakingInfo.value = null;
+            } catch {}
         }
 
         // ─── Settings ─────────────────────────────
@@ -1539,15 +1700,39 @@ const app = createApp({
                 try { const s = await window.tpix.update.getStatus(); if (s) updateStatus.value = s; } catch {}
             }
             loadMasternodes();
+            await loadStakingInfo();
+            // Listen for reward accrual events
+            window.tpix.node.onRewardAccrued(async (reward) => {
+                // Reload rewards when a new reward is accrued
+                await loadRewards();
+            });
         });
-        onUnmounted(() => { clearInterval(networkInterval); clearInterval(metricsInterval); clearInterval(uptimeInterval); stopQRScan(); });
+        onUnmounted(() => {
+            clearInterval(networkInterval); clearInterval(metricsInterval); clearInterval(uptimeInterval);
+            if (gasEstimateTimer) clearTimeout(gasEstimateTimer);
+            stopQRScan();
+            if (leafletMap) { try { leafletMap.remove(); } catch {} leafletMap = null; leafletMarkers = []; }
+        });
+
+        // Validate balance when setup step or tier changes
+        watch(() => [activeTab.value, setupStep.value, config.tier], ([tab, step]) => {
+            if (tab === 'setup' && step === 0 && walletAddress.value) {
+                validateStakeBalance();
+            }
+        });
 
         watch(activeTab, (tab) => {
             if (tab === 'explorer' && explorerBlocks.value.length === 0) loadLatestBlocks();
             if (tab === 'masternodes') {
                 loadMasternodes();
-                if (leafletMap) { Vue.nextTick(() => leafletMap.invalidateSize()); addMapMarkers(); }
-                else { initLeafletMap(); }
+                // v-if destroys the DOM when switching away, so the old leafletMap
+                // instance is attached to a detached element. Destroy and recreate.
+                if (leafletMap) {
+                    try { leafletMap.remove(); } catch {}
+                    leafletMap = null;
+                    leafletMarkers = [];
+                }
+                initLeafletMap();
             }
         });
 
@@ -1595,6 +1780,9 @@ const app = createApp({
             masternodeCountries, filteredMasternodes,
             mnFilterType, mnFilterCountry, selectedNodeReward,
             mapZoomAll, mapFocusNode, checkNodeRewards,
+            // Staking
+            stakingInfo, stakingValidation, stakingLoading, stakingError,
+            validateStakeBalance, loadStakingInfo, registerStaking, stopStaking,
             // Settings & utils
             loadConfig, saveSettings, openDataDir, openLink, loadLogs,
             formatNumber, formatDuration, formatMB, formatLogTime,

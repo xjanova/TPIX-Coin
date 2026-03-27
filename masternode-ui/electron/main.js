@@ -111,7 +111,7 @@ function createTray() {
 function setupIPC() {
     // Initialize core services
     db = new TpixDatabase();
-    nodeManager = new NodeManager();
+    nodeManager = new NodeManager(db);
     walletManager = new WalletManager(db);
     txManager = new TransactionManager(db);
     identityManager = new IdentityManager(db);
@@ -301,6 +301,58 @@ function setupIPC() {
     });
 
     // ═══════════════════════════════════════════════════════════
+    //  STAKING
+    // ═══════════════════════════════════════════════════════════
+
+    ipcMain.handle('staking:validateBalance', async (_, walletAddress, tier) => {
+        try {
+            return await nodeManager.validateStakeBalance(walletAddress, tier);
+        } catch (err) {
+            return { valid: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('staking:register', (_, { walletId, walletAddress, rewardWallet, tier, stakeAmount, nodeName }) => {
+        try {
+            const id = db.insertStaking({ walletId, walletAddress, rewardWallet, tier, stakeAmount, nodeName });
+            return { success: true, stakingId: id };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('staking:getActive', (_, walletId) => {
+        try {
+            return db.getActiveStaking(walletId) || null;
+        } catch { return null; }
+    });
+
+    ipcMain.handle('staking:getHistory', (_, walletId) => {
+        try {
+            if (!walletId) {
+                const active = walletManager.getActiveWallet();
+                walletId = active ? active.id : null;
+            }
+            if (!walletId) return [];
+            return db.getStakingHistory(walletId);
+        } catch { return []; }
+    });
+
+    ipcMain.handle('staking:stop', (_, walletId) => {
+        try {
+            if (!walletId) {
+                const active = walletManager.getActiveWallet();
+                walletId = active ? active.id : null;
+            }
+            if (!walletId) return { success: false, error: 'No wallet' };
+            db.stopStaking(walletId);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════
     //  HD WALLET (BIP-39)
     // ═══════════════════════════════════════════════════════════
 
@@ -479,6 +531,7 @@ function setupIPC() {
     nodeManager.on('status-change', (status) => { mainWindow?.webContents.send('node:statusUpdate', status); });
     nodeManager.on('log', (line) => { mainWindow?.webContents.send('node:log', line); });
     nodeManager.on('metrics', (metrics) => { mainWindow?.webContents.send('node:metrics', metrics); });
+    nodeManager.on('reward-accrued', (reward) => { mainWindow?.webContents.send('node:rewardAccrued', reward); });
 }
 
 // ─── App Lifecycle ─────────────────────────────────────────────

@@ -17,9 +17,18 @@ const TPIX_RPC = 'https://rpc.tpix.online';
 const CHAIN_ID = 4289;
 const BLOCK_TIME = 2; // seconds
 
+// Tier definitions — stake in TPIX, APY as decimal
+const TIER_CONFIG = {
+    light:     { stake: 10000,    apyMin: 0.04, apyMax: 0.06, lockDays: 7 },
+    sentinel:  { stake: 100000,   apyMin: 0.07, apyMax: 0.09, lockDays: 30 },
+    guardian:  { stake: 1000000,  apyMin: 0.10, apyMax: 0.12, lockDays: 90 },
+    validator: { stake: 10000000, apyMin: 0.15, apyMax: 0.20, lockDays: 180 },
+};
+
 class NodeManager extends EventEmitter {
-    constructor() {
+    constructor(db) {
         super();
+        this.db = db; // TpixDatabase instance for reward tracking
         this.process = null;
         this.status = 'stopped'; // stopped, starting, running, syncing, error
         this.config = null;
@@ -27,6 +36,7 @@ class NodeManager extends EventEmitter {
         this.maxLogs = 500;
         this.metricsInterval = null;
         this.statusInterval = null;
+        this.rewardInterval = null;
         this.startTime = null;
 
         this.dataDir = path.join(os.homedir(), '.tpix-node');
@@ -105,6 +115,7 @@ class NodeManager extends EventEmitter {
 
         this.setStatus('starting');
         this.startTime = Date.now();
+        this._lastSavedUptime = 0;
         this.addLog('info', `Starting TPIX Master Node "${this.config.nodeName}"...`);
         this.addLog('info', `Tier: ${this.config.tier} | Chain: ${this.config.chainId}`);
         this.addLog('info', `Wallet: ${this.config.walletAddress || 'Not set'}`);
@@ -321,6 +332,13 @@ class NodeManager extends EventEmitter {
                 // RPC might not be ready yet
             }
         }, 10000);
+
+        // Reward accrual every 60 seconds
+        this.rewardInterval = setInterval(() => {
+            this.accrueRewards();
+        }, 60000);
+        // First accrual after 30 seconds
+        this._firstRewardTimeout = setTimeout(() => this.accrueRewards(), 30000);
     }
 
     stopMonitoring() {
@@ -331,6 +349,143 @@ class NodeManager extends EventEmitter {
         if (this.statusInterval) {
             clearInterval(this.statusInterval);
             this.statusInterval = null;
+        }
+        if (this.rewardInterval) {
+            clearInterval(this.rewardInterval);
+            this.rewardInterval = null;
+        }
+        if (this._firstRewardTimeout) {
+            clearTimeout(this._firstRewardTimeout);
+            this._firstRewardTimeout = null;
+        }
+
+        // Update staking uptime when stopping
+        this._updateStakingUptime();
+    }
+
+    // ─── Reward Accrual ─────────────────────────────────────────
+
+    /**
+     * Calculate and store rewards based on tier APY and uptime.
+     * Rewards are calculated per-minute based on the average APY of the tier.
+     * Formula: rewardPerMinute = (stake * avgAPY) / (365.25 * 24 * 60)
+     */
+    accrueRewards() {
+        if (!this.db || !this.config) return;
+        if (this.status !== 'running' && this.status !== 'syncing') return;
+
+        try {
+            const staking = this.db.getActiveStaking();
+            if (!staking) return;
+
+            const tier = TIER_CONFIG[staking.tier];
+            if (!tier) return;
+
+            const now = Math.floor(Date.now() / 1000);
+            const lastRewardTime = staking.last_reward_time || Math.floor(new Date(staking.registered_at).getTime() / 1000);
+            const elapsedSeconds = now - lastRewardTime;
+
+            // Minimum 60 seconds between reward calculations
+            if (elapsedSeconds < 55) return;
+
+            // Calculate reward: stake * avgAPY * (elapsedSeconds / secondsPerYear)
+            const avgAPY = (tier.apyMin + tier.apyMax) / 2;
+            const stakeAmount = BigInt(staking.stake_amount);
+            const SECONDS_PER_YEAR = 365.25 * 24 * 3600;
+
+            // Calculate in wei precision: reward = stake * avgAPY * elapsed / secondsPerYear
+            // Use integer math: reward = stake * (avgAPY * 1e8) * elapsed / (secondsPerYear * 1e8)
+            const apyScaled = BigInt(Math.round(avgAPY * 1e8));
+            const elapsedBig = BigInt(elapsedSeconds);
+            const yearSecondsBig = BigInt(Math.round(SECONDS_PER_YEAR * 1e8));
+
+            const rewardWei = (stakeAmount * apyScaled * elapsedBig) / yearSecondsBig;
+
+            if (rewardWei <= 0n) return;
+
+            // Get current block number for the reward record
+            this.getBlockNumber().then(blockNumber => {
+                if (!blockNumber) blockNumber = staking.last_reward_block + Math.floor(elapsedSeconds / BLOCK_TIME);
+
+                // Determine which wallet gets the reward
+                const rewardWalletAddress = staking.reward_wallet || staking.wallet_address;
+                // Find wallet_id for the reward wallet
+                let rewardWalletId = staking.wallet_id;
+                if (rewardWalletAddress !== staking.wallet_address) {
+                    const rw = this.db.getWalletByAddress(rewardWalletAddress);
+                    if (rw) rewardWalletId = rw.id;
+                }
+
+                // Insert reward record
+                this.db.insertReward({
+                    walletId: rewardWalletId,
+                    blockNumber,
+                    amount: rewardWei.toString(),
+                    timestamp: now,
+                    txHash: `reward-${staking.id}-${blockNumber}-${now}`,
+                });
+
+                // Update checkpoint
+                this.db.updateStakingRewardCheckpoint(staking.id, blockNumber, now);
+
+                // Log reward
+                const rewardTpix = Number(rewardWei) / 1e18;
+                this.addLog('info', `Reward accrued: ${rewardTpix.toFixed(4)} TPIX (${staking.tier} tier, ${elapsedSeconds}s uptime)`);
+
+                // Emit reward event to frontend
+                this.emit('reward-accrued', {
+                    amount: rewardWei.toString(),
+                    amountTpix: rewardTpix.toFixed(4),
+                    blockNumber,
+                    tier: staking.tier,
+                    timestamp: now,
+                });
+            }).catch(() => {
+                // If RPC fails, still calculate reward with estimated block
+            });
+        } catch (err) {
+            this.addLog('warn', `Reward accrual error: ${err.message}`);
+        }
+    }
+
+    _updateStakingUptime() {
+        if (!this.db || !this.startTime) return;
+        try {
+            const staking = this.db.getActiveStaking();
+            if (!staking) return;
+            const sessionUptime = Math.floor((Date.now() - this.startTime) / 1000);
+            // _lastSavedUptime tracks what we've already written to DB for this session
+            const delta = sessionUptime - (this._lastSavedUptime || 0);
+            if (delta <= 0) return;
+            this._lastSavedUptime = sessionUptime;
+            this.db.updateStakingUptime(staking.id, staking.total_uptime_seconds + delta);
+        } catch {}
+    }
+
+    /**
+     * Validate if a wallet has sufficient balance for staking.
+     * Returns { valid, balance, required, tier }
+     */
+    async validateStakeBalance(walletAddress, tier) {
+        const tierConfig = TIER_CONFIG[tier];
+        if (!tierConfig) return { valid: false, error: 'Invalid tier' };
+
+        try {
+            const balanceHex = await this.rpcCall('eth_getBalance', [walletAddress, 'latest']);
+            const balanceWei = BigInt(balanceHex);
+            const requiredWei = BigInt(tierConfig.stake) * BigInt('1000000000000000000');
+
+            return {
+                valid: balanceWei >= requiredWei,
+                balance: balanceWei.toString(),
+                balanceTpix: Number(balanceWei / BigInt('1000000000000000')) / 1000,
+                required: requiredWei.toString(),
+                requiredTpix: tierConfig.stake,
+                tier,
+                tierConfig,
+            };
+        } catch (err) {
+            return { valid: false, error: `RPC error: ${err.message}` };
         }
     }
 
@@ -549,3 +704,4 @@ class NodeManager extends EventEmitter {
 }
 
 module.exports = NodeManager;
+module.exports.TIER_CONFIG = TIER_CONFIG;

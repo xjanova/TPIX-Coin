@@ -103,12 +103,39 @@
                         </div>
                     </div>
 
+                    <!-- Staking Status Card -->
+                    <div v-if="stakingInfo" class="section-card mt-4" style="border-left: 3px solid var(--success)">
+                        <div class="section-header">
+                            <h3 class="section-title" style="color: var(--success)">&#128176; {{ i18n.staking.stakingActive }}</h3>
+                            <span class="type-badge type-validator">{{ stakingInfo.tier.toUpperCase() }}</span>
+                        </div>
+                        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+                            <div class="stat-card">
+                                <div class="stat-label">{{ i18n.staking.stakeAmount }}</div>
+                                <div class="stat-value text-cyan">{{ formatTpix(stakingInfo.stake_amount) }} TPIX</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">{{ i18n.staking.totalRewards }}</div>
+                                <div class="stat-value text-green">{{ rewards.total || 0 }} TPIX</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">{{ i18n.staking.uptime }}</div>
+                                <div class="stat-value">{{ formatDuration(stakingInfo.total_uptime_seconds + nodeUptime) }}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">{{ i18n.staking.rewardWallet }}</div>
+                                <div class="stat-value" style="font-size:12px;">{{ shortAddr(stakingInfo.reward_wallet) }}</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Actions -->
                     <div class="actions-row">
                         <button v-if="nodeStatus === 'stopped' || nodeStatus === 'error'"
                             @click="startNode" class="btn btn-primary btn-lg">&#9654; {{ i18n.dash.startNode }}</button>
                         <button v-else @click="stopNode" class="btn btn-danger btn-lg">&#9632; {{ i18n.dash.stopNode }}</button>
                         <button @click="refreshNetwork" class="btn btn-ghost">&#8635; {{ i18n.dash.refresh }}</button>
+                        <button @click="loadRewards" class="btn btn-ghost">&#128176; {{ i18n.stakingRewards.checkRewards }}</button>
                         <button @click="openLink('explorer')" class="btn btn-ghost">&#127760; Explorer</button>
                     </div>
 
@@ -157,13 +184,22 @@
                                 <ul class="tier-features">
                                     <li v-for="f in tier.features" :key="f">{{ f }}</li>
                                 </ul>
-                                <div v-if="Number(walletBalance) > 0" class="tier-afford"
-                                    :class="parseFloat(walletBalance) >= tier.stake ? 'can-afford' : 'cant-afford'">
-                                    {{ parseFloat(walletBalance) >= tier.stake ? '&#10003; ' + i18n.setup.canAfford : '&#10007; ' + i18n.setup.cantAfford }}
+                                <div class="tier-afford"
+                                    :class="stakingValidation && config.tier === tier.id
+                                        ? (stakingValidation.valid ? 'can-afford' : 'cant-afford')
+                                        : (parseFloat(walletBalance) >= tier.stake ? 'can-afford' : 'cant-afford')">
+                                    <template v-if="stakingValidation && config.tier === tier.id">
+                                        {{ stakingValidation.valid
+                                            ? '&#10003; ' + i18n.staking.balanceOk + ' (' + stakingValidation.balanceTpix?.toLocaleString() + ' TPIX)'
+                                            : '&#10007; ' + i18n.staking.insufficientBalance + ' ' + tier.stake.toLocaleString() + ' TPIX' }}
+                                    </template>
+                                    <template v-else-if="walletAddress">
+                                        {{ parseFloat(walletBalance) >= tier.stake ? '&#10003; ' + i18n.setup.canAfford : '&#10007; ' + i18n.setup.cantAfford }}
+                                    </template>
                                 </div>
                             </div>
                         </div>
-                        <button @click="setupStep = 1" class="btn btn-primary btn-lg mt-4">{{ i18n.setup.next }} &rarr;</button>
+                        <button @click="setupStep = 1; validateStakeBalance()" class="btn btn-primary btn-lg mt-4">{{ i18n.setup.next }} &rarr;</button>
                     </div>
 
                     <!-- Step 1: Wallet -->
@@ -251,9 +287,27 @@
                             <p class="reward-note">{{ i18n.setup.rewardNote }}</p>
                         </div>
 
+                        <!-- Staking validation status -->
+                        <div v-if="stakingError" class="alert alert-danger mt-4">
+                            <span class="alert-icon">&#9888;</span>
+                            <div>
+                                <div class="alert-title">{{ stakingError }}</div>
+                            </div>
+                        </div>
+                        <div v-if="stakingValidation && stakingValidation.valid" class="alert alert-success mt-4">
+                            <span class="alert-icon">&#10003;</span>
+                            <div>
+                                <div class="alert-title">{{ i18n.staking.balanceOk }}</div>
+                                <div class="alert-text">Balance: {{ stakingValidation.balanceTpix?.toLocaleString() }} TPIX | Required: {{ stakingValidation.requiredTpix?.toLocaleString() }} TPIX</div>
+                            </div>
+                        </div>
+
                         <div class="step-nav mt-4">
                             <button @click="setupStep = 1" class="btn btn-ghost">&larr; {{ i18n.setup.back }}</button>
-                            <button @click="launchNode" class="btn btn-primary btn-lg">&#9654; {{ i18n.setup.launchNode }}</button>
+                            <button @click="launchNode" class="btn btn-primary btn-lg" :disabled="stakingLoading">
+                                <template v-if="stakingLoading">{{ i18n.staking.validating }}</template>
+                                <template v-else>&#9654; {{ i18n.setup.launchNode }}</template>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -422,6 +476,19 @@
                             <div v-else class="empty-state">{{ i18n.history.noTx }}</div>
                             <div v-if="txTotal > transactions.length" class="tx-pagination">
                                 <button @click="loadTransactions(txPage + 1, true)" class="btn btn-ghost btn-sm">{{ i18n.history.loadMore }}</button>
+                            </div>
+                        </div>
+
+                        <!-- Staking Info on Wallet Page -->
+                        <div v-if="stakingInfo" class="section-card mt-4" style="border-left: 3px solid var(--success)">
+                            <div class="section-header">
+                                <h3 class="section-title" style="color: var(--success)">&#128176; {{ i18n.staking.stakingActive }}</h3>
+                                <span class="type-badge" :class="'type-' + stakingInfo.tier">{{ stakingInfo.tier.toUpperCase() }}</span>
+                            </div>
+                            <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:13px; color:var(--text-secondary); padding:8px 0">
+                                <span>{{ i18n.staking.stakeAmount }}: <strong class="text-cyan">{{ formatTpix(stakingInfo.stake_amount) }} TPIX</strong></span>
+                                <span>{{ i18n.staking.uptime }}: <strong>{{ formatDuration(stakingInfo.total_uptime_seconds + nodeUptime) }}</strong></span>
+                                <span>{{ i18n.staking.registeredAt }}: <strong>{{ new Date(stakingInfo.registered_at).toLocaleDateString() }}</strong></span>
                             </div>
                         </div>
 
@@ -805,6 +872,7 @@
                         <div id="leaflet-map" class="leaflet-map-container"></div>
                         <div class="globe-legend">
                             <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span> {{ i18n.masternodeMap.validator }}</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> {{ i18n.masternodeMap.guardian }}</span>
                             <span class="legend-item"><span class="legend-dot" style="background:#a855f7"></span> {{ i18n.masternodeMap.sentinel }}</span>
                             <span class="legend-item"><span class="legend-dot" style="background:#06b6d4"></span> {{ i18n.masternodeMap.light }}</span>
                         </div>
@@ -818,6 +886,7 @@
                                 <select v-model="mnFilterType" class="input-field input-sm">
                                     <option value="all">{{ i18n.masternodeMap.allTypes }}</option>
                                     <option value="validator">{{ i18n.masternodeMap.validator }}</option>
+                                    <option value="guardian">{{ i18n.masternodeMap.guardian }}</option>
                                     <option value="sentinel">{{ i18n.masternodeMap.sentinel }}</option>
                                     <option value="light">{{ i18n.masternodeMap.light }}</option>
                                 </select>
@@ -844,12 +913,17 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="node in filteredMasternodes" :key="node.id" class="mn-table-row" @click="mapFocusNode(node)">
-                                        <td class="mn-id">{{ node.id }}</td>
+                                    <tr v-for="node in filteredMasternodes" :key="node.id"
+                                        :class="['mn-table-row', { 'my-node-row': node.isMyNode }]"
+                                        @click="mapFocusNode(node)">
+                                        <td class="mn-id">
+                                            <span v-if="node.isMyNode" style="color:#00e676" title="My Node">&#9733;</span>
+                                            <span v-else>{{ node.id }}</span>
+                                        </td>
                                         <td class="mn-location">
                                             <span class="mn-flag">{{ node.flag }}</span>
                                             <div class="mn-loc-info">
-                                                <span class="mn-city">{{ node.city }}</span>
+                                                <span class="mn-city">{{ node.isMyNode ? i18n.staking.myNode : node.city }}</span>
                                                 <span class="mn-country-name">{{ node.countryName }}</span>
                                             </div>
                                         </td>

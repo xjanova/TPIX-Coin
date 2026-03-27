@@ -24,6 +24,16 @@ contextBridge.exposeInMainWorld('tpix', {
         onStatusUpdate: (cb) => onEvent('node:statusUpdate', cb),
         onLog: (cb) => onEvent('node:log', cb),
         onMetrics: (cb) => onEvent('node:metrics', cb),
+        onRewardAccrued: (cb) => onEvent('node:rewardAccrued', cb),
+    },
+
+    // Staking
+    staking: {
+        validateBalance: (walletAddress, tier) => ipcRenderer.invoke('staking:validateBalance', walletAddress, tier),
+        register: (data) => ipcRenderer.invoke('staking:register', data),
+        getActive: (walletId) => ipcRenderer.invoke('staking:getActive', walletId),
+        getHistory: (walletId) => ipcRenderer.invoke('staking:getHistory', walletId),
+        stop: (walletId) => ipcRenderer.invoke('staking:stop', walletId),
     },
 
     // RPC
