@@ -200,6 +200,20 @@ const LANG = {
             recoveryKeyLabel: 'Recovery PIN (6-8 digits)',
             recoveryHint: 'Hint (optional)',
             saveRecoveryKey: 'Save Recovery Key',
+            // GPS
+            gpsTitle: 'GPS Location Proof',
+            gpsDesc: 'Register trusted locations. Only hashed grid stored — never your exact coordinates.',
+            gpsRegister: 'Register Current Location',
+            gpsLabel: 'Location name',
+            gpsLabelPlaceholder: 'e.g. Home, Office...',
+            gpsRegistered: 'locations registered',
+            gpsNone: 'No locations registered',
+            gpsRemove: 'Remove',
+            gpsRegistering: 'Getting GPS...',
+            gpsPrivacy: 'Privacy: coordinates are rounded to ~111m grid then SHA-256 hashed. No one can see your exact location.',
+            gpsNoSupport: 'GPS not available on this device. Use the mobile wallet for location registration.',
+            gpsVerified: 'Location verified',
+            gpsNotVerified: 'Location not matched',
             mnemonicTitle: 'Recovery Seed Phrase',
             mnemonicDesc: 'Write down these 12 words in order. This is the ONLY way to recover ALL your HD wallets.',
             mnemonicWarning: 'Never share your seed phrase! Anyone with these words can steal all your wallets.',
@@ -486,6 +500,20 @@ const LANG = {
             recoveryKeyLabel: 'PIN กู้คืน (6-8 หลัก)',
             recoveryHint: 'คำใบ้ (ไม่บังคับ)',
             saveRecoveryKey: 'บันทึกรหัสกู้คืน',
+            // GPS
+            gpsTitle: 'พิสูจน์ตำแหน่ง GPS',
+            gpsDesc: 'ลงทะเบียนสถานที่ที่ไว้ใจได้ เก็บเฉพาะ hash — ไม่เก็บพิกัดจริงของคุณ',
+            gpsRegister: 'ลงทะเบียนตำแหน่งปัจจุบัน',
+            gpsLabel: 'ชื่อสถานที่',
+            gpsLabelPlaceholder: 'เช่น บ้าน, ที่ทำงาน...',
+            gpsRegistered: 'สถานที่ลงทะเบียนแล้ว',
+            gpsNone: 'ยังไม่มีสถานที่ลงทะเบียน',
+            gpsRemove: 'ลบ',
+            gpsRegistering: 'กำลังรับ GPS...',
+            gpsPrivacy: 'ความเป็นส่วนตัว: พิกัดถูกปัดเป็นตาราง ~111m แล้ว SHA-256 hash ไม่มีใครเห็นพิกัดจริงของคุณ',
+            gpsNoSupport: 'GPS ไม่พร้อมใช้งานบนอุปกรณ์นี้ ใช้กระเป๋ามือถือเพื่อลงทะเบียนตำแหน่ง',
+            gpsVerified: 'ยืนยันตำแหน่งสำเร็จ',
+            gpsNotVerified: 'ตำแหน่งไม่ตรงกัน',
             mnemonicTitle: 'คำลับกู้คืน (Seed Phrase)',
             mnemonicDesc: 'จดคำ 12 คำนี้ตามลำดับ นี่คือวิธีเดียวในการกู้คืนกระเป๋า HD ทั้งหมด',
             mnemonicWarning: 'ห้ามแชร์ seed phrase! ใครมีคำเหล่านี้สามารถขโมยกระเป๋าทั้งหมดได้',
@@ -797,6 +825,11 @@ const app = createApp({
         ]);
         const recoveryKeyForm = reactive({ pin: '', hint: '' });
         const identitySaving = ref(false);
+        // GPS state
+        const showGPSSetup = ref(false);
+        const gpsLabel = ref('');
+        const gpsRegistering = ref(false);
+        const gpsError = ref('');
 
         // ─── Explorer State ──────────────────────
         const explorerBlocks = ref([]);
@@ -1261,6 +1294,67 @@ const app = createApp({
             } finally {
                 identitySaving.value = false;
             }
+        }
+
+        // ─── GPS Location ────────────────────
+        async function registerGPSLocation() {
+            const walletId = activeWallet.value?.id;
+            if (!walletId) return;
+            const label = gpsLabel.value.trim();
+            if (!label) {
+                gpsError.value = lang.value === 'th' ? 'กรุณาใส่ชื่อสถานที่' : 'Location name is required';
+                return;
+            }
+            if (gpsRegistering.value) return; // double-tap guard
+            gpsRegistering.value = true;
+            gpsError.value = '';
+            try {
+                // Get GPS from browser Geolocation API
+                const position = await new Promise((resolve, reject) => {
+                    if (!navigator.geolocation) {
+                        reject(new Error(i18n.value.identity.gpsNoSupport));
+                        return;
+                    }
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 15000,
+                        maximumAge: 0,
+                    });
+                });
+
+                const result = await window.tpix.identity.registerGPS(
+                    walletId, label, position.coords.latitude, position.coords.longitude
+                );
+                if (result.success) {
+                    gpsLabel.value = '';
+                    await loadIdentityStatus();
+                } else {
+                    gpsError.value = result.error || 'Failed';
+                }
+            } catch (e) {
+                if (e.code === 1) {
+                    gpsError.value = lang.value === 'th' ? 'การเข้าถึงตำแหน่งถูกปฏิเสธ' : 'Location access denied';
+                } else if (e.code === 2) {
+                    gpsError.value = lang.value === 'th' ? 'ไม่สามารถรับตำแหน่งได้' : 'Position unavailable';
+                } else if (e.code === 3) {
+                    gpsError.value = lang.value === 'th' ? 'หมดเวลารับ GPS' : 'GPS timeout';
+                } else {
+                    gpsError.value = e.message || 'GPS error';
+                }
+            } finally {
+                gpsRegistering.value = false;
+            }
+        }
+
+        async function removeGPSLocation(locationId) {
+            const walletId = activeWallet.value?.id;
+            if (!walletId) return;
+            const msg = lang.value === 'th' ? 'ลบสถานที่นี้?' : 'Remove this location?';
+            if (!confirm(msg)) return;
+            try {
+                await window.tpix.identity.removeGPS(walletId, locationId);
+                await loadIdentityStatus();
+            } catch {}
         }
 
         async function viewMnemonic() {
@@ -1760,7 +1854,9 @@ const app = createApp({
             showMnemonicModal, showRecoverModal, showMnemonic, mnemonicWords,
             recoverMnemonicInput, recoverPassword, recoverResult, recoverLoading,
             securityQuestionsForm, recoveryKeyForm, identitySaving,
+            showGPSSetup, gpsLabel, gpsRegistering, gpsError,
             loadIdentityStatus, saveSecurityQuestions, saveRecoveryKey,
+            registerGPSLocation, removeGPSLocation,
             viewMnemonic, recoverFromSeed,
             // Actions
             startNode, stopNode, launchNode, refreshNetwork, refreshMetrics,

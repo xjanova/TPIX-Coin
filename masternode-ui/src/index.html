@@ -433,6 +433,16 @@
                                     </div>
                                 </div>
 
+                                <!-- GPS Location Card -->
+                                <div class="identity-card" @click="showGPSSetup = true">
+                                    <div class="identity-card-icon">&#128205;</div>
+                                    <div class="identity-card-info">
+                                        <span class="identity-card-title">{{ i18n.identity.gpsTitle }}</span>
+                                        <span v-if="identityStatus?.hasGPS" class="text-green">&#10003; {{ identityStatus.gpsLocationCount }} {{ i18n.identity.gpsRegistered }}</span>
+                                        <span v-else class="text-muted">{{ i18n.identity.gpsNone }}</span>
+                                    </div>
+                                </div>
+
                                 <!-- Recovery Key Card -->
                                 <div class="identity-card" @click="showRecoveryKeySetup = true">
                                     <div class="identity-card-icon">&#128273;</div>
@@ -627,6 +637,47 @@
                                     {{ identitySaving ? '...' : i18n.identity.saveQuestions }}
                                 </button>
                                 <button @click="showSecurityQuestions = false" class="btn btn-ghost">{{ i18n.send.close }}</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GPS Location Modal -->
+                    <div v-if="showGPSSetup" class="modal-overlay" @click.self="showGPSSetup = false">
+                        <div class="modal-content modal-wide">
+                            <h3>&#128205; {{ i18n.identity.gpsTitle }}</h3>
+                            <p class="modal-desc">{{ i18n.identity.gpsDesc }}</p>
+
+                            <!-- Privacy Notice -->
+                            <div class="alert alert-info" style="margin-bottom: 16px">
+                                <span class="alert-icon">&#128274;</span>
+                                <div>
+                                    <div class="alert-text">{{ i18n.identity.gpsPrivacy }}</div>
+                                </div>
+                            </div>
+
+                            <!-- Registered Locations List -->
+                            <div v-if="identityStatus?.gpsLocations?.length" class="gps-list">
+                                <div v-for="loc in identityStatus.gpsLocations" :key="loc.id" class="gps-item">
+                                    <div class="gps-item-info">
+                                        <span class="gps-item-label">&#128205; {{ loc.label }}</span>
+                                        <span class="gps-item-date">{{ formatLogTime(loc.created_at) }}</span>
+                                    </div>
+                                    <button @click="removeGPSLocation(loc.id)" class="btn btn-ghost btn-sm text-red">{{ i18n.identity.gpsRemove }}</button>
+                                </div>
+                            </div>
+                            <div v-else class="empty-state" style="padding: 12px 0">{{ i18n.identity.gpsNone }}</div>
+
+                            <!-- Register New Location -->
+                            <div class="form-group mt-2">
+                                <label>{{ i18n.identity.gpsLabel }}</label>
+                                <input v-model="gpsLabel" class="input-field" :placeholder="i18n.identity.gpsLabelPlaceholder" maxlength="30">
+                            </div>
+                            <div v-if="gpsError" class="text-red" style="font-size: 0.85rem; margin-bottom: 8px">{{ gpsError }}</div>
+                            <div class="modal-actions">
+                                <button @click="registerGPSLocation" class="btn btn-primary" :disabled="gpsRegistering || !gpsLabel.trim()">
+                                    {{ gpsRegistering ? i18n.identity.gpsRegistering : i18n.identity.gpsRegister }}
+                                </button>
+                                <button @click="showGPSSetup = false; gpsError = ''" class="btn btn-ghost">{{ i18n.send.close }}</button>
                             </div>
                         </div>
                     </div>

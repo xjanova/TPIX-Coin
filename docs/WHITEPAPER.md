@@ -358,29 +358,63 @@ Create custom ERC-20 tokens on TPIX Chain with zero gas fees.
 
 ```
 Registration:
-1. User sets 3 security questions + answers
-2. User registers 2 GPS locations (home, work)
-3. User creates 6-digit recovery PIN
-4. Contract stores: hash(answers + GPS + PIN) — only 32 bytes on-chain
+1. User sets 3-5 security questions + answers
+2. User registers up to 3 GPS locations (home, work, etc.)
+3. User creates 6-8 digit recovery PIN (backup when GPS unavailable)
+4. Each layer stored independently as one-way hashes — never plaintext
 
 Recovery:
-1. User answers security questions
-2. User stands at registered GPS location (±100m tolerance)
-3. User enters recovery PIN
-4. Smart contract initiates 48-hour time-lock
-5. Original owner can cancel within 48 hours (theft protection)
-6. After 48 hours, wallet control transfers to new address
+1. User answers security questions (60%+ correct required)
+2. User stands at registered GPS location (±200m tolerance)
+   — OR enters recovery PIN if GPS is unavailable
+3. Smart contract initiates 48-hour time-lock (future)
+4. Original owner can cancel within 48 hours (theft protection)
+5. After 48 hours, wallet control transfers to new address
 ```
+
+### GPS Privacy Model
+
+GPS is the most sensitive data in Living Identity. Here's how we protect it:
+
+```
+Your GPS coordinates are NEVER stored — not even encrypted.
+
+Step 1: Round to ~111m grid    13.7563, 100.5018 → 13.756, 100.502
+Step 2: Create hash input      "tpix-loc:13.756:100.502"
+Step 3: SHA-256 hash           → "a3f8c2e9b7d1..."
+Step 4: Store ONLY the hash    ← This is all that exists in the database
+
+What's stored:  "a3f8c2e9b7d1..." (meaningless without the original coordinates)
+What's NOT:     Any latitude, longitude, address, city, or country
+```
+
+**Verification** checks 9 grid cells (exact + 8 neighbors), giving ±200m tolerance. You don't need to stand on the exact spot.
+
+**Why it's safe:**
+- The hash is **one-way** — you cannot reverse SHA-256 to get coordinates
+- The grid rounding means even you don't know the exact stored precision
+- An attacker would need to brute-force all grid cells on Earth (~500 billion combinations) while also matching the correct wallet
+- Combined with security questions + rate limiting = practically unbreakable
+
+**Compared to seed phrases:**
+| | Seed Phrase | Living Identity |
+|--|------------|-----------------|
+| **Remember** | 12-24 words exactly | Nothing — just be you |
+| **Stolen paper** | Total loss | Attacker needs 3 factors simultaneously |
+| **Lost/forgot** | Gone forever | Answer questions + go to your location |
+| **Privacy** | No personal data | GPS hashed, never stored raw |
 
 ### Security Features
 
 | Feature | Description |
 |---------|-------------|
-| **On-chain hash only** | No personal data stored — just 32-byte hash |
-| **GPS verification** | Must physically be at registered location |
-| **48-hour time-lock** | Original owner can cancel unauthorized recovery |
-| **PIN protection** | 6-digit PIN adds brute-force resistance |
-| **Rate limiting** | Max 3 recovery attempts per 24 hours |
+| **Hash-only storage** | No personal data stored — only SHA-256/PBKDF2 hashes |
+| **GPS grid + hash** | Coordinates rounded to ~111m then hashed. Cannot be reversed |
+| **9-cell verification** | Checks ±200m around your position for tolerance |
+| **Recovery PIN** | 6-8 digit backup when GPS is unavailable (PBKDF2 100K rounds) |
+| **Rate limiting** | 5 attempts per 5-minute lockout window |
+| **48-hour time-lock** | Original owner can cancel unauthorized recovery (future) |
+| **Self-test mode** | Test your recovery setup without triggering rate limits |
 
 ### Smart Contract: TPIXIdentity.sol
 

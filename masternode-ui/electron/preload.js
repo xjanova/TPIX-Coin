@@ -123,6 +123,11 @@ contextBridge.exposeInMainWorld('tpix', {
         getSecurityQuestions: (walletId) => ipcRenderer.invoke('identity:getSecurityQuestions', walletId),
         setRecoveryKey: (walletId, key, hint) => ipcRenderer.invoke('identity:setRecoveryKey', walletId, key, hint),
         verifyRecovery: (walletId, data) => ipcRenderer.invoke('identity:verifyRecovery', walletId, data),
+        // GPS Location
+        registerGPS: (walletId, label, lat, lng) => ipcRenderer.invoke('identity:registerGPS', walletId, label, lat, lng),
+        getGPSLocations: (walletId) => ipcRenderer.invoke('identity:getGPSLocations', walletId),
+        removeGPS: (walletId, locationId) => ipcRenderer.invoke('identity:removeGPS', walletId, locationId),
+        verifyGPS: (walletId, lat, lng) => ipcRenderer.invoke('identity:verifyGPS', walletId, lat, lng),
     },
 
     // Database settings

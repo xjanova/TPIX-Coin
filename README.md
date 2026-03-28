@@ -94,7 +94,7 @@ TPIX-Coin/
 Secure mobile wallet for TPIX Chain with premium 3D animated UI.
 
 - **Multi-Wallet**: HD wallet with BIP-39/BIP-44 derivation (up to 128 wallets)
-- **Living Identity Recovery**: Recover wallet without seed phrase using security questions + GPS location verification
+- **Living Identity Recovery**: Recover wallet without seed phrase using security questions + GPS location (hashed, never stored raw) + recovery PIN
 - **QR Scanner**: Scan QR codes to send TPIX instantly
 - **Transaction History**: Local storage + blockchain scanning
 - **Security**: AES-256 encrypted keystore, PIN protection, 6-digit recovery PIN
@@ -172,12 +172,15 @@ On-chain carbon credit trading with IoT verification at [tpix.online/carbon-cred
 A novel wallet recovery system that eliminates the need for seed phrases — **no other blockchain wallet has this**.
 
 **How it works:**
-1. User registers identity on-chain: `hash(security_questions + GPS_locations + recovery_PIN)` — only 32 bytes stored
-2. User loses device or forgets seed phrase
-3. User answers security questions + stands at registered GPS location
-4. Smart contract starts **48-hour time-lock** recovery
-5. Original owner can cancel within 48 hours (theft protection)
-6. After 48 hours, wallet control transfers to new address
+1. User sets 3-5 security questions, registers up to 3 GPS locations, and creates a 6-8 digit recovery PIN
+2. Each factor is stored as a one-way hash — **never plaintext**
+3. User loses device or forgets seed phrase
+4. User answers security questions (60%+) + stands at registered GPS location (±200m) — or uses recovery PIN as backup
+5. Smart contract starts **48-hour time-lock** recovery
+6. Original owner can cancel within 48 hours (theft protection)
+7. After 48 hours, wallet control transfers to new address
+
+**GPS Privacy:** Coordinates are rounded to ~111m grid then SHA-256 hashed. Only the hash is stored — no one can see your actual location, not even with full database access. See [Whitepaper §10](docs/WHITEPAPER.md#10-living-identity-recovery) for the full privacy model.
 
 **Deploy:**
 ```bash

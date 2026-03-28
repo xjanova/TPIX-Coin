@@ -61,6 +61,19 @@ TPIX-Coin/
 - **Dashboard**: Shows staking card with tier, staked amount, total rewards, uptime
 - **Masternodes map**: User's own node appears with green star highlight (`isMyNode: true`)
 
+### Living Identity Recovery System
+- **Layer 1: Knowledge** — 3-5 security questions, answers hashed with PBKDF2 (100K rounds), stored per wallet
+- **Layer 2: Location** — GPS coordinates rounded to ~111m grid, SHA-256 hashed, up to 3 locations per wallet
+  - **Privacy**: Only hash stored, never raw/rounded coordinates. Verification checks 9 neighboring grid cells (±200m)
+  - **Flutter**: Uses `geolocator` package for GPS → `identity_service.dart`
+  - **Electron**: Uses browser `navigator.geolocation` API → `identity-manager.js`
+- **Layer 3: Recovery PIN** — 6-8 digit PIN, PBKDF2 hashed, backup when GPS unavailable
+- **Layer 4: Time Lock** — 48h recovery delay (future, on-chain via TPIXIdentity.sol)
+- **Layer 5: Social Proof** — Guardian wallets approve recovery (future)
+- **Recovery flow**: Questions (60%+) + GPS (or PIN fallback) = identity proven
+- **Rate limiting**: 5 failed attempts → 5-minute lockout. Self-tests (`isTest: true`) skip rate limiting
+- **Tables**: `security_questions`, `gps_locations`, `recovery_keys`, `identity_anchors`, `recovery_requests`
+
 ### Key Patterns (Masternode UI)
 | Pattern | Details |
 |---------|---------|

@@ -427,6 +427,39 @@ function setupIPC() {
         }
     });
 
+    // GPS Location
+    ipcMain.handle('identity:registerGPS', (_, walletId, label, lat, lng) => {
+        try {
+            identityManager.registerGPSLocation(walletId, label, lat, lng);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('identity:getGPSLocations', (_, walletId) => {
+        try {
+            return identityManager.getGPSLocations(walletId);
+        } catch { return []; }
+    });
+
+    ipcMain.handle('identity:removeGPS', (_, walletId, locationId) => {
+        try {
+            identityManager.removeGPSLocation(walletId, locationId);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('identity:verifyGPS', (_, walletId, lat, lng) => {
+        try {
+            return identityManager.verifyGPSLocation(walletId, lat, lng);
+        } catch (err) {
+            return { verified: false, error: err.message };
+        }
+    });
+
     // ═══════════════════════════════════════════════════════════
     //  EXPLORER — Block Browser via RPC
     // ═══════════════════════════════════════════════════════════
