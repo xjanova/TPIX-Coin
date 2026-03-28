@@ -86,6 +86,14 @@ masternode-ui/
 - `settings` — Key-value app config
 - `security_questions`, `recovery_keys` — Living Identity tables
 
+## Roadmap
+
+| Phase | Year | Focus |
+|-------|------|-------|
+| **Phase 1** | 2025–2026 | Mainnet, 4-tier staking, masternode network, wallet, DEX, bridge |
+| **Phase 2** | 2027 | AI-governed chain — AI replaces human validators for autonomous 24/7 governance |
+| **Phase 3** | 2028 | Gaming platform, AI-produced products to market, quality food control system |
+
 ## Requirements
 
 - Windows 10/11 (x64)

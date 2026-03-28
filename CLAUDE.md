@@ -77,6 +77,25 @@ TPIX-Coin/
 - **Contracts**: Hardhat 2.22, Solidity 0.8.20, OpenZeppelin 5.6.1, ethers v6
 - **CI/CD**: GitHub Actions — `v*` tag triggers builds (APK, Go binaries, Electron installer/portable)
 
+## Roadmap
+
+| Phase | Year | Focus | Details |
+|-------|------|-------|---------|
+| **Phase 1** | 2025–2026 | Foundation | Mainnet launch, 4-tier staking, masternode network, Flutter wallet, DEX, bridge (BSC), smart contracts (NodeRegistry, ValidatorGovernance, KYC, Identity) |
+| **Phase 2** | 2027 | AI-Governed Chain | Transition chain governance from human validators to AI systems. AI manages consensus, validator selection, slashing, and network optimization autonomously 24/7 — eliminating human error and downtime |
+| **Phase 3** | 2028 | Ecosystem Expansion | Gaming platform on TPIX Chain, AI-manufactured products to market, quality food control and certification system powered by on-chain AI verification |
+
+### Phase 2 — AI Chain Governance (2027)
+- Replace human validator committees with AI agents that monitor, govern, and optimize the chain
+- AI handles validator rotation, slashing decisions, parameter tuning, and threat detection
+- Permanent autonomous operation — no downtime, no human bias, consistent enforcement
+- On-chain AI models trained on network telemetry for predictive scaling and security
+
+### Phase 3 — Real-World Integration (2028)
+- **Gaming**: On-chain gaming platform with TPIX token economy, NFT assets, and AI-driven game mechanics
+- **AI Products**: AI-designed and AI-manufactured consumer products brought to market via TPIX supply chain tracking
+- **Food Quality**: Blockchain-verified food quality control — from farm to table traceability, AI inspection, and certification on TPIX Chain
+
 ## Conventions
 - Commit messages: `type: description` (feat, fix, chore, docs)
 - Thai + English bilingual UI
