@@ -577,17 +577,74 @@ Visit: `tpix.online/food-passport/verify/{productId}`
 
 ## 16. Roadmap
 
-| Phase | Period | Status | Milestones |
-|-------|--------|--------|------------|
-| **Foundation** | Q1-Q2 2023 | Done | Whitepaper, architecture, team formation |
-| **Blockchain** | Q3-Q4 2023 | Done | Polygon Edge, TPIX coin, IBFT consensus, testnet |
-| **Integration** | Q1-Q2 2024 | Done | Laravel services, REST API, block explorer |
-| **Ecosystem** | Q3-Q4 2024 | Done | DEX, master node network, SDK development |
-| **Real-World** | Q1-Q2 2025 | Done | FoodPassport, delivery, IoT, AI bots |
-| **Scale** | Q3-Q4 2025 | Done | Cross-chain bridge, mobile wallet, multi-wallet |
-| **Identity** | Q1 2026 | Done | Living Identity recovery, GPS verification, on-chain identity |
-| **Enterprise** | Q2 2026 | In Progress | Enterprise toolkit, government compliance, carbon credits |
-| **Global** | Q3-Q4 2026 | Planned | ASEAN expansion, 100+ dApps, multi-language support |
+### Phase 1 — Foundation & Infrastructure (2023–2026)
+
+| Period | Status | Milestones |
+|--------|--------|------------|
+| Q1-Q2 2023 | Done | Whitepaper, architecture design, team formation |
+| Q3-Q4 2023 | Done | Polygon Edge mainnet, TPIX coin, IBFT2 consensus, testnet |
+| Q1-Q2 2024 | Done | Laravel services, REST API, block explorer |
+| Q3-Q4 2024 | Done | DEX (AMM), master node network, SDK development |
+| Q1-Q2 2025 | Done | FoodPassport, delivery platform, IoT smart farm, AI bot marketplace |
+| Q3-Q4 2025 | Done | Cross-chain bridge (BSC), Flutter mobile wallet, multi-wallet HD (128 slots) |
+| Q1 2026 | Done | Living Identity recovery (security questions + GPS hash + recovery PIN) |
+| Q2 2026 | In Progress | Enterprise toolkit, government compliance, carbon credit trading |
+| Q3-Q4 2026 | Planned | ASEAN expansion, 100+ dApps, multi-language support, DAO governance proposal |
+
+### Phase 2 — AI-Governed Chain (2027)
+
+The year AI becomes intelligent enough to govern a blockchain better than humans — permanently, 24/7, with zero downtime.
+
+| Quarter | Milestone | Details |
+|---------|-----------|---------|
+| Q1 2027 | **AI Validator Agent** | Deploy AI agents that monitor chain health, detect anomalies, and recommend validator rotations. Initial "shadow mode" — AI suggests, humans approve |
+| Q2 2027 | **Autonomous Slashing** | AI takes over slashing decisions: detecting malicious validators, double-signing, and prolonged downtime. Removes human bias from enforcement |
+| Q3 2027 | **AI Parameter Tuning** | AI optimizes chain parameters in real-time: block size, gas limits, consensus timeouts, reward distribution — based on network telemetry |
+| Q4 2027 | **Full AI Governance** | Complete handover from human validator committee to AI governance. AI manages consensus, validator selection, threat detection, and network scaling autonomously |
+
+**Why AI governance?**
+- **Zero downtime** — AI doesn't sleep, take vacations, or get distracted
+- **No human bias** — Consistent enforcement of rules without politics or corruption
+- **Predictive scaling** — AI trained on network telemetry anticipates load spikes before they happen
+- **Faster response** — Millisecond threat detection vs. minutes/hours for human committees
+- **Permanent operation** — Once deployed, AI governance runs indefinitely without management overhead
+
+**Technical approach:**
+- On-chain AI models trained on TPIX Chain telemetry data (block times, validator uptime, transaction patterns)
+- Federated learning across masternode network — AI improves without exposing private node data
+- Governance decisions recorded on-chain as transparent, auditable AI proposals
+- Emergency circuit breaker: community multi-sig can pause AI governance if critical anomaly detected
+
+### Phase 3 — Real-World Ecosystem Expansion (2028)
+
+Bringing blockchain value beyond finance — into gaming, manufacturing, and food safety.
+
+| Quarter | Milestone | Details |
+|---------|-----------|---------|
+| Q1 2028 | **Gaming Platform** | On-chain gaming platform built on TPIX Chain. TPIX token economy for in-game transactions, NFT-based game assets (weapons, characters, land), AI-driven game mechanics and NPCs. Play-to-earn model with verifiable fairness via smart contracts |
+| Q2 2028 | **AI Product Manufacturing** | AI-designed and AI-manufactured consumer products launched to market. Full supply chain tracked on TPIX Chain — from raw materials to finished product to customer delivery. Each product gets an NFT certificate of origin and AI quality score |
+| Q3 2028 | **Food Quality Control** | Blockchain-verified food quality control system: farm-to-table traceability powered by IoT sensors + AI inspection. Every step recorded on-chain — soil quality, pesticide levels, processing conditions, cold chain temperature, shelf life. Consumers scan QR code → see full journey with AI quality rating |
+| Q4 2028 | **Ecosystem Integration** | Unified TPIX ecosystem: gaming rewards can buy AI-manufactured products, food quality scores influence marketplace rankings, all powered by single TPIX token economy |
+
+**Gaming platform features:**
+- Zero-gas gaming transactions (TPIX Chain advantage)
+- AI-powered NPCs and dynamic game worlds
+- Cross-game NFT asset interoperability
+- Tournament system with TPIX prize pools
+- Game developer SDK for building on TPIX Chain
+
+**AI manufacturing pipeline:**
+```
+Design (AI) → Prototype (AI) → Quality Check (AI) → Manufacture →
+Track on TPIX Chain → Ship → Customer scans NFT certificate
+```
+
+**Food quality control flow:**
+```
+Farm (IoT sensors) → Processing (AI inspection) → Transport (GPS + cold chain) →
+Storage (environmental monitoring) → Retail (smart shelf) → Consumer (QR verify)
+```
+All data points recorded on TPIX Chain, scored by AI, accessible to consumers.
 
 ---
 
@@ -601,10 +658,11 @@ TPIX Chain is developed by **Xman Studio** — a Thai technology studio speciali
 
 | Phase | Governance Model |
 |-------|-----------------|
-| **Current** | Centralized development by Xman Studio |
-| **2026 Q3** | Community advisory board |
-| **2026 Q4** | DAO governance proposal system |
-| **2027** | Full on-chain governance with TPIX voting |
+| **2025-2026** | Centralized development by Xman Studio |
+| **2026 Q3** | Community advisory board + DAO governance proposal |
+| **2027 Q1-Q3** | AI governance in shadow mode (AI suggests, humans approve) |
+| **2027 Q4** | Full AI governance — autonomous chain management |
+| **2028+** | AI governance + community multi-sig emergency override |
 
 ---
 
@@ -647,7 +705,7 @@ TPIX Chain is developed by **Xman Studio** — a Thai technology studio speciali
 ---
 
 <p align="center">
-  <strong>TPIX Chain Whitepaper v2.0</strong><br/>
+  <strong>TPIX Chain Whitepaper v2.1</strong><br/>
   Last updated: March 2026<br/>
   Developed by <a href="https://xmanstudio.com">Xman Studio</a>
 </p>
