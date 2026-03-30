@@ -1,14 +1,18 @@
-# TPIX Master Node UI — Release Workflow
-# Builds Windows portable + installer and publishes to GitHub Releases
-# Trigger: Push a version tag like v1.2.0
+# TPIX Master Node UI — Build & Release Workflow
+# - Push to main (masternode-ui/**): builds and uploads artifact
+# - Push a version tag (v*): builds and publishes to GitHub Releases
 # electron-updater will automatically detect the new release.
 
 name: Release TPIX Master Node
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
+    paths:
+      - 'masternode-ui/**'
+      - '.github/workflows/release-masternode-ui.yml'
   workflow_dispatch:
 
 permissions:
@@ -46,11 +50,17 @@ jobs:
         working-directory: masternode-ui
         run: npx electron-rebuild
 
-      - name: Build Electron app
+      - name: Build Electron app (publish on tag, build-only on branch push)
         working-directory: masternode-ui
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --publish always
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            npx electron-builder --win --publish always
+          else
+            npx electron-builder --win --publish never
+          fi
 
       - name: List build artifacts
         working-directory: masternode-ui

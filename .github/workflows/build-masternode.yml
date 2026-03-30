@@ -2,8 +2,12 @@ name: Build TPIX Master Node
 
 on:
   push:
+    branches: [main]
     tags:
       - 'masternode-v*'
+    paths:
+      - 'masternode/**'
+      - '.github/workflows/build-masternode.yml'
   workflow_dispatch:
     inputs:
       version:
