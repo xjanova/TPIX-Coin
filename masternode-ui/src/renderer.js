@@ -1461,11 +1461,12 @@ const app = createApp({
         }
 
         function goToBlock(blockNum) {
-            // Use the real RPC block number — animation may increment locally ahead of chain
-            const realBlock = Math.min(blockNum, network.value.blockNumber);
-            if (realBlock <= 0) return;
+            // Animation increments locally between RPC refreshes (every 2s, matching chain).
+            // These blocks likely exist on chain. Pass number directly — viewBlock handles
+            // not-found gracefully (explorerBlock stays null → empty state shown).
+            if (blockNum <= 0) return;
             activeTab.value = 'explorer';
-            viewBlock(realBlock);
+            viewBlock(blockNum);
         }
 
         async function viewTx(txHash) {
