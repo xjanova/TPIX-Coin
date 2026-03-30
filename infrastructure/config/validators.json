@@ -1,0 +1,29 @@
+{
+  "chainId": 4289,
+  "blockTime": 2,
+  "epochLength": 100000,
+  "validators": [
+    {
+      "id": 1,
+      "address": "0xcAEc7079912746C4128d8C46630f4E6e1b6AF81A"
+    },
+    {
+      "id": 2,
+      "address": "0x118D82790CeC0e1ACB6476EE3bbceaAD9C808485"
+    },
+    {
+      "id": 3,
+      "address": "0xaf981c1124e4Ac9673bf5A6031E91C38c08e4088"
+    },
+    {
+      "id": 4,
+      "address": "0x0E70CAd4DFfA482c4A97EA4Ce046a21251D8B7fF"
+    }
+  ],
+  "bootnodes": [
+    "/ip4/tpix-validator-1/tcp/10001/p2p/16Uiu2HAmV22BxAKSZXBL34AvZivu2ekYVYFihYeD9nqxsqEXyo1a",
+    "/ip4/tpix-validator-2/tcp/10001/p2p/16Uiu2HAmTRfyg9wKqsx2tVbaMrYwDtMTXYQFdw8DSPJ8fUD7qpdL",
+    "/ip4/tpix-validator-3/tcp/10001/p2p/16Uiu2HAmFT9F2SL15t3J2RgtQLFMSoA7EruqLFq5J257w5eYp1yN",
+    "/ip4/tpix-validator-4/tcp/10001/p2p/16Uiu2HAm6y2rvmJ2a9STZ2X5zTvwUFyk2q9yqgXUrYjrZ2KJxQ2c"
+  ]
+}

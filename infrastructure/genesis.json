@@ -1,67 +1,105 @@
 {
-    "__NOTE__": "TEMPLATE — Run ./setup-chain.sh to generate the real genesis with validator keys",
     "name": "tpix-chain",
     "genesis": {
         "nonce": "0x0000000000000000",
         "timestamp": "0x0",
-        "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "gasLimit": "0x1312D00",
+        "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000c7c080c28080c080",
+        "gasLimit": "0x1312d00",
         "difficulty": "0x1",
         "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
         "coinbase": "0x0000000000000000000000000000000000000000",
         "alloc": {
             "0x0000000000000000000000000000000000001001": {
-                "balance": "0x16345785D8A0000000000000000000000",
-                "comment": "Team & Advisors — 20% (1,400,000,000 TPIX)"
+                "balance": "0x4860d8812f0b38878000000"
             },
             "0x0000000000000000000000000000000000001002": {
-                "balance": "0x0B1A2BC2EC500000000000000000000",
-                "comment": "Development — 10% (700,000,000 TPIX)"
+                "balance": "0x24306c4097859c43c000000"
             },
             "0x0000000000000000000000000000000000001003": {
-                "balance": "0x21E19E0C9BAB2400000000000000000000",
-                "comment": "Liquidity Pool — 30% (2,100,000,000 TPIX)"
+                "balance": "0x6c9144c1c690d4cb4000000"
             },
             "0x0000000000000000000000000000000000001004": {
-                "balance": "0x16345785D8A0000000000000000000000",
-                "comment": "Staking Rewards — 20% (1,400,000,000 TPIX)"
+                "balance": "0x4860d8812f0b38878000000"
             },
             "0x0000000000000000000000000000000000001005": {
-                "balance": "0x0B1A2BC2EC500000000000000000000",
-                "comment": "Ecosystem Fund — 10% (700,000,000 TPIX)"
+                "balance": "0x24306c4097859c43c000000"
             },
             "0x0000000000000000000000000000000000001006": {
-                "balance": "0x0B1A2BC2EC500000000000000000000",
-                "comment": "Public Sale (ICO) — 10% (700,000,000 TPIX)"
+                "balance": "0x24306c4097859c43c000000"
+            },
+            "0x0E70CAd4DFfA482c4A97EA4Ce046a21251D8B7fF": {
+                "balance": "0x3635c9adc5dea00000"
+            },
+            "0x118D82790CeC0e1ACB6476EE3bbceaAD9C808485": {
+                "balance": "0x3635c9adc5dea00000"
+            },
+            "0xaf981c1124e4Ac9673bf5A6031E91C38c08e4088": {
+                "balance": "0x3635c9adc5dea00000"
+            },
+            "0xcAEc7079912746C4128d8C46630f4E6e1b6AF81A": {
+                "balance": "0x3635c9adc5dea00000"
             }
-        }
+        },
+        "number": "0x0",
+        "gasUsed": "0x70000",
+        "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "baseFee": "0x0",
+        "baseFeeEM": "0x0",
+        "baseFeeChangeDenom": "0x0"
     },
     "params": {
-        "chainID": 4289,
         "forks": {
-            "homestead": 0,
-            "byzantium": 0,
-            "constantinople": 0,
-            "petersburg": 0,
-            "istanbul": 0,
-            "EIP150": 0,
-            "EIP158": 0,
-            "EIP155": 0
-        },
-        "engine": {
-            "ibft": {
-                "params": {
-                    "blockTime": 2,
-                    "epochLength": 100000,
-                    "requestTimeout": 10
-                }
+            "EIP150": {
+                "block": 0
+            },
+            "EIP155": {
+                "block": 0
+            },
+            "EIP158": {
+                "block": 0
+            },
+            "byzantium": {
+                "block": 0
+            },
+            "constantinople": {
+                "block": 0
+            },
+            "homestead": {
+                "block": 0
+            },
+            "istanbul": {
+                "block": 0
+            },
+            "londonfix": {
+                "block": 0
+            },
+            "petersburg": {
+                "block": 0
+            },
+            "quorumcalcalignment": {
+                "block": 0
+            },
+            "txHashWithType": {
+                "block": 0
             }
         },
-        "gasLimit": {
-            "value": "0x1312D00"
+        "chainID": 4289,
+        "engine": {
+            "ibft": {
+                "blockTime": 2000000000,
+                "epochSize": 100000,
+                "type": "PoA",
+                "validator_type": "bls"
+            }
         },
-        "baseFee": "0x0",
-        "gasPrice": "0x0"
+        "blockGasTarget": 0,
+        "burnContract": null,
+        "burnContractDestinationAddress": "0x0000000000000000000000000000000000000000"
     },
-    "bootnodes": []
+    "bootnodes": [
+        "/ip4/tpix-validator-1/tcp/10001/p2p/16Uiu2HAmV22BxAKSZXBL34AvZivu2ekYVYFihYeD9nqxsqEXyo1a",
+        "/ip4/tpix-validator-2/tcp/10001/p2p/16Uiu2HAmTRfyg9wKqsx2tVbaMrYwDtMTXYQFdw8DSPJ8fUD7qpdL",
+        "/ip4/tpix-validator-3/tcp/10001/p2p/16Uiu2HAmFT9F2SL15t3J2RgtQLFMSoA7EruqLFq5J257w5eYp1yN",
+        "/ip4/tpix-validator-4/tcp/10001/p2p/16Uiu2HAm6y2rvmJ2a9STZ2X5zTvwUFyk2q9yqgXUrYjrZ2KJxQ2c"
+    ]
 }
