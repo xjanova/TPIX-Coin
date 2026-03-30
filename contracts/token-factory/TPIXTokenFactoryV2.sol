@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
-import "./FactoryERC20V2.sol";
-import "./UtilityToken.sol";
-import "./RewardToken.sol";
-import "./GovernanceToken.sol";
-import "./StablecoinToken.sol";
+import "./interfaces/ITokenCreators.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title TPIXTokenFactoryV2 — Deploy ERC-20 Tokens (All Types)
  * @author Xman Studio
- * @notice Phase 2 — Factory สำหรับ ERC-20 ทุกประเภท
+ * @notice Phase 2 — Factory coordinator สำหรับ ERC-20 ทุกประเภท
+ *
+ * Architecture: Coordinator + Sub-Factory Creators
+ * แต่ละ Creator embed bytecode ของ token type เดียว
+ * เพื่อให้แต่ละ contract อยู่ภายใน EIP-170 (24KB) limit
  *
  * Token Categories:
  *   0 = ERC20V2       (standard/mintable/burnable + pausable, blacklist, autoBurn)
@@ -23,6 +23,16 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * Deployed on TPIX Chain (ID: 4289) — Gas FREE
  */
 contract TPIXTokenFactoryV2 is Ownable {
+
+    // ═══════════════════════════════════════════
+    //  SUB-FACTORY CREATORS (interfaces only)
+    // ═══════════════════════════════════════════
+
+    IERC20V2Creator public immutable erc20V2Creator;
+    IUtilityTokenCreator public immutable utilityCreator;
+    IRewardTokenCreator public immutable rewardCreator;
+    IGovernanceTokenCreator public immutable governanceCreator;
+    IStablecoinTokenCreator public immutable stablecoinCreator;
 
     // ═══════════════════════════════════════════
     //  STATE
@@ -57,7 +67,19 @@ contract TPIXTokenFactoryV2 is Ownable {
     //  CONSTRUCTOR
     // ═══════════════════════════════════════════
 
-    constructor() Ownable(msg.sender) {}
+    constructor(
+        address erc20V2Creator_,
+        address utilityCreator_,
+        address rewardCreator_,
+        address governanceCreator_,
+        address stablecoinCreator_
+    ) Ownable(msg.sender) {
+        erc20V2Creator = IERC20V2Creator(erc20V2Creator_);
+        utilityCreator = IUtilityTokenCreator(utilityCreator_);
+        rewardCreator = IRewardTokenCreator(rewardCreator_);
+        governanceCreator = IGovernanceTokenCreator(governanceCreator_);
+        stablecoinCreator = IStablecoinTokenCreator(stablecoinCreator_);
+    }
 
     // ═══════════════════════════════════════════
     //  INTERNAL HELPERS
@@ -102,13 +124,12 @@ contract TPIXTokenFactoryV2 is Ownable {
     ) external onlyOwner returns (address) {
         bytes32 salt = _nextSalt();
 
-        FactoryERC20V2 token = new FactoryERC20V2{salt: salt}(
-            name_, symbol_, decimals_, totalSupply_, owner_,
+        address addr = erc20V2Creator.create(
+            salt, name_, symbol_, decimals_, totalSupply_, owner_,
             mintable_, burnable_, pausable_, blacklistEnabled_,
             mintCap_, autoBurnEnabled_, autoBurnRateBps_, burnFloor_
         );
 
-        address addr = address(token);
         _register(addr, name_, symbol_, owner_, 0);
         return addr;
     }
@@ -127,18 +148,17 @@ contract TPIXTokenFactoryV2 is Ownable {
         bool burnable_,
         bool pausable_,
         bool blacklistEnabled_,
-        UtilityToken.TaxConfig calldata taxConfig_,
-        UtilityToken.ProtectionConfig calldata protectionConfig_
+        TaxConfig calldata taxConfig_,
+        ProtectionConfig calldata protectionConfig_
     ) external onlyOwner returns (address) {
         bytes32 salt = _nextSalt();
 
-        UtilityToken token = new UtilityToken{salt: salt}(
-            name_, symbol_, decimals_, totalSupply_, owner_,
+        address addr = utilityCreator.create(
+            salt, name_, symbol_, decimals_, totalSupply_, owner_,
             mintable_, burnable_, pausable_, blacklistEnabled_,
             taxConfig_, protectionConfig_
         );
 
-        address addr = address(token);
         _register(addr, name_, symbol_, owner_, 1);
         return addr;
     }
@@ -165,14 +185,13 @@ contract TPIXTokenFactoryV2 is Ownable {
     ) external onlyOwner returns (address) {
         bytes32 salt = _nextSalt();
 
-        RewardToken token = new RewardToken{salt: salt}(
-            name_, symbol_, decimals_, totalSupply_, owner_,
+        address addr = rewardCreator.create(
+            salt, name_, symbol_, decimals_, totalSupply_, owner_,
             mintable_, burnable_, pausable_, blacklistEnabled_,
             rewardType_, rewardRateBps_, minHoldForReward_,
             vestingCliff_, vestingDuration_
         );
 
-        address addr = address(token);
         _register(addr, name_, symbol_, owner_, 2);
         return addr;
     }
@@ -199,14 +218,13 @@ contract TPIXTokenFactoryV2 is Ownable {
     ) external onlyOwner returns (address) {
         bytes32 salt = _nextSalt();
 
-        GovernanceToken token = new GovernanceToken{salt: salt}(
-            name_, symbol_, decimals_, totalSupply_, owner_,
+        address addr = governanceCreator.create(
+            salt, name_, symbol_, decimals_, totalSupply_, owner_,
             mintable_, burnable_, pausable_, blacklistEnabled_,
             delegationEnabled_, mintCap_,
             proposalThreshold_, quorumBps_, votingPeriod_
         );
 
-        address addr = address(token);
         _register(addr, name_, symbol_, owner_, 3);
         return addr;
     }
@@ -228,12 +246,11 @@ contract TPIXTokenFactoryV2 is Ownable {
     ) external onlyOwner returns (address) {
         bytes32 salt = _nextSalt();
 
-        StablecoinToken token = new StablecoinToken{salt: salt}(
-            name_, symbol_, decimals_, totalSupply_, owner_,
+        address addr = stablecoinCreator.create(
+            salt, name_, symbol_, decimals_, totalSupply_, owner_,
             reserveWallet_, pausable_, freezeEnabled_, kycRequired_
         );
 
-        address addr = address(token);
         _register(addr, name_, symbol_, owner_, 4);
         return addr;
     }

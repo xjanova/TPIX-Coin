@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
-import "./FactoryERC721.sol";
-import "./NFTCollection.sol";
+import "./interfaces/INFTCreators.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title TPIXNFTFactory — Deploy NFT Tokens (Single + Collection)
  * @author Xman Studio
- * @notice Phase 2 — Factory สำหรับ ERC-721 ทุกประเภท
+ * @notice Phase 2 — Factory coordinator สำหรับ ERC-721 ทุกประเภท
+ *
+ * Architecture: Coordinator + Sub-Factory Creators
+ * แต่ละ Creator embed bytecode ของ NFT type เดียว
+ * เพื่อให้แต่ละ contract อยู่ภายใน EIP-170 (24KB) limit
  *
  * NFT Categories:
  *   0 = Single NFT    (FactoryERC721 — mint 1 NFT ทันที)
@@ -17,6 +20,13 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * Deployed on TPIX Chain (ID: 4289) — Gas FREE
  */
 contract TPIXNFTFactory is Ownable {
+
+    // ═══════════════════════════════════════════
+    //  SUB-FACTORY CREATORS (interfaces only)
+    // ═══════════════════════════════════════════
+
+    IFactoryERC721Creator public immutable erc721Creator;
+    INFTCollectionCreator public immutable collectionCreator;
 
     // ═══════════════════════════════════════════
     //  STATE
@@ -51,7 +61,13 @@ contract TPIXNFTFactory is Ownable {
     //  CONSTRUCTOR
     // ═══════════════════════════════════════════
 
-    constructor() Ownable(msg.sender) {}
+    constructor(
+        address erc721Creator_,
+        address collectionCreator_
+    ) Ownable(msg.sender) {
+        erc721Creator = IFactoryERC721Creator(erc721Creator_);
+        collectionCreator = INFTCollectionCreator(collectionCreator_);
+    }
 
     // ═══════════════════════════════════════════
     //  INTERNAL
@@ -93,13 +109,12 @@ contract TPIXNFTFactory is Ownable {
     ) external onlyOwner returns (address) {
         bytes32 salt = _nextSalt();
 
-        FactoryERC721 nft = new FactoryERC721{salt: salt}(
-            name_, symbol_, owner_, tokenURI_,
+        address addr = erc721Creator.create(
+            salt, name_, symbol_, owner_, tokenURI_,
             maxSupply_, mintable_, soulbound_,
             royaltyEnabled_, royaltyRecipient_, royaltyBps_
         );
 
-        address addr = address(nft);
         _register(addr, name_, symbol_, owner_, 0);
         return addr;
     }
@@ -127,14 +142,13 @@ contract TPIXNFTFactory is Ownable {
     ) external onlyOwner returns (address) {
         bytes32 salt = _nextSalt();
 
-        NFTCollection nft = new NFTCollection{salt: salt}(
-            name_, symbol_, owner_, maxSupply_,
+        address addr = collectionCreator.create(
+            salt, name_, symbol_, owner_, maxSupply_,
             mintType_, mintPrice_, maxPerWallet_, maxPerTx_,
             reserveCount_, baseURI_, placeholderURI_,
             delayedReveal_, royaltyEnabled_, royaltyRecipient_, royaltyBps_
         );
 
-        address addr = address(nft);
         _register(addr, name_, symbol_, owner_, 1);
         return addr;
     }
