@@ -1,5 +1,8 @@
 # Generated validator keys — NEVER commit private keys
 data/
 
+# Encrypted key archives
+*.zip
+
 # Blockscout environment (contains passwords)
 blockscout/.env
