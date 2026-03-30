@@ -182,7 +182,7 @@ TPIX is the native cryptocurrency of TPIX Chain with a fixed supply of **7 billi
 
 1. **DEX Trading** — Base pair for all trading on TPIX TRADE
 2. **Master Node Staking** — Required collateral for running validator nodes
-3. **Token Factory** — Fee payment for creating custom ERC-20 tokens (100 TPIX)
+3. **Token Factory** — Fee payment for creating custom tokens (50-150+ TPIX, dynamic pricing)
 4. **Carbon Credits** — Purchase and trade verified carbon credits
 5. **FoodPassport** — Pay for food traceability verification services
 6. **Governance** — Future DAO voting rights
@@ -319,26 +319,110 @@ A full-featured DEX built on Uniswap V2 AMM protocol, optimized for TPIX Chain's
 
 ## 9. Token Factory
 
-Create custom ERC-20 tokens on TPIX Chain with zero gas fees.
+Create custom tokens on TPIX Chain with zero gas fees. Full-featured 5-step wizard supporting ERC-20 and ERC-721 tokens with advanced DeFi features.
 
-### Token Types
+**Platform:** [tpix.online/token-factory](https://tpix.online/token-factory)
 
-| Type | Features | Fee |
-|------|----------|-----|
-| **Standard** | Fixed supply, transferable | 100 TPIX |
-| **Mintable** | Owner can mint additional tokens | 100 TPIX |
-| **Burnable** | Holders can burn their tokens | 100 TPIX |
-| **Mintable + Burnable** | Both mint and burn capabilities | 100 TPIX |
+### Token Categories
+
+| Category | Types | Description |
+|----------|-------|-------------|
+| **Fungible (ERC-20)** | Standard, Mintable, Burnable, Mintable+Burnable | Basic ERC-20 tokens with optional mint/burn |
+| **Fungible Advanced** | Utility, Reward | DeFi tokens with tax, anti-whale, reflection, vesting |
+| **NFT (ERC-721)** | Single NFT, NFT Collection | Non-fungible tokens with royalty, soulbound, delayed reveal |
+| **Special** | Governance, Stablecoin | Governance voting tokens and compliance-ready stablecoins |
+
+### ERC-20 Token Types
+
+| Type | Features | Base Fee |
+|------|----------|----------|
+| **Standard** | Fixed supply, transferable | 50 TPIX |
+| **Mintable** | Owner can mint additional tokens | 70 TPIX |
+| **Burnable** | Holders can burn their tokens | 70 TPIX |
+| **Mintable + Burnable** | Both mint and burn capabilities | 85 TPIX |
+| **Utility** | Tax system, anti-whale, anti-bot, auto-liquidity | 60 TPIX |
+| **Reward** | Reflection/dividend/staking, vesting schedule | 60 TPIX |
+| **Governance** | ERC20Votes, delegation, proposal/quorum parameters | 130 TPIX |
+| **Stablecoin** | Freeze, KYC allowlist, authority mint/burn | 150 TPIX |
+
+### NFT Token Types
+
+| Type | Features | Base Fee |
+|------|----------|----------|
+| **Single NFT** | ERC-721, royalty (ERC-2981), soulbound (SBT) | 80 TPIX |
+| **NFT Collection** | Public/whitelist/free mint, delayed reveal, royalty | 100 TPIX |
+
+### Advanced Sub-Options
+
+Every token type supports additional features (each with an add-on fee):
+
+| Option | Description | Fee |
+|--------|-------------|-----|
+| **Pausable** | Owner can pause/unpause all transfers | +5 TPIX |
+| **Blacklist** | Owner can blacklist addresses | +5 TPIX |
+| **Tax System** | Buy/sell/transfer tax with configurable wallets | +15 TPIX |
+| **Anti-Whale** | Max wallet % and max transaction % limits | +10 TPIX |
+| **Anti-Bot** | Launch protection period + cooldown between trades | +10 TPIX |
+| **Auto-Liquidity** | Auto-add portion of tax to LP pool | +15 TPIX |
+| **Reflection** | Auto-distribute rewards to all holders proportionally | +20 TPIX |
+| **Vesting** | Cliff + linear release schedule for token locks | +10 TPIX |
+| **Royalty (ERC-2981)** | NFT royalty standard for secondary sales | +5 TPIX |
+| **Soulbound (SBT)** | Non-transferable token | +5 TPIX |
+| **Delayed Reveal** | Placeholder metadata until owner reveals | +10 TPIX |
+| **Treasury** | Governance treasury contract | +15 TPIX |
+| **Delegation** | Vote delegation support (ERC20Votes) | +5 TPIX |
+| **Freeze** | Owner can freeze specific addresses (compliance) | +5 TPIX |
+| **KYC Required** | Only KYC-verified addresses can transfer | +5 TPIX |
+| **Auto-Burn** | Automatic burn on each transfer | +10 TPIX |
+
+### Smart Contracts
+
+| Contract | Description |
+|----------|-------------|
+| **TPIXTokenFactory** | V1 factory for basic ERC-20 (standard/mintable/burnable) |
+| **TPIXTokenFactoryV2** | V2 factory for all ERC-20 types (utility, reward, governance, stablecoin) |
+| **TPIXNFTFactory** | Factory for NFT tokens (single + collection) |
+| **FactoryERC20V2** | Enhanced ERC-20 with pausable, blacklist, mint cap, auto-burn |
+| **UtilityToken** | ERC-20 with tax system, anti-whale, anti-bot |
+| **RewardToken** | ERC-20 with reflection/dividend, vesting |
+| **GovernanceToken** | ERC-20 with ERC20Votes, delegation, permit |
+| **StablecoinToken** | ERC-20 with freeze, KYC, authority mint/burn |
+| **FactoryERC721** | Single NFT with royalty (ERC-2981), soulbound |
+| **NFTCollection** | NFT collection with mint config, delayed reveal, royalty |
+
+All contracts use CREATE2 for deterministic addresses, OpenZeppelin 5.x, and are auto-verified on Blockscout.
 
 ### Creation Flow
 
 ```
 1. User connects wallet on tpix.online/token-factory
-2. Fills token details (name, symbol, supply, type)
-3. Pays 100 TPIX creation fee
-4. TPIXTokenFactory deploys new ERC-20 contract
-5. Token is immediately tradeable on TPIX TRADE DEX
-6. Token appears on Block Explorer with verified source
+2. Step 1 — Select category: Fungible / NFT / Special
+3. Step 2 — Select token type (e.g., Utility, Governance, NFT Collection)
+4. Step 3 — Configure advanced sub-options (tax, anti-whale, royalty, etc.)
+5. Step 4 — Fill token details (name, symbol, supply, logo, description)
+6. Step 5 — Review all settings + fee breakdown → confirm and pay
+7. Backend validates, calculates fee, and queues deployment
+8. Factory contract deploys token via CREATE2 (gas-free on TPIX Chain)
+9. Token auto-verified on Blockscout Explorer
+10. Token immediately tradeable on TPIX TRADE DEX
+```
+
+**Testnet:** Free token creation on TPIX Testnet (Chain ID: 4290), Sepolia, and BSC Testnet.
+
+### Dynamic Fee Calculation
+
+```
+Total Fee = Base Fee + Category Fee + Type Fee + Sub-Option Fees
+
+Example: Utility Token with Tax + Anti-Whale + Pausable
+  Base Fee:       50 TPIX
+  Category Fee:    0 TPIX (fungible)
+  Type Fee:       10 TPIX (utility)
+  Tax System:    +15 TPIX
+  Anti-Whale:    +10 TPIX
+  Pausable:       +5 TPIX
+  ─────────────────────
+  Total:          90 TPIX
 ```
 
 ### Use Cases
@@ -347,6 +431,11 @@ Create custom ERC-20 tokens on TPIX Chain with zero gas fees.
 - **Community Tokens** — DAOs, social clubs, fan tokens
 - **Real-World Assets (RWA)** — Property tokens, commodity tokens
 - **Carbon Credits** — Tokenized verified emission reductions
+- **DeFi Tokens** — Utility tokens with built-in tax and anti-whale protection
+- **Governance DAOs** — Create governance tokens with voting and delegation
+- **Stablecoins** — Compliance-ready stablecoins pegged to THB/USD/EUR
+- **Digital Art & Collectibles** — NFT collections with royalty and delayed reveal
+- **Membership / Certificates** — Soulbound tokens (SBT) for non-transferable credentials
 
 ---
 
@@ -460,7 +549,7 @@ TPIX Chain                          BSC (Chain ID: 56)
 | Application | Description | Status |
 |-------------|-------------|--------|
 | **TPIX TRADE DEX** | AMM-based DEX with zero gas trading | Live |
-| **Token Factory** | Create custom ERC-20 tokens for 100 TPIX | Live |
+| **Token Factory** | Create custom ERC-20/ERC-721 tokens (10 types, 16+ sub-options) | Live |
 | **FoodPassport** | Blockchain food traceability (farm-to-table) | Live |
 | **Carbon Credit** | On-chain carbon credit trading with IoT verification | Live |
 | **Master Node Network** | 3-tier validator system with staking rewards | Live |
@@ -705,7 +794,7 @@ TPIX Chain is developed by **Xman Studio** — a Thai technology studio speciali
 ---
 
 <p align="center">
-  <strong>TPIX Chain Whitepaper v2.1</strong><br/>
+  <strong>TPIX Chain Whitepaper v2.2</strong><br/>
   Last updated: March 2026<br/>
   Developed by <a href="https://xmanstudio.com">Xman Studio</a>
 </p>

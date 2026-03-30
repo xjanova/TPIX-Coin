@@ -57,6 +57,18 @@ TPIX-Coin/
 │   ├── masternode/         # Node registry & staking
 │   ├── bridge/             # Cross-chain bridge (BSC)
 │   ├── dex/                # DEX router (Uniswap V2 fork)
+│   ├── token-factory/      # Token Factory contracts (Phase 2)
+│   │   ├── TPIXTokenFactory.sol     # V1 factory (basic ERC-20)
+│   │   ├── TPIXTokenFactoryV2.sol   # V2 factory (all ERC-20 types)
+│   │   ├── TPIXNFTFactory.sol       # NFT factory
+│   │   ├── FactoryERC20.sol         # Basic ERC-20 template
+│   │   ├── FactoryERC20V2.sol       # Enhanced ERC-20 (pausable, blacklist, auto-burn)
+│   │   ├── UtilityToken.sol         # Tax, anti-whale, anti-bot
+│   │   ├── RewardToken.sol          # Reflection, dividend, vesting
+│   │   ├── GovernanceToken.sol      # ERC20Votes, delegation
+│   │   ├── StablecoinToken.sol      # Freeze, KYC, authority mint/burn
+│   │   ├── FactoryERC721.sol        # Single NFT (royalty, soulbound)
+│   │   └── NFTCollection.sol        # Collection (mint, reveal, royalty)
 │   ├── scripts/            # Deploy & verify scripts
 │   └── hardhat.config.js
 ├── infrastructure/         # Genesis config & Docker deployment
@@ -166,6 +178,16 @@ On-chain carbon credit trading with IoT verification at [tpix.online/carbon-cred
 | `NodeRegistry` | Validator node registration and management |
 | `StakingPool` | TPIX staking for node operators |
 | `RewardDistributor` | Block reward distribution to validators |
+| `TPIXTokenFactory` | V1 ERC-20 token factory (standard/mintable/burnable) |
+| `TPIXTokenFactoryV2` | V2 factory for all ERC-20 types (utility, reward, governance, stablecoin) |
+| `TPIXNFTFactory` | NFT factory (single NFT + collection) |
+| `FactoryERC20V2` | Enhanced ERC-20 with pausable, blacklist, mint cap, auto-burn |
+| `UtilityToken` | ERC-20 with tax system, anti-whale, anti-bot |
+| `RewardToken` | ERC-20 with reflection/dividend, vesting |
+| `GovernanceToken` | ERC-20 with ERC20Votes, delegation, permit |
+| `StablecoinToken` | ERC-20 with freeze, KYC allowlist, authority mint/burn |
+| `FactoryERC721` | Single NFT with ERC-2981 royalty, soulbound (SBT) |
+| `NFTCollection` | NFT collection with mint config, delayed reveal, royalty |
 
 ### Living Identity (TPIXIdentity.sol)
 
@@ -205,7 +227,7 @@ npm run deploy:identity
 | **AI Bot Marketplace** | Buy/sell AI bots for trading & customer service |
 | **Hotel Booking** | Decentralized travel booking with TPIX payment |
 | **E-Commerce** | Multi-vendor marketplace with 5% cashback |
-| **Token Factory** | Create custom ERC-20 tokens for 100 TPIX |
+| **Token Factory** | Create custom ERC-20/ERC-721 tokens (10 types, 16 sub-options) |
 | **Carbon Credit** | On-chain carbon credit trading with IoT verification |
 | **Thaiprompt Affiliate** | Enterprise MLM platform (500,000+ users) |
 
@@ -300,7 +322,7 @@ https://tpix.online/tpixlogo.webp
 
 - **Wallet**: Flutter 3.38+, Dart 3.x, Android SDK 34+
 - **Master Node UI**: Node.js 20+, Electron
-- **Contracts**: Node.js 20+, Hardhat (Solidity 0.8.20)
+- **Contracts**: Node.js 20+, Hardhat (Solidity 0.8.20 + 0.8.24), OpenZeppelin 5.x
 
 ### Build Wallet APK
 
