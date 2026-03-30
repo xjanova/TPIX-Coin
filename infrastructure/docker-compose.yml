@@ -1,13 +1,31 @@
-# TPIX Chain — Polygon Edge (IBFT PoA, 4 validators)
-# docker-compose up -d เพื่อเริ่ม chain
+# TPIX Chain — Polygon Edge (IBFT2 PoA, 4 validators)
+# ─────────────────────────────────────────────────────
+# Prerequisites:
+#   1. Run ./setup-chain.sh to generate validator keys & genesis
+#   2. Copy data/validator-N/ directories to correct volumes
+#
+# Start:  docker-compose up -d
+# Stop:   docker-compose down
+# Logs:   docker-compose logs -f validator-1
+# Status: docker-compose ps
+#
+# Chain ID: 4289 | Block Time: 2s | Gas: Free (price=0)
+# IBFT2 fault tolerance: 1 node can fail (3 of 4 needed)
+#
 # Developed by Xman Studio
 
 version: '3.8'
 
+x-validator-common: &validator-common
+  image: 0xpolygon/polygon-edge:latest
+  restart: unless-stopped
+  networks:
+    - tpix-net
+
 services:
-  # Validator Node 1 (Boot node)
+  # ─── Validator 1 (Boot Node + Primary RPC) ───────────────
   validator-1:
-    image: 0xpolygon/polygon-edge:latest
+    <<: *validator-common
     container_name: tpix-validator-1
     command: >
       server
@@ -20,20 +38,18 @@ services:
       --max-slots 4096
       --block-gas-target 0x1312D00
       --price-limit 0
+      --max-enqueued 4096
     volumes:
       - validator1-data:/data
       - ./genesis.json:/genesis/genesis.json:ro
     ports:
-      - "8545:8545"   # JSON-RPC (หลัก)
-      - "10000:10000"  # gRPC
-      - "10001:10001"  # libp2p
-    networks:
-      - tpix-net
-    restart: unless-stopped
+      - "8545:8545"    # JSON-RPC (public)
+      - "10000:10000"  # gRPC (admin)
+      - "10001:10001"  # libp2p (P2P)
 
-  # Validator Node 2
+  # ─── Validator 2 ─────────────────────────────────────────
   validator-2:
-    image: 0xpolygon/polygon-edge:latest
+    <<: *validator-common
     container_name: tpix-validator-2
     command: >
       server
@@ -44,21 +60,20 @@ services:
       --jsonrpc 0.0.0.0:8545
       --seal
       --max-slots 4096
+      --block-gas-target 0x1312D00
       --price-limit 0
+      --max-enqueued 4096
     volumes:
       - validator2-data:/data
       - ./genesis.json:/genesis/genesis.json:ro
     ports:
       - "8546:8545"
-    networks:
-      - tpix-net
-    restart: unless-stopped
     depends_on:
       - validator-1
 
-  # Validator Node 3
+  # ─── Validator 3 ─────────────────────────────────────────
   validator-3:
-    image: 0xpolygon/polygon-edge:latest
+    <<: *validator-common
     container_name: tpix-validator-3
     command: >
       server
@@ -69,21 +84,20 @@ services:
       --jsonrpc 0.0.0.0:8545
       --seal
       --max-slots 4096
+      --block-gas-target 0x1312D00
       --price-limit 0
+      --max-enqueued 4096
     volumes:
       - validator3-data:/data
       - ./genesis.json:/genesis/genesis.json:ro
     ports:
       - "8547:8545"
-    networks:
-      - tpix-net
-    restart: unless-stopped
     depends_on:
       - validator-1
 
-  # Validator Node 4
+  # ─── Validator 4 ─────────────────────────────────────────
   validator-4:
-    image: 0xpolygon/polygon-edge:latest
+    <<: *validator-common
     container_name: tpix-validator-4
     command: >
       server
@@ -94,17 +108,33 @@ services:
       --jsonrpc 0.0.0.0:8545
       --seal
       --max-slots 4096
+      --block-gas-target 0x1312D00
       --price-limit 0
+      --max-enqueued 4096
     volumes:
       - validator4-data:/data
       - ./genesis.json:/genesis/genesis.json:ro
     ports:
       - "8548:8545"
-    networks:
-      - tpix-net
-    restart: unless-stopped
     depends_on:
       - validator-1
+
+  # ─── JSON-RPC Load Balancer (Nginx) ──────────────────────
+  rpc-lb:
+    image: nginx:alpine
+    container_name: tpix-rpc-lb
+    volumes:
+      - ./nginx-rpc.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+    networks:
+      - tpix-net
+    depends_on:
+      - validator-1
+      - validator-2
+      - validator-3
+      - validator-4
+    restart: unless-stopped
 
 volumes:
   validator1-data:

@@ -1,4 +1,5 @@
 {
+    "__NOTE__": "TEMPLATE — Run ./setup-chain.sh to generate the real genesis with validator keys",
     "name": "tpix-chain",
     "genesis": {
         "nonce": "0x0000000000000000",
@@ -9,7 +10,6 @@
         "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
         "coinbase": "0x0000000000000000000000000000000000000000",
         "alloc": {
-            "__COMMENT__": "Pre-mine 7B TPIX (7,000,000,000 * 10^18) ให้ genesis account",
             "0x0000000000000000000000000000000000001001": {
                 "balance": "0x16345785D8A0000000000000000000000",
                 "comment": "Team & Advisors — 20% (1,400,000,000 TPIX)"
