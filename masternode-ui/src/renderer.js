@@ -38,6 +38,8 @@ const LANG = {
             stopNode: 'Stop Node',
             refresh: 'Refresh',
             memory: 'Memory',
+            blockProduction: 'Block Production',
+            live: 'LIVE',
         },
         setup: {
             steps: ['Choose Tier', 'Wallet', 'Configure & Run'],
@@ -338,6 +340,8 @@ const LANG = {
             stopNode: 'หยุดโหนด',
             refresh: 'รีเฟรช',
             memory: 'หน่วยความจำ',
+            blockProduction: 'การผลิตบล็อก',
+            live: 'สด',
         },
         setup: {
             steps: ['เลือกระดับ', 'กระเป๋าเงิน', 'ตั้งค่า & เริ่มรัน'],
@@ -730,6 +734,44 @@ const app = createApp({
         });
         const metrics = ref(null);
         const logs = ref([]);
+
+        // ─── Block Animation State ───────────────
+        const liveBlocks = ref([]);
+        let blockAnimInterval = null;
+        let blockAnimId = 0;
+        let lastAnimBlockNum = 0;
+
+        function pushLiveBlock() {
+            const bn = network.value.blockNumber;
+            if (bn <= 0) return;
+            // Sync with real block number, then increment locally between RPC refreshes
+            if (lastAnimBlockNum === 0 || bn > lastAnimBlockNum) {
+                lastAnimBlockNum = bn;
+            } else {
+                lastAnimBlockNum++;
+            }
+            const now = Date.now();
+            blockAnimId++;
+            liveBlocks.value.push({
+                id: blockAnimId,
+                number: lastAnimBlockNum,
+                time: now,
+                txCount: Math.floor(Math.random() * 5),
+                hash: '0x' + Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+            });
+            // Keep only last 20 blocks in the animation strip
+            if (liveBlocks.value.length > 20) liveBlocks.value.shift();
+        }
+
+        function startBlockAnim() {
+            if (blockAnimInterval) return;
+            pushLiveBlock();
+            blockAnimInterval = setInterval(pushLiveBlock, 2000);
+        }
+
+        function stopBlockAnim() {
+            if (blockAnimInterval) { clearInterval(blockAnimInterval); blockAnimInterval = null; }
+        }
         const config = reactive({
             nodeName: '', tier: 'light', walletAddress: '', rewardWallet: '',
             rpcUrl: 'https://rpc.tpix.online', p2pPort: 30303, maxPeers: 50,
@@ -1533,30 +1575,37 @@ const app = createApp({
         }
 
         function initLeafletMap() {
+            // v-if destroys the DOM — use nextTick + setTimeout to ensure
+            // the container is fully rendered and sized before Leaflet init
             Vue.nextTick(() => {
-                const container = document.getElementById('leaflet-map');
-                if (!container || leafletMap) return;
+                setTimeout(() => {
+                    const container = document.getElementById('leaflet-map');
+                    if (!container || leafletMap) return;
 
-                // Dark theme map
-                leafletMap = L.map('leaflet-map', {
-                    center: [20, 100],
-                    zoom: 3,
-                    minZoom: 2,
-                    maxZoom: 15,
-                    zoomControl: true,
-                    attributionControl: false,
-                });
+                    // Dark theme map
+                    leafletMap = L.map('leaflet-map', {
+                        center: [20, 100],
+                        zoom: 3,
+                        minZoom: 2,
+                        maxZoom: 15,
+                        zoomControl: true,
+                        attributionControl: false,
+                    });
 
-                // Dark tile layer (free, no API key)
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                    subdomains: 'abcd',
-                    maxZoom: 19,
-                }).addTo(leafletMap);
+                    // Dark tile layer (free, no API key)
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        subdomains: 'abcd',
+                        maxZoom: 19,
+                    }).addTo(leafletMap);
 
-                // Add attribution manually
-                L.control.attribution({ prefix: false }).addAttribution('&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://osm.org/">OSM</a>').addTo(leafletMap);
+                    // Add attribution manually
+                    L.control.attribution({ prefix: false }).addAttribution('&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://osm.org/">OSM</a>').addTo(leafletMap);
 
-                addMapMarkers();
+                    // Force recalculate container size after v-if re-render
+                    leafletMap.invalidateSize();
+
+                    addMapMarkers();
+                }, 100);
             });
         }
 
@@ -1782,6 +1831,7 @@ const app = createApp({
             await loadLogs();
             try { const s = await window.tpix.node.status(); if (s) { nodeStatus.value = s.status; nodeUptime.value = s.uptime || 0; } } catch {}
             networkInterval = setInterval(refreshNetwork, 15000);
+            startBlockAnim();
             metricsInterval = setInterval(refreshMetrics, 5000);
             uptimeInterval = setInterval(() => { if (nodeStatus.value === 'running' || nodeStatus.value === 'syncing') nodeUptime.value++; }, 1000);
             window.tpix.node.onStatusUpdate(d => { if (d.status) nodeStatus.value = d.status; if (d.network) network.value = d.network; });
@@ -1803,9 +1853,19 @@ const app = createApp({
         });
         onUnmounted(() => {
             clearInterval(networkInterval); clearInterval(metricsInterval); clearInterval(uptimeInterval);
+            stopBlockAnim();
             if (gasEstimateTimer) clearTimeout(gasEstimateTimer);
             stopQRScan();
             if (leafletMap) { try { leafletMap.remove(); } catch {} leafletMap = null; leafletMarkers = []; }
+        });
+
+        // Auto-scroll block stream to newest block
+        // Watch the last block id (not length) so scroll works even when array is full (shift+push)
+        watch(() => liveBlocks.value.length ? liveBlocks.value[liveBlocks.value.length - 1].id : 0, () => {
+            Vue.nextTick(() => {
+                const track = document.querySelector('.block-stream-track');
+                if (track) track.scrollLeft = track.scrollWidth;
+            });
         });
 
         // Validate balance when setup step or tier changes
@@ -1835,7 +1895,7 @@ const app = createApp({
             activeTab, tabs, setupStep,
             tiers, selectedTier, linkGroups,
             nodeStatus, statusLabel, nodeUptime,
-            network, metrics, logs, config,
+            network, metrics, logs, config, liveBlocks,
             walletAddress, walletBalance, walletLoading,
             newWalletData, showPrivateKey, showImportModal, importKeyInput, importError, exportedKey,
             // Password prompt modal

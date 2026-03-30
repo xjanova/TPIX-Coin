@@ -103,6 +103,36 @@
                         </div>
                     </div>
 
+                    <!-- Live Block Production Animation -->
+                    <div class="block-stream-container glass-card mt-4" v-if="liveBlocks.length">
+                        <div class="block-stream-header">
+                            <h3 class="section-title">&#9879; {{ i18n.dash.blockProduction }}</h3>
+                            <span class="block-stream-live" v-if="network.isProducing">
+                                <span class="live-pulse"></span> {{ i18n.dash.live }}
+                            </span>
+                        </div>
+                        <div class="block-stream-track">
+                            <div class="block-stream-chain">
+                                <div v-for="(block, idx) in liveBlocks" :key="block.id"
+                                    class="block-cube-wrapper"
+                                    :class="{ 'block-newest': idx === liveBlocks.length - 1 }">
+                                    <div class="block-connector" v-if="idx > 0"></div>
+                                    <div class="block-cube">
+                                        <div class="block-cube-face block-cube-top"></div>
+                                        <div class="block-cube-face block-cube-front">
+                                            <span class="block-cube-num">#{{ block.number.toLocaleString() }}</span>
+                                        </div>
+                                        <div class="block-cube-face block-cube-right"></div>
+                                        <div class="block-cube-inner">
+                                            <span class="block-cube-tx">{{ block.txCount }} tx</span>
+                                            <span class="block-cube-hash">{{ block.hash }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Staking Status Card -->
                     <div v-if="stakingInfo" class="section-card mt-4" style="border-left: 3px solid var(--success)">
                         <div class="section-header">
