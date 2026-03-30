@@ -580,18 +580,44 @@ class NodeManager extends EventEmitter {
             const blockAge = blockTime ? Math.floor(Date.now() / 1000) - blockTime : 0;
             const isProducing = blockAge < 30;
 
-            // Extract validators from extraData
+            // Extract validators from IBFT2 extraData using proper RLP decode
+            // Layout: [0:32] vanity + RLP([validators[], proposerSeal, committedSeals[]])
+            // Each validator entry can be either a bare address or a list [address, blsKey]
             let validators = [];
-            if (block && block.extraData) {
-                const extraHex = block.extraData.slice(2);
-                let idx = extraHex.indexOf('94', 64);
-                while (idx !== -1 && idx < extraHex.length - 40 && validators.length < 20) {
-                    const addr = '0x' + extraHex.slice(idx + 2, idx + 42);
-                    if (/^0x[0-9a-f]{40}$/.test(addr)) {
-                        validators.push(addr);
+            if (block && block.extraData && block.extraData.length > 66) {
+                try {
+                    const buf = Buffer.from(block.extraData.slice(2), 'hex');
+                    // RLP decoder: returns { dataStart, dataLen, totalLen }
+                    const rlp = (b, p) => {
+                        const x = b[p];
+                        if (x <= 0x7f) return { ds: p, dl: 1, tl: 1 };
+                        if (x <= 0xb7) { const l = x - 0x80; return { ds: p+1, dl: l, tl: 1+l }; }
+                        if (x <= 0xbf) { const n = x-0xb7; let l=0; for(let i=0;i<n;i++) l=l*256+b[p+1+i]; return { ds: p+1+n, dl: l, tl: 1+n+l }; }
+                        if (x <= 0xf7) { const l = x - 0xc0; return { ds: p+1, dl: l, tl: 1+l }; }
+                        const n = x-0xf7; let l=0; for(let i=0;i<n;i++) l=l*256+b[p+1+i]; return { ds: p+1+n, dl: l, tl: 1+n+l };
+                    };
+                    const isList = (b, p) => b[p] >= 0xc0;
+
+                    // Outer list → first element = validators list
+                    const outer = rlp(buf, 32);
+                    const valList = rlp(buf, outer.ds);
+                    let pos = valList.ds;
+                    const valEnd = valList.ds + valList.dl;
+                    while (pos < valEnd) {
+                        const item = rlp(buf, pos);
+                        if (isList(buf, pos)) {
+                            // Validator entry = [address, blsKey] — extract first item
+                            const inner = rlp(buf, item.ds);
+                            if (inner.dl === 20) {
+                                validators.push('0x' + buf.slice(inner.ds, inner.ds + 20).toString('hex'));
+                            }
+                        } else if (item.dl === 20) {
+                            // Bare address (simpler IBFT format)
+                            validators.push('0x' + buf.slice(item.ds, item.ds + 20).toString('hex'));
+                        }
+                        pos += item.tl;
                     }
-                    idx = extraHex.indexOf('94', idx + 42);
-                }
+                } catch {}
             }
 
             return {
