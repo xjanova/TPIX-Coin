@@ -59,8 +59,18 @@ TPIX-Coin/
 │   ├── dex/                # DEX router (Uniswap V2 fork)
 │   ├── token-factory/      # Token Factory contracts (Phase 2)
 │   │   ├── TPIXTokenFactory.sol     # V1 factory (basic ERC-20)
-│   │   ├── TPIXTokenFactoryV2.sol   # V2 factory (all ERC-20 types)
-│   │   ├── TPIXNFTFactory.sol       # NFT factory
+│   │   ├── TPIXTokenFactoryV2.sol   # V2 coordinator (all ERC-20 types)
+│   │   ├── TPIXNFTFactory.sol       # NFT coordinator (single + collection)
+│   │   ├── interfaces/              # Lightweight creator interfaces
+│   │   │   ├── ITokenCreators.sol   # ERC-20 creator interfaces
+│   │   │   └── INFTCreators.sol     # NFT creator interfaces
+│   │   ├── ERC20V2Creator.sol       # Sub-factory: Enhanced ERC-20
+│   │   ├── UtilityTokenCreator.sol  # Sub-factory: Utility token
+│   │   ├── RewardTokenCreator.sol   # Sub-factory: Reward token
+│   │   ├── GovernanceTokenCreator.sol # Sub-factory: Governance token
+│   │   ├── StablecoinTokenCreator.sol # Sub-factory: Stablecoin
+│   │   ├── FactoryERC721Creator.sol # Sub-factory: Single NFT
+│   │   ├── NFTCollectionCreator.sol # Sub-factory: NFT collection
 │   │   ├── FactoryERC20.sol         # Basic ERC-20 template
 │   │   ├── FactoryERC20V2.sol       # Enhanced ERC-20 (pausable, blacklist, auto-burn)
 │   │   ├── UtilityToken.sol         # Tax, anti-whale, anti-bot
@@ -79,7 +89,8 @@ TPIX-Coin/
 │       └── .env.example    # Environment configuration
 ├── scripts/
 │   └── blockchain/
-│       └── create-token.js # Token Factory deployment script
+│       ├── create-token.js               # Token Factory V1 deployment
+│       └── deploy-factory-v2-remote.mjs  # Factory V2 + NFT deploy (GitHub Actions)
 ├── masternode/             # Polygon Edge node config & install scripts
 ├── masternode-app/         # Master Node CLI tools (Go/Wails)
 ├── masternode-ui/          # Master Node Electron GUI (Windows)
@@ -179,8 +190,15 @@ On-chain carbon credit trading with IoT verification at [tpix.online/carbon-cred
 | `StakingPool` | TPIX staking for node operators |
 | `RewardDistributor` | Block reward distribution to validators |
 | `TPIXTokenFactory` | V1 ERC-20 token factory (standard/mintable/burnable) |
-| `TPIXTokenFactoryV2` | V2 factory for all ERC-20 types (utility, reward, governance, stablecoin) |
-| `TPIXNFTFactory` | NFT factory (single NFT + collection) |
+| `TPIXTokenFactoryV2` | V2 coordinator for all ERC-20 types — [`0xCdE5…dfF2`](https://explorer.tpix.online/address/0xCdE5792A556A2D8571Efb31843CF6C15c3BDdfF2) |
+| `TPIXNFTFactory` | NFT coordinator (single + collection) — [`0x3871…76F9`](https://explorer.tpix.online/address/0x38713C76036eb4Ff438eF8CEC12b6D676ad776F9) |
+| `ERC20V2Creator` | Sub-factory: deploys enhanced ERC-20 tokens |
+| `UtilityTokenCreator` | Sub-factory: deploys utility tokens (tax, anti-whale) |
+| `RewardTokenCreator` | Sub-factory: deploys reward tokens (reflection, vesting) |
+| `GovernanceTokenCreator` | Sub-factory: deploys governance tokens (ERC20Votes) |
+| `StablecoinTokenCreator` | Sub-factory: deploys stablecoins (freeze, KYC) |
+| `FactoryERC721Creator` | Sub-factory: deploys single NFTs (royalty, soulbound) |
+| `NFTCollectionCreator` | Sub-factory: deploys NFT collections (mint, reveal) |
 | `FactoryERC20V2` | Enhanced ERC-20 with pausable, blacklist, mint cap, auto-burn |
 | `UtilityToken` | ERC-20 with tax system, anti-whale, anti-bot |
 | `RewardToken` | ERC-20 with reflection/dividend, vesting |
@@ -213,6 +231,25 @@ npm run deploy:identity
 ```
 
 **Gas cost:** FREE (TPIX Chain has zero gas fees)
+
+### Token Factory V2 (Coordinator + Creator Architecture)
+
+The Token Factory uses a **Coordinator + Sub-Factory Creator** pattern to stay within EVM's 24KB contract size limit (EIP-170). Each token type has its own Creator contract that embeds the token bytecode, while the Coordinator provides a unified entry point with registry and nonce management.
+
+```
+TPIXTokenFactoryV2 (coordinator)
+├── ERC20V2Creator       → FactoryERC20V2
+├── UtilityTokenCreator  → UtilityToken
+├── RewardTokenCreator   → RewardToken
+├── GovernanceTokenCreator → GovernanceToken
+└── StablecoinTokenCreator → StablecoinToken
+
+TPIXNFTFactory (coordinator)
+├── FactoryERC721Creator → FactoryERC721
+└── NFTCollectionCreator → NFTCollection
+```
+
+**Deployed via GitHub Actions** — compile on runner, SCP artifacts to server, deploy with validator key. See `.github/workflows/deploy-factory-v2.yml`.
 
 ---
 
