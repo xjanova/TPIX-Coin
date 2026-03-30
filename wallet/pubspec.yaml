@@ -1,7 +1,7 @@
 name: tpix_wallet
 description: "TPIX Wallet — The official wallet for TPIX Chain. Send, receive, and manage TPIX with stunning 3D animations."
 publish_to: 'none'
-version: 1.6.0+11
+version: 1.6.1+12
 
 environment:
   sdk: ^3.10.4
