@@ -27,16 +27,16 @@
             "0x0000000000000000000000000000000000001006": {
                 "balance": "0x24306c4097859c43c000000"
             },
-            "0x0E70CAd4DFfA482c4A97EA4Ce046a21251D8B7fF": {
+            "0x2624f2578AEa4823E86a0DdCf5B020D849E5319D": {
                 "balance": "0x3635c9adc5dea00000"
             },
-            "0x118D82790CeC0e1ACB6476EE3bbceaAD9C808485": {
+            "0x7b808fBb9E9130b8f1DE0c5Fd7AAa7b13EF177CA": {
                 "balance": "0x3635c9adc5dea00000"
             },
-            "0xaf981c1124e4Ac9673bf5A6031E91C38c08e4088": {
+            "0xFd054233df84AAd71Fb6Da8585D98716fdAd7df3": {
                 "balance": "0x3635c9adc5dea00000"
             },
-            "0xcAEc7079912746C4128d8C46630f4E6e1b6AF81A": {
+            "0xcF9460a0b562c6d279E0915BA94418108Ea1c9b9": {
                 "balance": "0x3635c9adc5dea00000"
             }
         },
@@ -97,9 +97,9 @@
         "burnContractDestinationAddress": "0x0000000000000000000000000000000000000000"
     },
     "bootnodes": [
-        "/ip4/tpix-validator-1/tcp/10001/p2p/16Uiu2HAmV22BxAKSZXBL34AvZivu2ekYVYFihYeD9nqxsqEXyo1a",
-        "/ip4/tpix-validator-2/tcp/10001/p2p/16Uiu2HAmTRfyg9wKqsx2tVbaMrYwDtMTXYQFdw8DSPJ8fUD7qpdL",
-        "/ip4/tpix-validator-3/tcp/10001/p2p/16Uiu2HAmFT9F2SL15t3J2RgtQLFMSoA7EruqLFq5J257w5eYp1yN",
-        "/ip4/tpix-validator-4/tcp/10001/p2p/16Uiu2HAm6y2rvmJ2a9STZ2X5zTvwUFyk2q9yqgXUrYjrZ2KJxQ2c"
+        "/ip4/tpix-validator-1/tcp/10001/p2p/16Uiu2HAmLZ4KoKHva25j2kfFxuWuPwb2n3awRsScHfKDft3bPypR",
+        "/ip4/tpix-validator-2/tcp/10001/p2p/16Uiu2HAm9t8jEC7X9rUztzfDVbFrhujeZ61YgSF5h4vNp14pYAxq",
+        "/ip4/tpix-validator-3/tcp/10001/p2p/16Uiu2HAm9b26obPX87b8nkq8FdVSdAiijL1fZrvv8yWrWGfUbWBi",
+        "/ip4/tpix-validator-4/tcp/10001/p2p/16Uiu2HAmChRNPbWFC5e4yt3cmsBzSGnc2jvDqu1kwzHbsWFEyECP"
     ]
 }
