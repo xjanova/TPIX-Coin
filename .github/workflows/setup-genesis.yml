@@ -19,91 +19,62 @@ permissions:
   contents: write
 
 env:
-  POLYGON_EDGE_VERSION: '1.3.2'
+  POLYGON_EDGE_VERSION: "1.3.2"
 
 jobs:
   generate-genesis:
-    name: Generate Genesis & Validator Keys
+    name: Generate Genesis and Validator Keys
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install jq
+      - name: Install jq and zip
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq jq zip
 
-      - name: Download polygon-edge v${{ env.POLYGON_EDGE_VERSION }}
+      - name: Download polygon-edge
         run: |
-          echo "=== Downloading polygon-edge v${POLYGON_EDGE_VERSION} ==="
+          echo "Downloading polygon-edge v${POLYGON_EDGE_VERSION}"
           DOWNLOAD_URL="https://github.com/0xPolygon/polygon-edge/releases/download/v${POLYGON_EDGE_VERSION}/polygon-edge_${POLYGON_EDGE_VERSION}_linux_amd64.tar.gz"
-          echo "URL: ${DOWNLOAD_URL}"
-
-          curl -fsSL "${DOWNLOAD_URL}" -o polygon-edge.tar.gz \
-            || { echo "::error::Failed to download polygon-edge. Check version ${POLYGON_EDGE_VERSION}"; exit 1; }
-
+          curl -fsSL "${DOWNLOAD_URL}" -o polygon-edge.tar.gz
           tar -xzf polygon-edge.tar.gz
           chmod +x polygon-edge
           sudo mv polygon-edge /usr/local/bin/
           rm -f polygon-edge.tar.gz
-
-          echo "=== Installed ==="
           polygon-edge version
 
       - name: Run setup-chain.sh
         working-directory: infrastructure
         run: |
           chmod +x setup-chain.sh
-          CLEAN_FLAG=""
-          if [[ "${{ github.event.inputs.clean || 'true' }}" == "true" ]]; then
-            CLEAN_FLAG="--clean"
-          fi
-          ./setup-chain.sh ${CLEAN_FLAG}
+          ./setup-chain.sh --clean
 
       - name: Validate genesis.json
         working-directory: infrastructure
         run: |
-          echo "=== Genesis JSON Validation ==="
           jq empty genesis.json
           echo "Valid JSON: OK"
-
-          echo ""
-          echo "=== Chain ID ==="
-          jq '.params.chainID // .chain_config.chainId' genesis.json
-
-          echo ""
-          echo "=== Engine ==="
-          jq '.params.engine // .chain_config.engine' genesis.json
-
-          echo ""
-          echo "=== Alloc Accounts ==="
+          echo "Chain ID:"
+          jq '.params.chainID' genesis.json
+          echo "Alloc accounts:"
           jq '.genesis.alloc // .alloc | keys | length' genesis.json
-          echo "accounts"
-
-          echo ""
-          echo "=== Genesis file size ==="
-          ls -lh genesis.json
 
       - name: Display validator summary
         working-directory: infrastructure
         run: |
-          echo "=== Validator Addresses ==="
           if [[ -f data/validators.json ]]; then
-            jq -r '.validators[] | "  Validator \(.id): \(.address)"' data/validators.json
-            echo ""
-            echo "=== Bootnodes ==="
+            jq -r '.validators[] | "Validator \(.id): \(.address)"' data/validators.json
+            echo "Bootnodes:"
             jq -r '.bootnodes[]' data/validators.json
           fi
-
-          echo ""
-          echo "=== Key Files ==="
+          echo "Key Files:"
           for i in 1 2 3 4; do
             DIR="data/validator-${i}"
             if [[ -d "${DIR}" ]]; then
               echo "  validator-${i}/:"
-              ls -la "${DIR}/" | grep -v total | grep -v "^d" | awk '{print "    " $NF " (" $5 " bytes)"}'
+              ls -la "${DIR}/"
             fi
           done
 
@@ -123,19 +94,15 @@ jobs:
         run: |
           if [[ -z "${KEYS_PASSWORD:-}" ]]; then
             echo "::warning::VALIDATOR_KEYS_PASSWORD secret not set. Using default password."
-            echo "::warning::Set VALIDATOR_KEYS_PASSWORD in Settings > Secrets > Actions for production use!"
             KEYS_PASSWORD="tpix-dev-keys-2026"
           fi
-
-          # Package all validator key directories
           zip -r -P "${KEYS_PASSWORD}" validator-keys-encrypted.zip \
             data/validator-1/ \
             data/validator-2/ \
             data/validator-3/ \
             data/validator-4/ \
             data/validators.json
-
-          echo "Encrypted archive size: $(ls -lh validator-keys-encrypted.zip | awk '{print $5}')"
+          echo "Encrypted archive created"
 
       - name: Upload encrypted validator keys
         uses: actions/upload-artifact@v4
@@ -149,29 +116,16 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Only commit genesis.json and validators.json (NOT private keys)
-          # Check if validators.json should be committed (public addresses only)
           if [[ -f data/validators.json ]]; then
             mkdir -p config
             cp data/validators.json config/validators.json
             git add config/validators.json
           fi
-
           git add genesis.json
-
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "chore(infra): auto-generate genesis.json with IBFT2 validators [skip ci]
-
-Generated by setup-genesis workflow:
-- 4 IBFT2 validators with real keys
-- Chain ID: 4289, Block Time: 2s, Gas: 0
-- Pre-mine: 7B TPIX across 6 allocation accounts
-- Validator addresses saved to config/validators.json
-
-Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+            git commit -m "chore(infra): auto-generate genesis.json with IBFT2 validators [skip ci]"
             git push
           fi
 
@@ -180,32 +134,16 @@ Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.co
         run: |
           echo "## TPIX Chain Genesis Setup Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Chain Configuration" >> $GITHUB_STEP_SUMMARY
           echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Chain ID | 4289 |" >> $GITHUB_STEP_SUMMARY
           echo "| Consensus | IBFT 2.0 (PoA) |" >> $GITHUB_STEP_SUMMARY
           echo "| Block Time | 2s |" >> $GITHUB_STEP_SUMMARY
           echo "| Gas Price | 0 (free) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Total Supply | 7,000,000,000 TPIX |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Supply | 7B TPIX |" >> $GITHUB_STEP_SUMMARY
           echo "| Validators | 4 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Fault Tolerance | 1 node can fail |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Validators" >> $GITHUB_STEP_SUMMARY
-          echo "| # | Address |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---------|" >> $GITHUB_STEP_SUMMARY
           if [[ -f data/validators.json ]]; then
-            jq -r '.validators[] | "| \(.id) | `\(.address)` |"' data/validators.json >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Validators" >> $GITHUB_STEP_SUMMARY
+            jq -r '.validators[] | "- \(.id): \(.address)"' data/validators.json >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- **tpix-genesis**: genesis.json + validators.json (public)" >> $GITHUB_STEP_SUMMARY
-          echo "- **tpix-validator-keys-encrypted**: ZIP encrypted with \`VALIDATOR_KEYS_PASSWORD\` secret" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download **tpix-validator-keys-encrypted** artifact" >> $GITHUB_STEP_SUMMARY
-          echo "2. Decrypt: \`unzip -P <password> validator-keys-encrypted.zip\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Copy keys to servers: \`scp -r data/validator-N/ serverN:/data/\`" >> $GITHUB_STEP_SUMMARY
-          echo "4. Start chain: \`docker-compose up -d\`" >> $GITHUB_STEP_SUMMARY
