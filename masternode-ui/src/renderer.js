@@ -308,6 +308,8 @@ const LANG = {
             totalRewardsLabel: 'Total Rewards',
             blocksProduced: 'Blocks Produced',
             rewardHistory: 'Reward History',
+            liveNode: 'LIVE',
+            demoNode: 'DEMO',
         },
         status: { stopped: 'Stopped', starting: 'Starting...', running: 'Running', syncing: 'Syncing', error: 'Error' },
     },
@@ -610,6 +612,8 @@ const LANG = {
             totalRewardsLabel: 'รางวัลทั้งหมด',
             blocksProduced: 'บล็อกที่ผลิต',
             rewardHistory: 'ประวัติรางวัล',
+            liveNode: 'สด',
+            demoNode: 'เดโม',
         },
         status: { stopped: 'หยุด', starting: 'กำลังเริ่ม...', running: 'ทำงาน', syncing: 'กำลังซิงค์', error: 'ข้อผิดพลาด' },
     },
@@ -1456,6 +1460,14 @@ const app = createApp({
             } catch {} finally { explorerLoading.value = false; }
         }
 
+        function goToBlock(blockNum) {
+            // Use the real RPC block number — animation may increment locally ahead of chain
+            const realBlock = Math.min(blockNum, network.value.blockNumber);
+            if (realBlock <= 0) return;
+            activeTab.value = 'explorer';
+            viewBlock(realBlock);
+        }
+
         async function viewTx(txHash) {
             explorerLoading.value = true;
             explorerView.value = 'tx';
@@ -1536,7 +1548,7 @@ const app = createApp({
                 { id: 13, type: 'light', addr: '0x3eD8f9A0b1C2d3E4f5A6b7C8d9E0f1A2b3C490Lm', country: 'IN', countryName: 'India', lat: 19.08, lng: 72.88, city: 'Mumbai', ip: '49.36.145.23', online: false, totalRewards: '670', rewards: []},
                 { id: 14, type: 'sentinel', addr: '0x5fA1b2C3d4E5f6A7b8C9d0E1f2A3b4C5d6E723No', country: 'CA', countryName: 'Canada', lat: 43.65, lng: -79.38, city: 'Toronto', ip: '198.55.100.34', online: true, totalRewards: '4,120', rewards: []},
                 { id: 15, type: 'light', addr: '0x9gB4c5D6e7F8a9B0c1D2e3F4a5B6c7D8e9F056Pq', country: 'BR', countryName: 'Brazil', lat: -23.55, lng: -46.63, city: 'Sao Paulo', ip: '187.45.223.67', online: true, totalRewards: '540', rewards: []},
-            ].map(n => ({ ...n, flag: flag(n.country) }));
+            ].map(n => ({ ...n, flag: flag(n.country), isDemo: true }));
 
             // Add user's own node if staking is active
             if (stakingInfo.value && stakingInfo.value.status === 'active') {
@@ -1559,6 +1571,7 @@ const app = createApp({
                         time: new Date(r.timestamp * 1000).toLocaleString(),
                     })),
                     isMyNode: true,
+                    isDemo: false,
                     flag: flag('TH'),
                 };
                 // Remove duplicate if exists
@@ -1635,11 +1648,14 @@ const app = createApp({
                 // Popup with node info
                 const statusDot = node.online ? '<span style="color:#00e676">&#9679;</span>' : '<span style="color:#ff1744">&#9679;</span>';
                 const statusText = node.online ? 'Online' : 'Offline';
+                const demoBadge = node.isDemo
+                    ? '<span style="background:rgba(245,158,11,0.2);color:#f59e0b;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;letter-spacing:0.5px;margin-left:4px">DEMO</span>'
+                    : '<span style="background:rgba(0,230,118,0.2);color:#00e676;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;letter-spacing:0.5px;margin-left:4px">LIVE</span>';
                 marker.bindPopup(
                     '<div style="font-family:monospace;font-size:12px;min-width:220px;color:#e2e8f0;background:#0a0f1e;padding:8px;border-radius:8px;border:1px solid rgba(6,182,212,0.3)">' +
                     '<div style="font-size:18px;text-align:center">' + node.flag + '</div>' +
                     '<div style="font-weight:600;color:#06b6d4;margin:4px 0">' + node.city + ', ' + node.countryName + '</div>' +
-                    '<div><span style="background:' + color + '20;color:' + color + ';padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600">' + node.type.toUpperCase() + '</span> ' + statusDot + ' ' + statusText + '</div>' +
+                    '<div><span style="background:' + color + '20;color:' + color + ';padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600">' + node.type.toUpperCase() + '</span> ' + demoBadge + ' ' + statusDot + ' ' + statusText + '</div>' +
                     '<hr style="border:none;border-top:1px solid rgba(6,182,212,0.15);margin:6px 0">' +
                     '<div style="font-size:10px;color:#94a3b8">Wallet</div>' +
                     '<div style="font-size:11px;word-break:break-all">' + node.addr + '</div>' +
@@ -1929,7 +1945,7 @@ const app = createApp({
             formatTpix,
             // Explorer
             explorerBlocks, explorerBlock, explorerTx, explorerLoading, explorerSearch, explorerView,
-            loadLatestBlocks, viewBlock, viewTx, explorerSearchAction, explorerBack,
+            loadLatestBlocks, viewBlock, viewTx, explorerSearchAction, explorerBack, goToBlock,
             formatBlockTime, hexToNum, hexToTpix,
             // Masternodes
             masternodeData, masternodeStats, loadMasternodes,

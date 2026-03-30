@@ -117,7 +117,7 @@
                                     class="block-cube-wrapper"
                                     :class="{ 'block-newest': idx === liveBlocks.length - 1 }">
                                     <div class="block-connector" v-if="idx > 0"></div>
-                                    <div class="block-cube">
+                                    <div class="block-cube" @click="goToBlock(block.number)" :title="'View Block #' + block.number.toLocaleString()">
                                         <div class="block-cube-face block-cube-top"></div>
                                         <div class="block-cube-face block-cube-front">
                                             <span class="block-cube-num">#{{ block.number.toLocaleString() }}</span>
@@ -945,7 +945,9 @@
                     <!-- Interactive Map -->
                     <div class="map-container glass-card">
                         <div class="map-header">
-                            <h3 class="section-title">{{ i18n.masternodeMap.mapTitle }}</h3>
+                            <h3 class="section-title">{{ i18n.masternodeMap.mapTitle }}
+                                <span class="source-badge source-demo" style="margin-left:8px;font-size:10px">{{ i18n.masternodeMap.demoNode }}</span>
+                            </h3>
                             <div class="map-controls">
                                 <button @click="mapZoomAll" class="btn btn-ghost btn-sm">&#127760; {{ i18n.masternodeMap.zoomAll }}</button>
                             </div>
@@ -1014,6 +1016,8 @@
                                         <td>
                                             <span :class="['status-dot', node.online ? 'online' : 'offline']"></span>
                                             {{ node.online ? (lang === 'th' ? 'ออนไลน์' : 'Online') : (lang === 'th' ? 'ออฟไลน์' : 'Offline') }}
+                                            <span v-if="node.isDemo" class="source-badge source-demo">{{ i18n.masternodeMap.demoNode }}</span>
+                                            <span v-else class="source-badge source-live">{{ i18n.masternodeMap.liveNode }}</span>
                                         </td>
                                         <td class="text-cyan">{{ node.totalRewards }} TPIX</td>
                                         <td>
