@@ -2,7 +2,7 @@
 
 ## Project Overview
 TPIX Chain: EVM blockchain (Polygon Edge/IBFT2, Chain ID 4289, zero gas, 2s blocks).
-Version: 1.5.0
+Version: 1.6.0
 
 ### Products
 | Product | Tech | Platform |
