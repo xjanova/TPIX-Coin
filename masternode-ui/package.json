@@ -1,6 +1,6 @@
 {
   "name": "tpix-masternode",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "TPIX Chain Master Node — Easy Windows GUI",
   "main": "electron/main.js",
   "author": "Xman Studio",
