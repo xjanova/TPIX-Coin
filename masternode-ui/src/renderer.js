@@ -310,6 +310,7 @@ const LANG = {
             rewardHistory: 'Reward History',
             liveNode: 'LIVE',
             demoNode: 'DEMO',
+            chainValidator: 'Chain Validator',
         },
         status: { stopped: 'Stopped', starting: 'Starting...', running: 'Running', syncing: 'Syncing', error: 'Error' },
     },
@@ -614,6 +615,7 @@ const LANG = {
             rewardHistory: 'ประวัติรางวัล',
             liveNode: 'สด',
             demoNode: 'เดโม',
+            chainValidator: 'ผู้ตรวจสอบเชน',
         },
         status: { stopped: 'หยุด', starting: 'กำลังเริ่ม...', running: 'ทำงาน', syncing: 'กำลังซิงค์', error: 'ข้อผิดพลาด' },
     },
@@ -1519,9 +1521,57 @@ const app = createApp({
         }
 
         // ─── Masternode Map ──────────────────────
-        function loadMasternodes() {
+        async function loadMasternodes() {
             const flag = (code) => String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
-            let nodes = [
+
+            // ── Fetch real validators from TPIX Chain RPC ──
+            let liveValidators = [];
+            try {
+                // Method 1: validators already in network stats (from block extraData)
+                if (network.value.validators && network.value.validators.length > 0) {
+                    liveValidators = [...network.value.validators];
+                }
+                // Method 2: IBFT RPC call
+                if (liveValidators.length === 0) {
+                    const ibftResult = await window.tpix.rpc.call('ibft_getValidatorsByBlockNumber', ['latest']);
+                    if (Array.isArray(ibftResult) && ibftResult.length > 0) {
+                        liveValidators = ibftResult;
+                    }
+                }
+            } catch { /* chain not reachable — will use demo nodes */ }
+
+            // ── Build LIVE validator nodes from chain data ──
+            const validatorLocations = [
+                { lat: 13.75, lng: 100.50, city: 'Bangkok', country: 'TH', countryName: 'Thailand' },
+                { lat: 18.79, lng: 98.98, city: 'Chiang Mai', country: 'TH', countryName: 'Thailand' },
+                { lat: 7.88, lng: 98.39, city: 'Phuket', country: 'TH', countryName: 'Thailand' },
+                { lat: 14.88, lng: 102.83, city: 'Nakhon Ratchasima', country: 'TH', countryName: 'Thailand' },
+            ];
+            let nodes = [];
+
+            liveValidators.forEach((addr, i) => {
+                const loc = validatorLocations[i % validatorLocations.length];
+                nodes.push({
+                    id: 100 + i + 1,
+                    type: 'validator',
+                    addr: addr,
+                    country: loc.country,
+                    countryName: loc.countryName,
+                    lat: loc.lat + (i >= validatorLocations.length ? (Math.random() - 0.5) * 0.5 : 0),
+                    lng: loc.lng + (i >= validatorLocations.length ? (Math.random() - 0.5) * 0.5 : 0),
+                    city: loc.city,
+                    ip: 'tpix-validator-' + (i + 1),
+                    online: network.value.isProducing,
+                    totalRewards: '0',
+                    rewards: [],
+                    isDemo: false,
+                    isLiveValidator: true,
+                    flag: flag(loc.country),
+                });
+            });
+
+            // ── Demo / sample nodes (shown alongside or as fallback) ──
+            const demoNodes = [
                 { id: 1, type: 'validator', addr: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD4e', country: 'TH', countryName: 'Thailand', lat: 13.75, lng: 100.5, city: 'Bangkok', ip: '203.150.45.12', online: true, totalRewards: '45,200', rewards: [
                     { block: 1250000, amount: '8.5', time: '2026-03-25 14:30' }, { block: 1249800, amount: '8.5', time: '2026-03-25 14:20' }, { block: 1249600, amount: '8.5', time: '2026-03-25 14:10' },
                 ]},
@@ -1551,7 +1601,9 @@ const app = createApp({
                 { id: 15, type: 'light', addr: '0x9gB4c5D6e7F8a9B0c1D2e3F4a5B6c7D8e9F056Pq', country: 'BR', countryName: 'Brazil', lat: -23.55, lng: -46.63, city: 'Sao Paulo', ip: '187.45.223.67', online: true, totalRewards: '540', rewards: []},
             ].map(n => ({ ...n, flag: flag(n.country), isDemo: true }));
 
-            // Add user's own node if staking is active
+            nodes = [...nodes, ...demoNodes];
+
+            // ── Add user's own node if staking is active ──
             if (stakingInfo.value && stakingInfo.value.status === 'active') {
                 const s = stakingInfo.value;
                 const myNode = {
@@ -1575,17 +1627,17 @@ const app = createApp({
                     isDemo: false,
                     flag: flag('TH'),
                 };
-                // Remove duplicate if exists
                 nodes = nodes.filter(n => n.id !== 999);
                 nodes.unshift(myNode);
             }
 
             masternodeData.value = nodes;
 
+            const liveCount = nodes.filter(n => !n.isDemo).length;
             const byType = { light: 0, sentinel: 0, guardian: 0, validator: 0 };
             const countrySet = new Set();
             nodes.forEach(n => { byType[n.type]++; countrySet.add(n.country); });
-            masternodeStats.value = { total: nodes.length, countries: countrySet.size, byType };
+            masternodeStats.value = { total: nodes.length, liveCount, countries: countrySet.size, byType };
         }
 
         function initLeafletMap() {
@@ -1649,14 +1701,16 @@ const app = createApp({
                 // Popup with node info
                 const statusDot = node.online ? '<span style="color:#00e676">&#9679;</span>' : '<span style="color:#ff1744">&#9679;</span>';
                 const statusText = node.online ? 'Online' : 'Offline';
-                const demoBadge = node.isDemo
+                const sourceBadge = node.isLiveValidator
+                    ? '<span style="background:rgba(6,182,212,0.2);color:#06b6d4;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;letter-spacing:0.5px;margin-left:4px;animation:livePulse 2s infinite">CHAIN</span>'
+                    : node.isDemo
                     ? '<span style="background:rgba(245,158,11,0.2);color:#f59e0b;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;letter-spacing:0.5px;margin-left:4px">DEMO</span>'
                     : '<span style="background:rgba(0,230,118,0.2);color:#00e676;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;letter-spacing:0.5px;margin-left:4px">LIVE</span>';
                 marker.bindPopup(
                     '<div style="font-family:monospace;font-size:12px;min-width:220px;color:#e2e8f0;background:#0a0f1e;padding:8px;border-radius:8px;border:1px solid rgba(6,182,212,0.3)">' +
                     '<div style="font-size:18px;text-align:center">' + node.flag + '</div>' +
                     '<div style="font-weight:600;color:#06b6d4;margin:4px 0">' + node.city + ', ' + node.countryName + '</div>' +
-                    '<div><span style="background:' + color + '20;color:' + color + ';padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600">' + node.type.toUpperCase() + '</span> ' + demoBadge + ' ' + statusDot + ' ' + statusText + '</div>' +
+                    '<div><span style="background:' + color + '20;color:' + color + ';padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600">' + node.type.toUpperCase() + '</span> ' + sourceBadge + ' ' + statusDot + ' ' + statusText + '</div>' +
                     '<hr style="border:none;border-top:1px solid rgba(6,182,212,0.15);margin:6px 0">' +
                     '<div style="font-size:10px;color:#94a3b8">Wallet</div>' +
                     '<div style="font-size:11px;word-break:break-all">' + node.addr + '</div>' +
