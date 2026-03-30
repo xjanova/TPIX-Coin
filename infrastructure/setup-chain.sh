@@ -70,7 +70,7 @@ for i in $(seq 1 "${NUM_VALIDATORS}"); do
         warn "Validator ${i} keys already exist, skipping generation..."
     else
         mkdir -p "${DIR}"
-        polygon-edge secrets init --data-dir "${DIR}" --json > "${DIR}/secrets.json" 2>&1
+        polygon-edge secrets init --data-dir "${DIR}" --insecure --json > "${DIR}/secrets.json" 2>&1
     fi
 
     # Extract address and node ID using jq
