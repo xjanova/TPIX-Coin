@@ -93,8 +93,8 @@ jobs:
           KEYS_PASSWORD: ${{ secrets.VALIDATOR_KEYS_PASSWORD }}
         run: |
           if [[ -z "${KEYS_PASSWORD:-}" ]]; then
-            echo "::warning::VALIDATOR_KEYS_PASSWORD secret not set. Using default password."
-            KEYS_PASSWORD="tpix-dev-keys-2026"
+            echo "::error::VALIDATOR_KEYS_PASSWORD secret is not configured. Set it in repo Settings > Secrets."
+            exit 1
           fi
           zip -r -P "${KEYS_PASSWORD}" validator-keys-encrypted.zip \
             data/validator-1/ \
