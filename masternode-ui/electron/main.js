@@ -504,6 +504,67 @@ function setupIPC() {
         }
     });
 
+    ipcMain.handle('explorer:getAddressInfo', async (_, address) => {
+        try {
+            if (!address || typeof address !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+                return { success: false, error: 'Invalid address format' };
+            }
+            const { rpcCall } = require('./rpc-client');
+            const addr = address.toLowerCase();
+
+            // Fetch balance and tx count in parallel
+            const [balanceHex, txCountHex, latestHex] = await Promise.all([
+                rpcCall('eth_getBalance', [addr, 'latest'], 10000),
+                rpcCall('eth_getTransactionCount', [addr, 'latest'], 10000),
+                rpcCall('eth_blockNumber', [], 10000),
+            ]);
+
+            // Scan recent blocks for transactions involving this address
+            const latest = parseInt(latestHex, 16);
+            const scanDepth = Math.min(500, latest);
+            const transactions = [];
+            const batchSize = 10;
+
+            for (let i = 0; i < scanDepth && transactions.length < 50; i += batchSize) {
+                const promises = [];
+                for (let j = 0; j < batchSize && (i + j) < scanDepth; j++) {
+                    const hex = '0x' + (latest - i - j).toString(16);
+                    promises.push(rpcCall('eth_getBlockByNumber', [hex, true], 10000).catch(() => null));
+                }
+                const blocks = await Promise.all(promises);
+                for (const block of blocks) {
+                    if (!block || !block.transactions) continue;
+                    for (const tx of block.transactions) {
+                        if ((tx.from && tx.from.toLowerCase() === addr) ||
+                            (tx.to && tx.to.toLowerCase() === addr)) {
+                            transactions.push({
+                                hash: tx.hash,
+                                from: tx.from,
+                                to: tx.to,
+                                value: tx.value,
+                                blockNumber: tx.blockNumber,
+                                timestamp: block.timestamp,
+                            });
+                        }
+                    }
+                    if (transactions.length >= 50) break;
+                }
+            }
+
+            return {
+                success: true,
+                data: {
+                    address: addr,
+                    balance: balanceHex,
+                    txCount: txCountHex,
+                    transactions,
+                },
+            };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
     // ═══════════════════════════════════════════════════════════
     //  SETTINGS (SQLite)
     // ═══════════════════════════════════════════════════════════

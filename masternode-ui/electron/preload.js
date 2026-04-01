@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld('tpix', {
         getBlock: (num) => ipcRenderer.invoke('explorer:getBlock', num),
         getLatestBlocks: (count) => ipcRenderer.invoke('explorer:getLatestBlocks', count),
         getTx: (hash) => ipcRenderer.invoke('explorer:getTx', hash),
+        getAddressInfo: (addr) => ipcRenderer.invoke('explorer:getAddressInfo', addr),
     },
 
     // Living Identity

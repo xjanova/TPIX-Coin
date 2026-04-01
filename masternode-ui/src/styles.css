@@ -1918,6 +1918,26 @@ body {
 .cursor-pointer { cursor: pointer; }
 .mb-2 { margin-bottom: 8px; }
 
+/* ─── Explorer Address View ───────────── */
+.addr-link { cursor: pointer; color: var(--cyan); transition: opacity 0.2s; }
+.addr-link:hover { opacity: 0.75; text-decoration: underline; }
+.explorer-addr-tx-list { display: flex; flex-direction: column; gap: 2px; }
+.explorer-addr-tx-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: rgba(6, 182, 212, 0.03); border-radius: 6px;
+    cursor: pointer; font-size: 12px; transition: background 0.2s;
+}
+.explorer-addr-tx-row:hover { background: rgba(6, 182, 212, 0.08); }
+.addr-tx-dir { min-width: 64px; }
+.dir-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.dir-out { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.dir-in { background: rgba(0, 230, 118, 0.15); color: #00e676; }
+.dir-self { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+.addr-tx-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.addr-tx-time { font-size: 11px; color: var(--text-muted); }
+.addr-tx-counterparty { color: var(--text-secondary); min-width: 130px; font-size: 11px; }
+.addr-tx-value { margin-left: auto; font-weight: 600; white-space: nowrap; }
+
 /* ─── Masternode Map ──────────────────── */
 .node-type-counts { display: flex; gap: 6px; flex-wrap: wrap; }
 .type-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }

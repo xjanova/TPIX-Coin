@@ -265,10 +265,19 @@ const LANG = {
             failed: 'Failed',
             loading: 'Loading...',
             noBlocks: 'No blocks found',
-            searchPlaceholder: 'Block number or Tx hash...',
+            searchPlaceholder: 'Block number, Tx hash, or Address...',
             search: 'Search',
             back: 'Back',
             viewTx: 'View Transaction',
+            addressDetail: 'Address Detail',
+            balance: 'Balance',
+            totalTx: 'Total Transactions',
+            recentTx: 'Recent Transactions',
+            noTxFound: 'No transactions found',
+            direction: 'Direction',
+            sent: 'Sent',
+            received: 'Received',
+            self: 'Self',
         },
         staking: {
             stakingActive: 'Staking Active',
@@ -570,10 +579,19 @@ const LANG = {
             failed: 'ล้มเหลว',
             loading: 'กำลังโหลด...',
             noBlocks: 'ไม่พบบล็อก',
-            searchPlaceholder: 'เลขบล็อกหรือ Tx hash...',
+            searchPlaceholder: 'เลขบล็อก, Tx hash, หรือที่อยู่...',
             search: 'ค้นหา',
             back: 'กลับ',
             viewTx: 'ดูธุรกรรม',
+            addressDetail: 'รายละเอียดที่อยู่',
+            balance: 'ยอดเงิน',
+            totalTx: 'ธุรกรรมทั้งหมด',
+            recentTx: 'ธุรกรรมล่าสุด',
+            noTxFound: 'ไม่พบธุรกรรม',
+            direction: 'ทิศทาง',
+            sent: 'ส่ง',
+            received: 'รับ',
+            self: 'ตัวเอง',
         },
         staking: {
             stakingActive: 'กำลัง Stake',
@@ -883,9 +901,10 @@ const app = createApp({
         const explorerBlocks = ref([]);
         const explorerBlock = ref(null);
         const explorerTx = ref(null);
+        const explorerAddress = ref(null);
         const explorerLoading = ref(false);
         const explorerSearch = ref('');
-        const explorerView = ref('list'); // 'list', 'block', 'tx'
+        const explorerView = ref('list'); // 'list', 'block', 'tx', 'address'
 
         // ─── Masternode Map State ────────────────
         const masternodeData = ref([]);
@@ -1454,6 +1473,7 @@ const app = createApp({
         }
 
         async function viewBlock(blockNum) {
+            explorerPushHistory();
             explorerLoading.value = true;
             explorerView.value = 'block';
             try {
@@ -1472,6 +1492,7 @@ const app = createApp({
         }
 
         async function viewTx(txHash) {
+            explorerPushHistory();
             explorerLoading.value = true;
             explorerView.value = 'tx';
             try {
@@ -1480,10 +1501,22 @@ const app = createApp({
             } catch {} finally { explorerLoading.value = false; }
         }
 
+        async function viewAddress(addr) {
+            explorerPushHistory();
+            explorerLoading.value = true;
+            explorerView.value = 'address';
+            try {
+                const result = await window.tpix.explorer.getAddressInfo(addr);
+                if (result.success) explorerAddress.value = result.data;
+            } catch {} finally { explorerLoading.value = false; }
+        }
+
         async function explorerSearchAction() {
             const q = explorerSearch.value.trim();
             if (!q) return;
-            if (q.startsWith('0x') && q.length === 66) {
+            if (q.startsWith('0x') && q.length === 42) {
+                await viewAddress(q);
+            } else if (q.startsWith('0x') && q.length === 66) {
                 await viewTx(q);
             } else {
                 const num = parseInt(q);
@@ -1491,10 +1524,30 @@ const app = createApp({
             }
         }
 
+        const explorerHistory = [];
+
         function explorerBack() {
-            explorerView.value = 'list';
-            explorerBlock.value = null;
-            explorerTx.value = null;
+            if (explorerHistory.length) {
+                const prev = explorerHistory.pop();
+                explorerView.value = prev.view;
+                explorerBlock.value = prev.block;
+                explorerTx.value = prev.tx;
+                explorerAddress.value = prev.address;
+            } else {
+                explorerView.value = 'list';
+                explorerBlock.value = null;
+                explorerTx.value = null;
+                explorerAddress.value = null;
+            }
+        }
+
+        function explorerPushHistory() {
+            explorerHistory.push({
+                view: explorerView.value,
+                block: explorerBlock.value,
+                tx: explorerTx.value,
+                address: explorerAddress.value,
+            });
         }
 
         function formatBlockTime(hex) {
@@ -1999,8 +2052,8 @@ const app = createApp({
             openReceiveModal, loadTransactions, loadRewards,
             formatTpix,
             // Explorer
-            explorerBlocks, explorerBlock, explorerTx, explorerLoading, explorerSearch, explorerView,
-            loadLatestBlocks, viewBlock, viewTx, explorerSearchAction, explorerBack, goToBlock,
+            explorerBlocks, explorerBlock, explorerTx, explorerAddress, explorerLoading, explorerSearch, explorerView,
+            loadLatestBlocks, viewBlock, viewTx, viewAddress, explorerSearchAction, explorerBack, goToBlock,
             formatBlockTime, hexToNum, hexToTpix,
             // Masternodes
             masternodeData, masternodeStats, loadMasternodes,
