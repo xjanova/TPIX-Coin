@@ -27,9 +27,99 @@
   .tpix-stat-link:hover {
     opacity: 0.85;
   }
+
+  /* ── All Addresses Page ──────────────────── */
+  .tpix-accounts-wrapper { max-width: 1200px; margin: 0 auto; padding: 24px 0 48px; }
+  .tpix-accounts-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  .tpix-accounts-header h1 { font-size: 24px; font-weight: 700; color: #e2e8f0; margin: 0; }
+  .tpix-accounts-stats { display: flex; gap: 16px; flex-wrap: wrap; }
+  .tpix-stat-chip {
+    padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+    background: rgba(6,182,212,0.12); color: #06b6d4;
+  }
+  .tpix-stat-chip.purple { background: rgba(168,85,247,0.12); color: #a855f7; }
+  .tpix-stat-chip.green { background: rgba(0,230,118,0.12); color: #00e676; }
+
+  /* Filters */
+  .tpix-filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .tpix-filter-input {
+    flex: 1; min-width: 220px; padding: 8px 14px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04);
+    color: #e2e8f0; font-size: 14px; outline: none; transition: border 0.2s;
+  }
+  .tpix-filter-input:focus { border-color: #06b6d4; }
+  .tpix-filter-input::placeholder { color: rgba(255,255,255,0.35); }
+  .tpix-filter-select {
+    padding: 8px 12px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06);
+    color: #e2e8f0; font-size: 13px; outline: none; cursor: pointer;
+  }
+  .tpix-filter-select option { background: #1a202c; color: #e2e8f0; }
+
+  /* Table */
+  .tpix-table-wrap {
+    border-radius: 12px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.02);
+  }
+  .tpix-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tpix-table thead th {
+    text-align: left; padding: 12px 16px; font-weight: 600; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: rgba(255,255,255,0.5); border-bottom: 1px solid rgba(255,255,255,0.08);
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .tpix-table thead th:hover { color: #06b6d4; }
+  .tpix-table thead th .sort-arrow { margin-left: 4px; font-size: 10px; }
+  .tpix-table tbody tr {
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    transition: background 0.15s;
+  }
+  .tpix-table tbody tr:hover { background: rgba(6,182,212,0.06); }
+  .tpix-table td { padding: 12px 16px; color: #e2e8f0; }
+  .tpix-table td.rank { color: rgba(255,255,255,0.4); font-weight: 600; width: 50px; }
+  .tpix-table td.addr-cell { font-family: monospace; font-size: 13px; }
+  .tpix-table td.addr-cell a { color: #06b6d4; text-decoration: none; }
+  .tpix-table td.addr-cell a:hover { text-decoration: underline; }
+  .tpix-table td.balance { text-align: right; font-weight: 600; white-space: nowrap; }
+  .tpix-table td.balance .amount { color: #06b6d4; }
+  .tpix-table td.balance .zero { color: rgba(255,255,255,0.25); }
+  .tpix-table td.txcount { text-align: right; }
+  .tpix-table td.type-cell {}
+  .tpix-type-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 10px;
+    font-size: 11px; font-weight: 600;
+  }
+  .tpix-type-eoa { background: rgba(6,182,212,0.12); color: #06b6d4; }
+  .tpix-type-contract { background: rgba(168,85,247,0.12); color: #a855f7; }
+
+  /* Balance bar */
+  .tpix-balance-bar {
+    height: 4px; border-radius: 2px; margin-top: 4px;
+    background: rgba(6,182,212,0.25); max-width: 120px; margin-left: auto;
+  }
+  .tpix-balance-bar-fill { height: 100%; border-radius: 2px; background: #06b6d4; }
+
+  /* Loading & Empty */
+  .tpix-loading { text-align: center; padding: 48px; color: rgba(255,255,255,0.4); }
+  .tpix-loading .spinner {
+    width: 32px; height: 32px; border: 3px solid rgba(6,182,212,0.2);
+    border-top-color: #06b6d4; border-radius: 50%;
+    animation: tpixSpin 0.8s linear infinite; margin: 0 auto 12px;
+  }
+  @keyframes tpixSpin { to { transform: rotate(360deg); } }
+  .tpix-empty { text-align: center; padding: 48px; color: rgba(255,255,255,0.35); }
+  .tpix-results-info { font-size: 12px; color: rgba(255,255,255,0.35); margin-bottom: 8px; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .tpix-table td.addr-cell { font-size: 11px; }
+    .tpix-filters { flex-direction: column; }
+    .tpix-accounts-header { flex-direction: column; align-items: flex-start; }
+  }
 </style>
 
-<!-- Custom Branding + Stat Card Links -->
+<!-- Custom Branding + Stat Card Links + All Addresses Page -->
 <script>
 (function(){
   var logo = "https://tpix.online/images/logotpixexplorer.webp";
@@ -72,31 +162,21 @@
   }
 
   /* ── Stat Card Links (Wallet Addresses → /accounts) ── */
-  var statLinks = {
-    "Wallet addresses": "/accounts",
-  };
+  var statLinks = { "Wallet addresses": "/accounts" };
 
   function linkStatCards(){
     document.querySelectorAll("main h2").forEach(function(h2){
       var text = h2.textContent.trim();
       var href = statLinks[text];
       if(!href) return;
-
-      // Walk up: h2 → skeleton → statValues → wrapper (div.css-hjuo3p)
       var wrapper = h2.parentElement;
       while(wrapper && wrapper.tagName !== "MAIN"){
-        // The wrapper is the div that has same class as the <a> siblings
-        if(wrapper.parentElement && wrapper.parentElement.querySelectorAll(":scope > a[href]").length > 0){
-          break;
-        }
+        if(wrapper.parentElement && wrapper.parentElement.querySelectorAll(":scope > a[href]").length > 0) break;
         wrapper = wrapper.parentElement;
       }
       if(!wrapper || wrapper.tagName === "MAIN" || wrapper.tagName === "A") return;
-      // Already converted
       if(wrapper.dataset.tpixLinked) return;
       wrapper.dataset.tpixLinked = "1";
-
-      // Replace <div> with <a>
       var link = document.createElement("a");
       link.href = href;
       link.className = wrapper.className + " tpix-stat-link";
@@ -106,11 +186,310 @@
     });
   }
 
+  /* ══════════════════════════════════════════════════════
+     All Addresses Page — replaces /accounts with full list
+     ══════════════════════════════════════════════════════ */
+  var accountsInjected = false;
+
+  function isAccountsPage(){
+    return window.location.pathname === "/accounts" || window.location.pathname === "/accounts/";
+  }
+
+  function formatBalance(weiStr){
+    if(!weiStr || weiStr === "0") return "0";
+    var s = weiStr.padStart(19, "0");
+    var whole = s.slice(0, s.length - 18) || "0";
+    var frac = s.slice(s.length - 18, s.length - 12).replace(/0+$/, "");
+    // Add commas to whole part
+    whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return frac ? whole + "." + frac : whole;
+  }
+
+  function shortAddr(addr){
+    if(!addr) return "";
+    return addr.slice(0, 8) + "..." + addr.slice(-6);
+  }
+
+  function injectAccountsPage(){
+    if(accountsInjected || !isAccountsPage()) return;
+    var main = document.querySelector("main");
+    if(!main) return;
+
+    // Check if Blockscout's original content is rendered
+    var title = main.querySelector("h1, h2");
+    if(!title) return;
+
+    accountsInjected = true;
+
+    // Replace main content
+    main.innerHTML = '<div class="tpix-accounts-wrapper" id="tpix-accounts"></div>';
+
+    var container = document.getElementById("tpix-accounts");
+    container.innerHTML = '<div class="tpix-loading"><div class="spinner"></div>Loading all addresses...</div>';
+
+    // Fetch all addresses
+    fetch("/api?module=account&action=listaccounts&page=1&offset=500")
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var addresses = (data.result || []).map(function(a, i){
+        return {
+          address: a.address,
+          balance: a.balance || "0",
+          balanceBig: BigInt(a.balance || "0"),
+          txCount: null,
+          isContract: null,
+          loaded: false,
+        };
+      });
+
+      // Sort by balance descending (top accounts)
+      addresses.sort(function(a, b){
+        if(a.balanceBig > b.balanceBig) return -1;
+        if(a.balanceBig < b.balanceBig) return 1;
+        return 0;
+      });
+
+      // Find max balance for bar chart
+      var maxBalance = addresses.length ? addresses[0].balanceBig : 1n;
+      if(maxBalance === 0n) maxBalance = 1n;
+
+      // State
+      var state = {
+        addresses: addresses,
+        search: "",
+        typeFilter: "all",    // all | eoa | contract
+        balanceFilter: "all", // all | has | zero
+        sortBy: "balance",    // balance | txcount
+        sortDir: "desc",
+        maxBalance: maxBalance,
+        enriched: false,
+      };
+
+      renderPage(container, state);
+      enrichAddresses(state, container);
+    })
+    .catch(function(err){
+      container.innerHTML = '<div class="tpix-empty">Failed to load addresses: ' + err.message + '</div>';
+    });
+  }
+
+  function enrichAddresses(state, container){
+    // Fetch v2 details for each address (batched 5 at a time)
+    var queue = state.addresses.slice();
+    var batchSize = 5;
+
+    function nextBatch(){
+      if(queue.length === 0){
+        state.enriched = true;
+        renderTable(container, state);
+        return;
+      }
+      var batch = queue.splice(0, batchSize);
+      Promise.all(batch.map(function(a){
+        return fetch("/api/v2/addresses/" + a.address)
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            a.txCount = d.transactions_count || 0;
+            a.isContract = d.is_contract || false;
+            a.name = d.name || null;
+            a.loaded = true;
+          })
+          .catch(function(){ a.loaded = true; a.txCount = 0; a.isContract = false; });
+      })).then(function(){
+        renderTable(container, state);
+        nextBatch();
+      });
+    }
+    nextBatch();
+  }
+
+  function getFiltered(state){
+    var list = state.addresses.slice();
+
+    // Search filter
+    if(state.search){
+      var q = state.search.toLowerCase();
+      list = list.filter(function(a){
+        return a.address.toLowerCase().includes(q) || (a.name && a.name.toLowerCase().includes(q));
+      });
+    }
+
+    // Type filter
+    if(state.typeFilter === "eoa") list = list.filter(function(a){ return a.loaded && !a.isContract; });
+    if(state.typeFilter === "contract") list = list.filter(function(a){ return a.loaded && a.isContract; });
+
+    // Balance filter
+    if(state.balanceFilter === "has") list = list.filter(function(a){ return a.balanceBig > 0n; });
+    if(state.balanceFilter === "zero") list = list.filter(function(a){ return a.balanceBig === 0n; });
+
+    // Sort
+    list.sort(function(a, b){
+      var va, vb;
+      if(state.sortBy === "balance"){ va = a.balanceBig; vb = b.balanceBig; }
+      else if(state.sortBy === "txcount"){ va = BigInt(a.txCount || 0); vb = BigInt(b.txCount || 0); }
+      else { va = a.balanceBig; vb = b.balanceBig; }
+      var cmp = va > vb ? -1 : (va < vb ? 1 : 0);
+      return state.sortDir === "asc" ? -cmp : cmp;
+    });
+
+    return list;
+  }
+
+  function renderPage(container, state){
+    var total = state.addresses.length;
+    var withBalance = state.addresses.filter(function(a){ return a.balanceBig > 0n; }).length;
+    var contracts = state.addresses.filter(function(a){ return a.isContract; }).length;
+
+    container.innerHTML = ''
+      + '<div class="tpix-accounts-header">'
+      + '  <h1>All Addresses</h1>'
+      + '  <div class="tpix-accounts-stats">'
+      + '    <span class="tpix-stat-chip">' + total + ' Total</span>'
+      + '    <span class="tpix-stat-chip green">' + withBalance + ' With Balance</span>'
+      + '    <span class="tpix-stat-chip purple" id="tpix-contract-count">' + contracts + ' Contracts</span>'
+      + '  </div>'
+      + '</div>'
+      + '<div class="tpix-filters">'
+      + '  <input class="tpix-filter-input" id="tpix-search" type="text" placeholder="Search by address or name...">'
+      + '  <select class="tpix-filter-select" id="tpix-type-filter">'
+      + '    <option value="all">All Types</option>'
+      + '    <option value="eoa">EOA (Wallet)</option>'
+      + '    <option value="contract">Contract</option>'
+      + '  </select>'
+      + '  <select class="tpix-filter-select" id="tpix-balance-filter">'
+      + '    <option value="all">All Balances</option>'
+      + '    <option value="has">Has Balance</option>'
+      + '    <option value="zero">Zero Balance</option>'
+      + '  </select>'
+      + '</div>'
+      + '<div id="tpix-results-info" class="tpix-results-info"></div>'
+      + '<div class="tpix-table-wrap">'
+      + '  <table class="tpix-table">'
+      + '    <thead><tr>'
+      + '      <th>#</th>'
+      + '      <th>Address</th>'
+      + '      <th>Type</th>'
+      + '      <th class="tpix-sortable" data-sort="balance">Balance TPIX <span class="sort-arrow">&#9660;</span></th>'
+      + '      <th class="tpix-sortable" data-sort="txcount">Txn Count <span class="sort-arrow"></span></th>'
+      + '    </tr></thead>'
+      + '    <tbody id="tpix-table-body"></tbody>'
+      + '  </table>'
+      + '</div>';
+
+    // Bind events
+    var searchEl = document.getElementById("tpix-search");
+    var typeEl = document.getElementById("tpix-type-filter");
+    var balanceEl = document.getElementById("tpix-balance-filter");
+
+    var debounceTimer;
+    searchEl.addEventListener("input", function(){
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function(){
+        state.search = searchEl.value.trim();
+        renderTable(container, state);
+      }, 300);
+    });
+
+    typeEl.addEventListener("change", function(){
+      state.typeFilter = typeEl.value;
+      renderTable(container, state);
+    });
+
+    balanceEl.addEventListener("change", function(){
+      state.balanceFilter = balanceEl.value;
+      renderTable(container, state);
+    });
+
+    // Sort headers
+    document.querySelectorAll(".tpix-sortable").forEach(function(th){
+      th.addEventListener("click", function(){
+        var col = th.dataset.sort;
+        if(state.sortBy === col){
+          state.sortDir = state.sortDir === "desc" ? "asc" : "desc";
+        } else {
+          state.sortBy = col;
+          state.sortDir = "desc";
+        }
+        updateSortArrows(state);
+        renderTable(container, state);
+      });
+    });
+
+    renderTable(container, state);
+  }
+
+  function updateSortArrows(state){
+    document.querySelectorAll(".tpix-sortable").forEach(function(th){
+      var arrow = th.querySelector(".sort-arrow");
+      if(th.dataset.sort === state.sortBy){
+        arrow.innerHTML = state.sortDir === "desc" ? "&#9660;" : "&#9650;";
+      } else {
+        arrow.innerHTML = "";
+      }
+    });
+  }
+
+  function renderTable(container, state){
+    var tbody = document.getElementById("tpix-table-body");
+    var info = document.getElementById("tpix-results-info");
+    var contractChip = document.getElementById("tpix-contract-count");
+    if(!tbody) return;
+
+    // Update contract count as enrichment progresses
+    if(contractChip){
+      var contracts = state.addresses.filter(function(a){ return a.isContract; }).length;
+      contractChip.textContent = contracts + " Contracts";
+    }
+
+    var filtered = getFiltered(state);
+
+    if(info){
+      if(state.search || state.typeFilter !== "all" || state.balanceFilter !== "all"){
+        info.textContent = "Showing " + filtered.length + " of " + state.addresses.length + " addresses";
+      } else {
+        info.textContent = "";
+      }
+    }
+
+    if(filtered.length === 0){
+      tbody.innerHTML = '<tr><td colspan="5" class="tpix-empty">No addresses match your filters</td></tr>';
+      return;
+    }
+
+    var maxBal = state.maxBalance;
+    var html = "";
+    for(var i = 0; i < filtered.length; i++){
+      var a = filtered[i];
+      var bal = formatBalance(a.balance);
+      var isZero = a.balanceBig === 0n;
+      var barPct = maxBal > 0n ? Number((a.balanceBig * 100n) / maxBal) : 0;
+      var typeHtml = !a.loaded
+        ? '<span style="color:rgba(255,255,255,0.2)">...</span>'
+        : a.isContract
+          ? '<span class="tpix-type-badge tpix-type-contract">Contract</span>'
+          : '<span class="tpix-type-badge tpix-type-eoa">EOA</span>';
+      var txHtml = a.loaded ? (a.txCount || 0).toLocaleString() : '<span style="color:rgba(255,255,255,0.2)">...</span>';
+      var nameHtml = a.name ? ' <span style="color:#a855f7;font-size:12px;margin-left:6px;">' + a.name + '</span>' : '';
+
+      html += '<tr>'
+        + '<td class="rank">' + (i + 1) + '</td>'
+        + '<td class="addr-cell"><a href="/address/' + a.address + '">' + shortAddr(a.address) + '</a>' + nameHtml + '</td>'
+        + '<td class="type-cell">' + typeHtml + '</td>'
+        + '<td class="balance"><span class="' + (isZero ? 'zero' : 'amount') + '">' + bal + '</span>'
+        + (barPct > 0 ? '<div class="tpix-balance-bar"><div class="tpix-balance-bar-fill" style="width:' + barPct + '%"></div></div>' : '')
+        + '</td>'
+        + '<td class="txcount">' + txHtml + '</td>'
+        + '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
   /* ── Run All ────────────────────────────────────────── */
   function runAll(){
     replaceLogo();
     replaceFooter();
     linkStatCards();
+    injectAccountsPage();
   }
 
   // Initial run
@@ -121,10 +500,18 @@
   }
 
   // MutationObserver for SPA navigation (Next.js re-renders)
-  var obs = new MutationObserver(function(){ runAll(); });
+  var prevPath = window.location.pathname;
+  var obs = new MutationObserver(function(){
+    // Reset accounts injection on page change
+    if(window.location.pathname !== prevPath){
+      prevPath = window.location.pathname;
+      accountsInjected = false;
+    }
+    runAll();
+  });
   obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
 
-  // Stop observing after 60s to save resources
-  setTimeout(function(){ obs.disconnect(); }, 60000);
+  // Stop observing after 120s to save resources
+  setTimeout(function(){ obs.disconnect(); }, 120000);
 })();
 </script>
