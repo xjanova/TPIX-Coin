@@ -1,0 +1,130 @@
+<!--
+  TPIX Chain Explorer — Custom Branding & Enhancements
+  Injected into Blockscout <head> via NEXT_PUBLIC_VIEWS_CUSTOM_HEAD_TAG
+  or Nginx sub_filter.
+  Developed by Xman Studio
+-->
+
+<!-- Custom Branding Styles -->
+<style>
+  /* TPIX Logo override */
+  header a[href="/"] img, nav a[href="/"] img {
+    height: 60px !important;
+    max-height: none !important;
+    width: auto !important;
+  }
+  /* Accent color → TPIX Cyan */
+  :root {
+    --chakra-colors-blue-600: #06b6d4 !important;
+    --chakra-colors-blue-500: #06b6d4 !important;
+  }
+  /* Wallet addresses card — clickable style */
+  .tpix-stat-link {
+    text-decoration: none !important;
+    color: inherit !important;
+    cursor: pointer !important;
+  }
+  .tpix-stat-link:hover {
+    opacity: 0.85;
+  }
+</style>
+
+<!-- Custom Branding + Stat Card Links -->
+<script>
+(function(){
+  var logo = "https://tpix.online/images/logotpixexplorer.webp";
+
+  /* ── Logo Replacement ───────────────────────────────── */
+  function replaceLogo(){
+    document.querySelectorAll("header a[href='/'] img, nav a[href='/'] img").forEach(function(img){
+      if(img.src !== logo){
+        img.src = logo;
+        img.style.height = "60px";
+        img.style.maxHeight = "none";
+        img.style.width = "auto";
+      }
+    });
+    document.querySelectorAll("header a[href='/'] svg, nav a[href='/'] svg").forEach(function(svg){
+      var img = document.createElement("img");
+      img.src = logo;
+      img.alt = "TPIX Explorer";
+      img.style.height = "60px";
+      img.style.width = "auto";
+      svg.parentNode.replaceChild(img, svg);
+    });
+  }
+
+  /* ── Footer Copyright ───────────────────────────────── */
+  function replaceFooter(){
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while(walker.nextNode()){
+      var node = walker.currentNode;
+      if(/Blockscout\s+Limited/i.test(node.textContent)){
+        node.textContent = node.textContent.replace(/Blockscout\s+Limited/gi, "Xman Studio 2024-2026");
+      }
+    }
+    document.querySelectorAll("footer a[href*='blockscout.com'], a[href*='blockscout.com']").forEach(function(a){
+      if(a.closest("footer") || a.closest("[class*='footer']")){
+        a.href = "https://xman4289.com";
+        if(a.textContent.trim().toLowerCase().includes("blockscout")) a.textContent = "Xman Studio";
+      }
+    });
+  }
+
+  /* ── Stat Card Links (Wallet Addresses → /accounts) ── */
+  var statLinks = {
+    "Wallet addresses": "/accounts",
+  };
+
+  function linkStatCards(){
+    document.querySelectorAll("main h2").forEach(function(h2){
+      var text = h2.textContent.trim();
+      var href = statLinks[text];
+      if(!href) return;
+
+      // Walk up: h2 → skeleton → statValues → wrapper (div.css-hjuo3p)
+      var wrapper = h2.parentElement;
+      while(wrapper && wrapper.tagName !== "MAIN"){
+        // The wrapper is the div that has same class as the <a> siblings
+        if(wrapper.parentElement && wrapper.parentElement.querySelectorAll(":scope > a[href]").length > 0){
+          break;
+        }
+        wrapper = wrapper.parentElement;
+      }
+      if(!wrapper || wrapper.tagName === "MAIN" || wrapper.tagName === "A") return;
+      // Already converted
+      if(wrapper.dataset.tpixLinked) return;
+      wrapper.dataset.tpixLinked = "1";
+
+      // Replace <div> with <a>
+      var link = document.createElement("a");
+      link.href = href;
+      link.className = wrapper.className + " tpix-stat-link";
+      link.style.cssText = wrapper.style.cssText;
+      link.innerHTML = wrapper.innerHTML;
+      wrapper.parentNode.replaceChild(link, wrapper);
+    });
+  }
+
+  /* ── Run All ────────────────────────────────────────── */
+  function runAll(){
+    replaceLogo();
+    replaceFooter();
+    linkStatCards();
+  }
+
+  // Initial run
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", runAll);
+  } else {
+    runAll();
+  }
+
+  // MutationObserver for SPA navigation (Next.js re-renders)
+  var obs = new MutationObserver(function(){ runAll(); });
+  obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+
+  // Stop observing after 60s to save resources
+  setTimeout(function(){ obs.disconnect(); }, 60000);
+})();
+</script>
