@@ -45,6 +45,10 @@ masternode-app/node_modules/
 .env
 *.env.local
 
+# Keystore
+*.keystore
+*.jks
+
 # Symbolication related
 app.*.symbols
 

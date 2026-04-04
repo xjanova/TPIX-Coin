@@ -1,7 +1,7 @@
 name: tpix_wallet
 description: "TPIX Wallet — The official wallet for TPIX Chain. Send, receive, and manage TPIX with stunning 3D animations."
 publish_to: 'none'
-version: 1.6.1+12
+version: 1.7.0+13
 
 environment:
   sdk: ^3.10.4
@@ -50,6 +50,7 @@ dependencies:
 
   # Auto-update
   dio: ^5.8.0+1
+  open_filex: ^4.6.0
 
 dev_dependencies:
   flutter_test:
