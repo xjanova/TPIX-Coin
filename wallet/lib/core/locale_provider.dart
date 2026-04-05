@@ -87,6 +87,13 @@ class LocaleProvider extends ChangeNotifier {
       'send.goBack': 'กลับหน้าหลัก',
       'send.scanQR': 'สแกน QR Code',
       'send.scanHint': 'วาง QR Code ที่อยู่ผู้รับในกรอบ',
+      'send.confirmTitle': 'ยืนยันการส่ง',
+      'send.confirmTo': 'ผู้รับ',
+      'send.confirmAmount': 'จำนวน',
+      'send.confirmButton': 'ยืนยันส่ง TPIX',
+      'send.cancel': 'ยกเลิก',
+      'send.insufficientBalance': 'ยอดไม่เพียงพอ',
+      'send.authRequired': 'ยืนยันตัวตนเพื่อส่ง TPIX',
 
       // Receive
       'receive.title': 'รับ TPIX',
@@ -128,6 +135,7 @@ class LocaleProvider extends ChangeNotifier {
       'tx.block': 'บล็อก',
       'tx.copyHash': 'คัดลอก TX Hash',
       'tx.hashCopied': 'คัดลอก TX Hash แล้ว!',
+      'tx.viewExplorer': 'ดูใน Explorer',
 
       // Identity / Recovery
       'identity.title': 'การปกป้องตัวตน',
@@ -240,6 +248,13 @@ class LocaleProvider extends ChangeNotifier {
       'send.goBack': 'Back to Home',
       'send.scanQR': 'Scan QR Code',
       'send.scanHint': 'Place recipient QR Code in frame',
+      'send.confirmTitle': 'Confirm Send',
+      'send.confirmTo': 'To',
+      'send.confirmAmount': 'Amount',
+      'send.confirmButton': 'Confirm Send TPIX',
+      'send.cancel': 'Cancel',
+      'send.insufficientBalance': 'Insufficient balance',
+      'send.authRequired': 'Authenticate to send TPIX',
 
       // Receive
       'receive.title': 'Receive TPIX',
@@ -281,6 +296,7 @@ class LocaleProvider extends ChangeNotifier {
       'tx.block': 'Block',
       'tx.copyHash': 'Copy TX Hash',
       'tx.hashCopied': 'TX Hash copied!',
+      'tx.viewExplorer': 'View in Explorer',
 
       // Identity / Recovery
       'identity.title': 'Identity Protection',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
@@ -87,12 +88,40 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       return;
     }
 
+    // Balance check
+    final wallet = context.read<WalletProvider>();
+    if (amount > wallet.balance) {
+      _showError(l.t('send.insufficientBalance'));
+      return;
+    }
+
+    // Biometric auth (graceful fallback if not available)
+    try {
+      final localAuth = LocalAuthentication();
+      final canAuth = await localAuth.canCheckBiometrics || await localAuth.isDeviceSupported();
+      if (canAuth) {
+        final didAuth = await localAuth.authenticate(
+          localizedReason: l.t('send.authRequired'),
+          options: const AuthenticationOptions(biometricOnly: false),
+        );
+        if (!didAuth) return;
+      }
+    } catch (_) {
+      // Biometric not available — skip
+    }
+
+    if (!mounted) return;
+
+    // Show confirmation dialog
+    final confirmed = await _showConfirmation(address, amount, l);
+    if (confirmed != true || !mounted) return;
+
     setState(() => _isSending = true);
     SynthService.playSend();
 
     try {
-      final wallet = context.read<WalletProvider>();
       final txHash = await wallet.sendTPIX(address, amount);
+      if (!mounted) return;
       setState(() {
         _isSent = true;
         _txHash = txHash;
@@ -101,10 +130,93 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       _successController.forward();
       SynthService.playSendSuccess();
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isSending = false);
       SynthService.playError();
-      _showError(e.toString());
+      _showError(e.toString().replaceFirst('Exception: ', ''));
     }
+  }
+
+  Future<bool?> _showConfirmation(String address, double amount, LocaleProvider l) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: AppTheme.bgCard,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(2),
+                  color: AppTheme.textMuted.withValues(alpha: 0.3),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(l.t('send.confirmTitle'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+            const SizedBox(height: 20),
+            // Recipient
+            _confirmRow(l.t('send.confirmTo'), '${address.substring(0, 8)}...${address.substring(address.length - 6)}'),
+            // Amount
+            _confirmRow(l.t('send.confirmAmount'), '${amount.toStringAsFixed(4)} TPIX'),
+            // Gas
+            _confirmRow('Gas Fee', 'Free (0 TPIX)', valueColor: AppTheme.success),
+            const SizedBox(height: 24),
+            // Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(l.t('send.cancel'), style: const TextStyle(color: Colors.white70)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(l.t('send.confirmButton'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _confirmRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Text(label, style: const TextStyle(fontSize: 14, color: AppTheme.textMuted)),
+          const Spacer(),
+          Text(value, style: TextStyle(fontSize: 14, color: valueColor ?? Colors.white, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
   }
 
   void _showError(String msg) {

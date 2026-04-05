@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../models/tx_record.dart';
 import '../providers/wallet_provider.dart';
+import '../services/wallet_service.dart';
 class TxHistoryScreen extends StatefulWidget {
   const TxHistoryScreen({super.key});
 
@@ -296,6 +298,24 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  final url = Uri.parse('${TpixChain.explorerUrl}/tx/${tx.txHash}');
+                  launchUrl(url, mode: LaunchMode.externalApplication);
+                  Navigator.pop(context);
+                },
+                icon: const Icon(Icons.open_in_new, size: 16, color: Colors.white),
+                label: Text(l.t('tx.viewExplorer'), style: const TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),

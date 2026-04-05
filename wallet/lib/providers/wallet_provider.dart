@@ -19,6 +19,10 @@ class WalletProvider extends ChangeNotifier {
   bool _isScanning = false;
 
   Timer? _balanceTimer;
+  Timer? _txPollTimer;
+  String? _pendingTxHash;
+  int _pollCount = 0;
+  static const int _maxPolls = 30; // 30 x 3s = 90s max
 
   // Getters
   bool get isLoading => _isLoading;
@@ -162,7 +166,8 @@ class WalletProvider extends ChangeNotifier {
       );
       _lastTxHash = txHash;
       await refreshBalance();
-      await loadTxHistory(); // Reload to show new pending TX
+      await loadTxHistory();
+      _startTxPolling(txHash);
       return txHash;
     } catch (e) {
       _error = e.toString();
@@ -263,6 +268,36 @@ class WalletProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  TX Status Polling
+  // ═══════════════════════════════════════════════════════════
+
+  void _startTxPolling(String txHash) {
+    _txPollTimer?.cancel();
+    _pendingTxHash = txHash;
+    _pollCount = 0;
+
+    _txPollTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) async {
+        _pollCount++;
+        if (_pollCount > _maxPolls || _pendingTxHash == null) {
+          _txPollTimer?.cancel();
+          return;
+        }
+
+        final status = await _walletService.checkTransactionStatus(_pendingTxHash!);
+        if (status != null) {
+          await _walletService.updateTxStatus(_pendingTxHash!, status);
+          await loadTxHistory();
+          await refreshBalance();
+          _txPollTimer?.cancel();
+          _pendingTxHash = null;
+        }
+      },
+    );
+  }
+
   /// Lock wallet
   void lock() {
     _walletService.lock();
@@ -295,6 +330,7 @@ class WalletProvider extends ChangeNotifier {
   @override
   void dispose() {
     _balanceTimer?.cancel();
+    _txPollTimer?.cancel();
     _walletService.dispose();
     super.dispose();
   }

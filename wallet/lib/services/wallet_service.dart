@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:bip32/bip32.dart' as bip32;
+import 'package:crypto/crypto.dart' show Hmac, sha256;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hex/hex.dart';
 import 'package:web3dart/web3dart.dart';
@@ -34,6 +36,8 @@ class WalletService {
   static const _keyActiveSlot = 'tpix_active_slot';
   static const _keyMnemonic = 'tpix_mnemonic';    // HD seed (shared)
   static const _keyTxHistory = 'tpix_tx_history';  // JSON map { slot: [TxRecord] }
+  static const _keyPinSalt = 'tpix_pin_salt';
+  static const int _pbkdf2Iterations = 10000;
 
   // Legacy single-wallet keys (for migration)
   static const _legacyKeyAddress = 'tpix_address';
@@ -269,8 +273,10 @@ class WalletService {
       throw Exception('No wallet to save');
     }
 
-    final pinHash = _hashPin(pin);
+    final salt = _generateSalt();
+    final pinHash = _hashPin(pin, salt);
     await _storage.write(key: _keyPin, value: pinHash);
+    await _storage.write(key: _keyPinSalt, value: salt);
 
     if (_mnemonic != null) {
       await _storage.write(key: _keyMnemonic, value: _mnemonic);
@@ -299,7 +305,20 @@ class WalletService {
   Future<bool> unlockWallet(String pin) async {
     final storedPinHash = await _storage.read(key: _keyPin);
     if (storedPinHash == null) return false;
-    if (_hashPin(pin) != storedPinHash) return false;
+
+    final salt = await _storage.read(key: _keyPinSalt);
+    if (salt != null) {
+      // PBKDF2 format
+      if (_hashPin(pin, salt) != storedPinHash) return false;
+    } else {
+      // Legacy format — verify then migrate
+      if (_hashPinLegacy(pin) != storedPinHash) return false;
+      // Migrate to PBKDF2
+      final newSalt = _generateSalt();
+      final newHash = _hashPin(pin, newSalt);
+      await _storage.write(key: _keyPin, value: newHash);
+      await _storage.write(key: _keyPinSalt, value: newSalt);
+    }
 
     // Load wallet list
     final walletsJson = await _storage.read(key: _keyWallets);
@@ -568,10 +587,91 @@ class WalletService {
   }
 
   // ================================================================
+  // Transaction Status Polling
+  // ================================================================
+
+  /// Check if a TX is confirmed on-chain, update local record
+  Future<String?> checkTransactionStatus(String txHash) async {
+    try {
+      final client = http.Client();
+      try {
+        final response = await client.post(
+          Uri.parse(TpixChain.rpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'jsonrpc': '2.0',
+            'method': 'eth_getTransactionReceipt',
+            'params': [txHash],
+            'id': 1,
+          }),
+        );
+        final body = jsonDecode(response.body);
+        final result = body['result'];
+        if (result == null) return null; // still pending
+
+        final statusHex = result['status'] as String? ?? '0x1';
+        return statusHex == '0x1' ? 'confirmed' : 'failed';
+      } finally {
+        client.close();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Update a TX record status in local storage
+  Future<void> updateTxStatus(String txHash, String newStatus) async {
+    final history = await getTxHistory();
+    final key = _activeSlot.toString();
+    final txList = history[key];
+    if (txList == null) return;
+
+    final idx = txList.indexWhere((t) => t.txHash == txHash);
+    if (idx == -1) return;
+
+    final old = txList[idx];
+    txList[idx] = TxRecord(
+      txHash: old.txHash,
+      fromAddress: old.fromAddress,
+      toAddress: old.toAddress,
+      value: old.value,
+      direction: old.direction,
+      status: newStatus,
+      blockNumber: old.blockNumber,
+      timestamp: old.timestamp,
+      createdAt: old.createdAt,
+    );
+    await _saveTxHistory(history);
+  }
+
+  // ================================================================
   // Helpers
   // ================================================================
 
-  String _hashPin(String pin) {
+  /// PBKDF2-HMAC-SHA256 PIN hashing
+  String _hashPin(String pin, String saltHex) {
+    final salt = Uint8List.fromList(HEX.decode(saltHex));
+    var key = Uint8List.fromList(utf8.encode(pin));
+
+    for (int i = 0; i < _pbkdf2Iterations; i++) {
+      final hmac = Hmac(sha256, key);
+      key = Uint8List.fromList(hmac.convert(salt).bytes);
+    }
+    return HEX.encode(key);
+  }
+
+  /// Generate random salt
+  String _generateSalt() {
+    final rng = Random.secure();
+    final salt = Uint8List(16);
+    for (int i = 0; i < 16; i++) {
+      salt[i] = rng.nextInt(256);
+    }
+    return HEX.encode(salt);
+  }
+
+  /// Legacy weak hash (for migration detection)
+  String _hashPinLegacy(String pin) {
     final bytes = utf8.encode(pin + 'tpix_salt_v1');
     var hash = 0;
     for (var byte in bytes) {
