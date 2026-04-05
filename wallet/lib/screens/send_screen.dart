@@ -48,24 +48,11 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
         builder: (_) => QRScannerScreen(
           titleKey: 'send.scanQR',
           onScanned: (value) {
-            // Parse ethereum: URI format (e.g., ethereum:0x123...@4289?value=100)
-            String address = value;
-            if (value.startsWith('ethereum:')) {
-              address = value.substring('ethereum:'.length);
-              // Remove chain ID (@4289) and query params (?value=...)
-              if (address.contains('@')) {
-                address = address.split('@')[0];
-              }
-              if (address.contains('?')) {
-                address = address.split('?')[0];
-              }
-            }
-            // Validate and set address
-            if (RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(address)) {
-              _addressController.text = address;
+            final parsed = WalletService.parseAddressFromQR(value);
+            if (parsed != null) {
+              _addressController.text = parsed;
             } else {
-              // Try raw value as-is (might be a plain address)
-              _addressController.text = value;
+              _showError(context.read<LocaleProvider>().t('send.invalidAddress'));
             }
             Navigator.pop(context);
           },
@@ -80,7 +67,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     final amount = double.tryParse(_amountController.text.trim());
 
     final l = context.read<LocaleProvider>();
-    if (address.isEmpty || !address.startsWith('0x') || address.length != 42) {
+    if (!WalletService.isValidAddress(address)) {
       _showError(l.t('send.invalidAddress'));
       return;
     }
@@ -96,19 +83,26 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       return;
     }
 
-    // Biometric auth (graceful fallback if not available)
+    // Authentication required before send
+    bool authenticated = false;
     try {
       final localAuth = LocalAuthentication();
       final canAuth = await localAuth.canCheckBiometrics || await localAuth.isDeviceSupported();
       if (canAuth) {
-        final didAuth = await localAuth.authenticate(
+        authenticated = await localAuth.authenticate(
           localizedReason: l.t('send.authRequired'),
           options: const AuthenticationOptions(biometricOnly: false),
         );
-        if (!didAuth) return;
       }
     } catch (_) {
-      // Biometric not available — skip
+      // Biometric unavailable
+    }
+
+    // Fallback: require PIN re-entry if biometric failed or unavailable
+    if (!authenticated) {
+      if (!mounted) return;
+      final pinOk = await _showPinVerification(l);
+      if (pinOk != true) return;
     }
 
     if (!mounted) return;
@@ -205,6 +199,62 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
         ),
       ),
     );
+  }
+
+  Future<bool?> _showPinVerification(LocaleProvider l) {
+    final pinController = TextEditingController();
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(l.t('pin.unlock'), style: const TextStyle(color: Colors.white, fontSize: 16)),
+        content: TextField(
+          controller: pinController,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
+          textAlign: TextAlign.center,
+          decoration: InputDecoration(
+            counterText: '',
+            hintText: '••••••',
+            hintStyle: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.3)),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3))),
+            focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary)),
+          ),
+          onChanged: (val) async {
+            if (val.length == 6) {
+              final wallet = context.read<WalletProvider>();
+              // Verify PIN by trying unlock (already unlocked, so just check hash)
+              final service = WalletService();
+              final isLocked = await service.isPinLocked();
+              if (isLocked) {
+                if (ctx.mounted) Navigator.pop(ctx, false);
+                return;
+              }
+              // Use the provider's existing unlock check
+              final success = await wallet.unlock(val);
+              if (ctx.mounted) Navigator.pop(ctx, success);
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              pinController.dispose();
+              Navigator.pop(ctx, false);
+            },
+            child: Text(l.t('send.cancel'), style: const TextStyle(color: Colors.grey)),
+          ),
+        ],
+      ),
+    ).then((result) {
+      pinController.dispose();
+      return result;
+    });
   }
 
   Widget _confirmRow(String label, String value, {Color? valueColor}) {

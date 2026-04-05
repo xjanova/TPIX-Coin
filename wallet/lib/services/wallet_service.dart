@@ -37,7 +37,11 @@ class WalletService {
   static const _keyMnemonic = 'tpix_mnemonic';    // HD seed (shared)
   static const _keyTxHistory = 'tpix_tx_history';  // JSON map { slot: [TxRecord] }
   static const _keyPinSalt = 'tpix_pin_salt';
-  static const int _pbkdf2Iterations = 10000;
+  static const _keyPinAttempts = 'tpix_pin_attempts';
+  static const _keyPinLockUntil = 'tpix_pin_lock_until';
+  static const int _pbkdf2Iterations = 100000;
+  static const int _maxPinAttempts = 5;
+  static const int _pinLockoutMinutes = 5;
 
   // Legacy single-wallet keys (for migration)
   static const _legacyKeyAddress = 'tpix_address';
@@ -144,7 +148,6 @@ class WalletService {
     return {
       'mnemonic': mnemonic,
       'address': address,
-      'privateKey': privateKeyHex,
       'slot': slot.toString(),
     };
   }
@@ -166,6 +169,11 @@ class WalletService {
 
     final slot = _nextSlot();
     final address = credentials.address.hex;
+
+    // Check for duplicate address
+    if (_wallets.any((w) => w.address.toLowerCase() == address.toLowerCase())) {
+      throw Exception('Wallet already exists');
+    }
 
     final walletInfo = WalletInfo(
       slot: slot,
@@ -301,24 +309,67 @@ class WalletService {
     await _storage.write(key: _keyWallets, value: json);
   }
 
+  /// Check if PIN is currently locked out
+  Future<bool> isPinLocked() async {
+    final lockUntilStr = await _storage.read(key: _keyPinLockUntil);
+    if (lockUntilStr == null) return false;
+    final lockUntil = int.tryParse(lockUntilStr) ?? 0;
+    return DateTime.now().millisecondsSinceEpoch < lockUntil;
+  }
+
+  /// Get remaining lockout seconds
+  Future<int> getPinLockRemaining() async {
+    final lockUntilStr = await _storage.read(key: _keyPinLockUntil);
+    if (lockUntilStr == null) return 0;
+    final lockUntil = int.tryParse(lockUntilStr) ?? 0;
+    final remaining = lockUntil - DateTime.now().millisecondsSinceEpoch;
+    return remaining > 0 ? (remaining / 1000).ceil() : 0;
+  }
+
   /// Load wallet from storage (requires PIN)
   Future<bool> unlockWallet(String pin) async {
+    // Check rate limiting
+    if (await isPinLocked()) return false;
+
     final storedPinHash = await _storage.read(key: _keyPin);
     if (storedPinHash == null) return false;
 
+    bool pinCorrect;
     final salt = await _storage.read(key: _keyPinSalt);
     if (salt != null) {
-      // PBKDF2 format
-      if (_hashPin(pin, salt) != storedPinHash) return false;
+      // PBKDF2 format — constant-time comparison
+      final computed = _hashPin(pin, salt);
+      pinCorrect = _constantTimeEquals(computed, storedPinHash);
     } else {
       // Legacy format — verify then migrate
-      if (_hashPinLegacy(pin) != storedPinHash) return false;
-      // Migrate to PBKDF2
-      final newSalt = _generateSalt();
-      final newHash = _hashPin(pin, newSalt);
-      await _storage.write(key: _keyPin, value: newHash);
-      await _storage.write(key: _keyPinSalt, value: newSalt);
+      final computed = _hashPinLegacy(pin);
+      pinCorrect = _constantTimeEquals(computed, storedPinHash);
+      if (pinCorrect) {
+        // Migrate to PBKDF2
+        final newSalt = _generateSalt();
+        final newHash = _hashPin(pin, newSalt);
+        await _storage.write(key: _keyPin, value: newHash);
+        await _storage.write(key: _keyPinSalt, value: newSalt);
+      }
     }
+
+    if (!pinCorrect) {
+      // Increment failed attempts
+      final attemptsStr = await _storage.read(key: _keyPinAttempts) ?? '0';
+      final attempts = (int.tryParse(attemptsStr) ?? 0) + 1;
+      await _storage.write(key: _keyPinAttempts, value: attempts.toString());
+      if (attempts >= _maxPinAttempts) {
+        final lockUntil = DateTime.now().millisecondsSinceEpoch +
+            (_pinLockoutMinutes * 60 * 1000);
+        await _storage.write(key: _keyPinLockUntil, value: lockUntil.toString());
+        await _storage.write(key: _keyPinAttempts, value: '0');
+      }
+      return false;
+    }
+
+    // Reset attempts on success
+    await _storage.delete(key: _keyPinAttempts);
+    await _storage.delete(key: _keyPinLockUntil);
 
     // Load wallet list
     final walletsJson = await _storage.read(key: _keyWallets);
@@ -671,6 +722,16 @@ class WalletService {
     return HEX.encode(salt);
   }
 
+  /// Constant-time string comparison (prevents timing attacks)
+  bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    var result = 0;
+    for (int i = 0; i < a.length; i++) {
+      result |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return result == 0;
+  }
+
   /// Legacy weak hash (for migration detection)
   String _hashPinLegacy(String pin) {
     final bytes = utf8.encode(pin + 'tpix_salt_v1');
@@ -679,6 +740,44 @@ class WalletService {
       hash = ((hash << 5) - hash + byte) & 0xFFFFFFFF;
     }
     return hash.toRadixString(16);
+  }
+
+  /// Validate Ethereum address with ERC-55 checksum if mixed-case
+  static bool isValidAddress(String address) {
+    if (!RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(address)) return false;
+    // If all lowercase or all uppercase, accept without checksum check
+    final hex = address.substring(2);
+    if (hex == hex.toLowerCase() || hex == hex.toUpperCase()) return true;
+    // ERC-55 checksum validation for mixed-case addresses
+    final hashBytes = sha256.convert(utf8.encode(hex.toLowerCase())).bytes;
+    final hashHex = HEX.encode(hashBytes);
+    for (int i = 0; i < 40; i++) {
+      final hashNibble = int.parse(hashHex[i], radix: 16);
+      if (hashNibble >= 8) {
+        if (hex[i] != hex[i].toUpperCase()) return false;
+      } else {
+        if (hex[i] != hex[i].toLowerCase()) return false;
+      }
+    }
+    return true;
+  }
+
+  /// Parse and sanitize ethereum: URI or plain address from QR code
+  static String? parseAddressFromQR(String raw) {
+    String address = raw.trim();
+    if (address.startsWith('ethereum:')) {
+      address = address.substring('ethereum:'.length);
+      // Remove chain ID (@4289) and query params (?value=...)
+      final atIdx = address.indexOf('@');
+      if (atIdx != -1) address = address.substring(0, atIdx);
+      final qIdx = address.indexOf('?');
+      if (qIdx != -1) address = address.substring(0, qIdx);
+    }
+    // Strict regex validation
+    if (RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(address)) {
+      return address;
+    }
+    return null; // invalid
   }
 
   void lock() {

@@ -109,6 +109,7 @@ class LocaleProvider extends ChangeNotifier {
       'backup.copied': 'คัดลอกแล้ว!',
       'backup.copy': 'คัดลอก',
       'backup.continue': 'สำรองแล้ว ดำเนินการต่อ',
+      'backup.autoCleared': 'Seed phrase ถูกลบอัตโนมัติเพื่อความปลอดภัย',
 
       // PIN
       'pin.setup': 'ตั้ง PIN 6 หลัก',
@@ -118,6 +119,7 @@ class LocaleProvider extends ChangeNotifier {
       'pin.unlock': 'ใส่ PIN เพื่อเข้าใช้',
       'pin.unlockSub': 'Enter your PIN to unlock',
       'pin.wrong': 'PIN ไม่ถูกต้อง',
+      'pin.locked': 'ล็อกชั่วคราว กรุณารอ {s} วินาที',
 
       // Transaction History
       'tx.title': 'ประวัติธุรกรรม',
@@ -270,6 +272,7 @@ class LocaleProvider extends ChangeNotifier {
       'backup.copied': 'Copied!',
       'backup.copy': 'Copy',
       'backup.continue': 'I\'ve backed up, continue',
+      'backup.autoCleared': 'Seed phrase auto-cleared for security',
 
       // PIN
       'pin.setup': 'Set 6-Digit PIN',
@@ -279,6 +282,7 @@ class LocaleProvider extends ChangeNotifier {
       'pin.unlock': 'Enter PIN to Unlock',
       'pin.unlockSub': 'Authenticate to continue',
       'pin.wrong': 'Incorrect PIN',
+      'pin.locked': 'Temporarily locked. Please wait {s} seconds',
 
       // Transaction History
       'tx.title': 'Transaction History',

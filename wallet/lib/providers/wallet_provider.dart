@@ -22,7 +22,7 @@ class WalletProvider extends ChangeNotifier {
   Timer? _txPollTimer;
   String? _pendingTxHash;
   int _pollCount = 0;
-  static const int _maxPolls = 30; // 30 x 3s = 90s max
+  static const int _maxPolls = 100; // 100 x 3s = 5 min max
 
   // Getters
   bool get isLoading => _isLoading;

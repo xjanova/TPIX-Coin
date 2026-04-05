@@ -6,6 +6,7 @@ import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
+import '../services/wallet_service.dart';
 import 'home_screen.dart';
 
 class PinScreen extends StatefulWidget {
@@ -83,7 +84,23 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
         }
       }
     } else {
-      // Unlock
+      // Unlock — check lockout first
+      final walletService = WalletService();
+      if (await walletService.isPinLocked()) {
+        final remaining = await walletService.getPinLockRemaining();
+        if (!mounted) return;
+        final l = context.read<LocaleProvider>();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l.t('pin.locked').replaceAll('{s}', remaining.toString())),
+            backgroundColor: AppTheme.danger,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        setState(() { _pin = ''; });
+        return;
+      }
+
       final provider = context.read<WalletProvider>();
       final success = await provider.unlock(_pin);
       if (success) {
