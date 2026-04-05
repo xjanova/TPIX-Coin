@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/biometric_service.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import 'send_screen.dart';
@@ -451,7 +452,76 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _buildInfoRow(Icons.local_gas_station, l.t('home.gasFee'), l.t('home.gasFeeVal'), AppTheme.warm),
         const SizedBox(height: 10),
         _buildInfoRow(Icons.shield, l.t('home.consensus'), 'IBFT 2.0', AppTheme.accent),
+        const SizedBox(height: 10),
+        _buildBiometricToggle(l),
       ],
+    );
+  }
+
+  Widget _buildBiometricToggle(LocaleProvider l) {
+    final bioService = BiometricService();
+    return FutureBuilder<bool>(
+      future: bioService.isDeviceSupported(),
+      builder: (context, snapshot) {
+        if (snapshot.data != true) return const SizedBox.shrink();
+        return FutureBuilder<bool>(
+          future: bioService.isEnabled(),
+          builder: (context, enabledSnap) {
+            final enabled = enabledSnap.data ?? false;
+            return GestureDetector(
+              onTap: () async {
+                final newVal = !enabled;
+                await bioService.setEnabled(newVal);
+                final wallet = context.read<WalletProvider>();
+                if (newVal) {
+                  // Verify biometric works before enabling
+                  final authed = await bioService.authenticate(l.t('home.biometricSetup'));
+                  if (!authed) {
+                    await bioService.setEnabled(false);
+                    return;
+                  }
+                } else {
+                  await wallet.clearBiometricToken();
+                }
+                if (mounted) setState(() {});
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: glassCard(borderRadius: 16),
+                child: Row(
+                  children: [
+                    Icon(Icons.fingerprint, color: enabled ? AppTheme.primary : AppTheme.textMuted, size: 22),
+                    const SizedBox(width: 12),
+                    Text(l.t('home.biometric'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+                    const Spacer(),
+                    Container(
+                      width: 44,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: enabled ? AppTheme.primary.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.1),
+                      ),
+                      child: AnimatedAlign(
+                        duration: const Duration(milliseconds: 200),
+                        alignment: enabled ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: enabled ? AppTheme.primary : AppTheme.textMuted,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

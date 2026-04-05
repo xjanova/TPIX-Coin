@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/biometric_service.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import 'home_screen.dart';
@@ -22,6 +23,9 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
   String? _confirmPin;
   bool _isConfirmMode = false;
   bool _isError = false;
+  bool _biometricAvailable = false;
+  bool _biometricInProgress = false;
+  final _biometricService = BiometricService();
   late AnimationController _shakeController;
 
   @override
@@ -31,6 +35,44 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
+    if (!widget.isSetup) {
+      _checkAndTriggerBiometric();
+    }
+  }
+
+  Future<void> _checkAndTriggerBiometric() async {
+    final supported = await _biometricService.isDeviceSupported();
+    final enabled = await _biometricService.isEnabled();
+    if (mounted) {
+      setState(() => _biometricAvailable = supported && enabled);
+    }
+    if (supported && enabled) {
+      _authenticateWithBiometric();
+    }
+  }
+
+  Future<void> _authenticateWithBiometric() async {
+    if (_biometricInProgress) return;
+    _biometricInProgress = true;
+
+    final l = context.read<LocaleProvider>();
+    final success = await _biometricService.authenticate(l.t('pin.biometricReason'));
+
+    _biometricInProgress = false;
+    if (!mounted) return;
+
+    if (success) {
+      // Biometric passed — unlock wallet with stored credential
+      final provider = context.read<WalletProvider>();
+      final unlocked = await provider.unlockWithBiometric();
+      if (!mounted) return;
+      if (unlocked) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      }
+    }
   }
 
   @override
@@ -229,7 +271,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
       ['1', '2', '3'],
       ['4', '5', '6'],
       ['7', '8', '9'],
-      ['', '0', 'DEL'],
+      [_biometricAvailable ? 'BIO' : '', '0', 'DEL'],
     ];
 
     return Padding(
@@ -240,6 +282,12 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: row.map((key) {
               if (key.isEmpty) return const SizedBox(width: 72);
+              if (key == 'BIO') {
+                return _buildKeyButton(
+                  child: const Icon(Icons.fingerprint, color: AppTheme.primary, size: 28),
+                  onTap: _authenticateWithBiometric,
+                );
+              }
               if (key == 'DEL') {
                 return _buildKeyButton(
                   child: const Icon(Icons.backspace_outlined, color: AppTheme.textSecondary, size: 24),

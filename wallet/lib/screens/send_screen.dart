@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:local_auth/local_auth.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/biometric_service.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import '../widgets/qr_scanner_screen.dart';
@@ -84,18 +84,10 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     }
 
     // Authentication required before send
+    final bioService = BiometricService();
     bool authenticated = false;
-    try {
-      final localAuth = LocalAuthentication();
-      final canAuth = await localAuth.canCheckBiometrics || await localAuth.isDeviceSupported();
-      if (canAuth) {
-        authenticated = await localAuth.authenticate(
-          localizedReason: l.t('send.authRequired'),
-          options: const AuthenticationOptions(biometricOnly: false),
-        );
-      }
-    } catch (_) {
-      // Biometric unavailable
+    if (await bioService.isEnabled() && await bioService.isDeviceSupported()) {
+      authenticated = await bioService.authenticate(l.t('send.authRequired'));
     }
 
     // Fallback: require PIN re-entry if biometric failed or unavailable

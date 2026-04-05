@@ -60,6 +60,8 @@ class LocaleProvider extends ChangeNotifier {
       'home.language': 'ภาษา',
       'home.recentTx': 'ธุรกรรมล่าสุด',
       'home.viewAll': 'ดูทั้งหมด',
+      'home.biometric': 'ปลดล็อกด้วยลายนิ้วมือ',
+      'home.biometricSetup': 'ยืนยันลายนิ้วมือเพื่อเปิดใช้งาน',
 
       // Import
       'import.title': 'นำเข้ากระเป๋า',
@@ -120,6 +122,7 @@ class LocaleProvider extends ChangeNotifier {
       'pin.unlockSub': 'Enter your PIN to unlock',
       'pin.wrong': 'PIN ไม่ถูกต้อง',
       'pin.locked': 'ล็อกชั่วคราว กรุณารอ {s} วินาที',
+      'pin.biometricReason': 'สแกนลายนิ้วมือเพื่อเข้ากระเป๋า',
 
       // Transaction History
       'tx.title': 'ประวัติธุรกรรม',
@@ -223,6 +226,8 @@ class LocaleProvider extends ChangeNotifier {
       'home.language': 'Language',
       'home.recentTx': 'Recent Transactions',
       'home.viewAll': 'View All',
+      'home.biometric': 'Fingerprint Unlock',
+      'home.biometricSetup': 'Verify fingerprint to enable',
 
       // Import
       'import.title': 'Import Wallet',
@@ -283,6 +288,7 @@ class LocaleProvider extends ChangeNotifier {
       'pin.unlockSub': 'Authenticate to continue',
       'pin.wrong': 'Incorrect PIN',
       'pin.locked': 'Temporarily locked. Please wait {s} seconds',
+      'pin.biometricReason': 'Scan fingerprint to unlock wallet',
 
       // Transaction History
       'tx.title': 'Transaction History',

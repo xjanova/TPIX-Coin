@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/wallet_info.dart';
 import '../models/tx_record.dart';
+import '../services/biometric_service.dart';
 import '../services/wallet_service.dart';
 
 class WalletProvider extends ChangeNotifier {
@@ -131,6 +132,11 @@ class WalletProvider extends ChangeNotifier {
         _isUnlocked = true;
         _address = _walletService.address;
         _mnemonic = _walletService.mnemonic;
+        // Update biometric token if biometric is enabled
+        final bioService = BiometricService();
+        if (await bioService.isEnabled()) {
+          await _walletService.saveBiometricToken(pin);
+        }
         await refreshBalance();
         await loadTxHistory();
         _startBalanceRefresh();
@@ -142,6 +148,39 @@ class WalletProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Unlock wallet using biometric token
+  Future<bool> unlockWithBiometric() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final success = await _walletService.unlockWithBiometric();
+      if (success) {
+        _isUnlocked = true;
+        _address = _walletService.address;
+        _mnemonic = _walletService.mnemonic;
+        await refreshBalance();
+        await loadTxHistory();
+        _startBalanceRefresh();
+      }
+      return success;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Save biometric token after successful PIN unlock
+  Future<void> saveBiometricToken(String pin) async {
+    await _walletService.saveBiometricToken(pin);
+  }
+
+  /// Clear biometric token
+  Future<void> clearBiometricToken() async {
+    await _walletService.clearBiometricToken();
   }
 
   /// Refresh balance

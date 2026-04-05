@@ -39,6 +39,7 @@ class WalletService {
   static const _keyPinSalt = 'tpix_pin_salt';
   static const _keyPinAttempts = 'tpix_pin_attempts';
   static const _keyPinLockUntil = 'tpix_pin_lock_until';
+  static const _keyBiometricToken = 'tpix_biometric_token';
   static const int _pbkdf2Iterations = 100000;
   static const int _maxPinAttempts = 5;
   static const int _pinLockoutMinutes = 5;
@@ -307,6 +308,24 @@ class WalletService {
   Future<void> _saveWalletList() async {
     final json = jsonEncode(_wallets.map((w) => w.toJson()).toList());
     await _storage.write(key: _keyWallets, value: json);
+  }
+
+  /// Save biometric unlock token (call after successful PIN unlock + biometric enable)
+  Future<void> saveBiometricToken(String pin) async {
+    // Store the PIN encrypted by secure storage (hardware-backed)
+    await _storage.write(key: _keyBiometricToken, value: pin);
+  }
+
+  /// Remove biometric unlock token
+  Future<void> clearBiometricToken() async {
+    await _storage.delete(key: _keyBiometricToken);
+  }
+
+  /// Unlock wallet using biometric token (skips PIN entry)
+  Future<bool> unlockWithBiometric() async {
+    final pin = await _storage.read(key: _keyBiometricToken);
+    if (pin == null) return false;
+    return await unlockWallet(pin);
   }
 
   /// Check if PIN is currently locked out
