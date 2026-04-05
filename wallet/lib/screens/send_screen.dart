@@ -75,6 +75,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   }
 
   void _send() async {
+    if (_isSending) return; // double-tap guard
     final address = _addressController.text.trim();
     final amount = double.tryParse(_amountController.text.trim());
 
@@ -168,7 +169,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
             // Amount
             _confirmRow(l.t('send.confirmAmount'), '${amount.toStringAsFixed(4)} TPIX'),
             // Gas
-            _confirmRow('Gas Fee', 'Free (0 TPIX)', valueColor: AppTheme.success),
+            _confirmRow(l.t('send.gasFee').replaceAll(': ', ''), l.t('send.gasFreeVal'), valueColor: AppTheme.success),
             const SizedBox(height: 24),
             // Buttons
             Row(

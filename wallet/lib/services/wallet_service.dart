@@ -620,9 +620,10 @@ class WalletService {
   }
 
   /// Update a TX record status in local storage
-  Future<void> updateTxStatus(String txHash, String newStatus) async {
+  /// [slot] allows updating TX for a specific wallet (not just active)
+  Future<void> updateTxStatus(String txHash, String newStatus, {int? slot}) async {
     final history = await getTxHistory();
-    final key = _activeSlot.toString();
+    final key = (slot ?? _activeSlot).toString();
     final txList = history[key];
     if (txList == null) return;
 

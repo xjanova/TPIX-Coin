@@ -276,6 +276,7 @@ class WalletProvider extends ChangeNotifier {
     _txPollTimer?.cancel();
     _pendingTxHash = txHash;
     _pollCount = 0;
+    final pollSlot = _walletService.activeSlot; // capture slot at send time
 
     _txPollTimer = Timer.periodic(
       const Duration(seconds: 3),
@@ -288,7 +289,7 @@ class WalletProvider extends ChangeNotifier {
 
         final status = await _walletService.checkTransactionStatus(_pendingTxHash!);
         if (status != null) {
-          await _walletService.updateTxStatus(_pendingTxHash!, status);
+          await _walletService.updateTxStatus(_pendingTxHash!, status, slot: pollSlot);
           await loadTxHistory();
           await refreshBalance();
           _txPollTimer?.cancel();
@@ -303,6 +304,8 @@ class WalletProvider extends ChangeNotifier {
     _walletService.lock();
     _isUnlocked = false;
     _balanceTimer?.cancel();
+    _txPollTimer?.cancel();
+    _pendingTxHash = null;
     notifyListeners();
   }
 
@@ -316,6 +319,8 @@ class WalletProvider extends ChangeNotifier {
     _mnemonic = null;
     _txHistory = [];
     _balanceTimer?.cancel();
+    _txPollTimer?.cancel();
+    _pendingTxHash = null;
     notifyListeners();
   }
 
