@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/chain_config.dart';
 import '../models/wallet_info.dart';
@@ -9,6 +10,7 @@ import '../services/db_service.dart';
 import '../services/price_service.dart';
 import '../services/swap_service.dart';
 import '../services/token_service.dart';
+import '../services/wallet_auth_service.dart';
 import '../services/wallet_service.dart';
 
 class WalletProvider extends ChangeNotifier {
@@ -267,6 +269,42 @@ class WalletProvider extends ChangeNotifier {
   }
 
   // ═══════════════════════════════════════════════════════════
+  //  Cross-Chain EVM Transactions
+  // ═══════════════════════════════════════════════════════════
+
+  /// Sign and send a transaction on any EVM chain (BSC, Polygon, ETH, etc.)
+  /// Used by swap screens for DEX interactions and bridge for fund transfers
+  Future<String> sendEvmTransaction({
+    required String rpcUrl,
+    required int chainId,
+    required String toAddress,
+    BigInt? value,
+    Uint8List? data,
+    int? maxGas,
+    BigInt? gasPrice,
+  }) async {
+    return _walletService.sendEvmTransaction(
+      rpcUrl: rpcUrl,
+      chainId: chainId,
+      toAddress: toAddress,
+      value: value,
+      data: data,
+      maxGas: maxGas,
+      gasPrice: gasPrice,
+    );
+  }
+
+  /// Check transaction status on any EVM chain
+  Future<String?> checkEvmTxStatus(String rpcUrl, String txHash) async {
+    return _walletService.checkEvmTxStatus(rpcUrl, txHash);
+  }
+
+  /// Sign a personal message (EIP-191) for wallet verification
+  /// Used by WalletAuthService challenge-sign-verify flow
+  Future<String> signPersonalMessage(String message) async =>
+      _walletService.signPersonalMessage(message);
+
+  // ═══════════════════════════════════════════════════════════
   //  Multi-Chain Operations
   // ═══════════════════════════════════════════════════════════
 
@@ -306,6 +344,7 @@ class WalletProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      WalletAuthService.clearSession(); // Clear auth on wallet switch
       await _walletService.switchWallet(slot);
       _address = _walletService.address;
       await refreshBalance();
@@ -349,6 +388,7 @@ class WalletProvider extends ChangeNotifier {
 
   /// Delete a wallet
   Future<void> deleteWalletBySlot(int slot) async {
+    WalletAuthService.clearSession(); // Clear auth on slot delete
     await _walletService.deleteWalletBySlot(slot);
     _address = _walletService.address;
     if (_walletService.walletCount > 0) {
@@ -450,6 +490,7 @@ class WalletProvider extends ChangeNotifier {
   /// Lock wallet
   void lock() {
     _walletService.lock();
+    WalletAuthService.clearSession(); // Clear auth on lock
     _isUnlocked = false;
     _balanceTimer?.cancel();
     _txPollTimer?.cancel();
@@ -463,6 +504,7 @@ class WalletProvider extends ChangeNotifier {
 
   /// Delete ALL wallets
   Future<void> deleteWallet() async {
+    WalletAuthService.clearSession(); // Clear auth on delete
     await _walletService.deleteWallet();
     _hasWallet = false;
     _isUnlocked = false;

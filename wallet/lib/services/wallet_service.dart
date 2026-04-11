@@ -803,6 +803,92 @@ class WalletService {
   }
 
   // ================================================================
+  // Cross-Chain EVM Transactions
+  // ================================================================
+
+  /// Sign and send a transaction on ANY EVM chain
+  /// Used by swap (DEX routers on BSC/Polygon/ETH) and bridge
+  /// The same HD-derived private key works on all EVM chains
+  Future<String> sendEvmTransaction({
+    required String rpcUrl,
+    required int chainId,
+    required String toAddress,
+    BigInt? value,
+    Uint8List? data,
+    int? maxGas,
+    BigInt? gasPrice,
+  }) async {
+    if (_credentials == null) throw Exception('Wallet not unlocked');
+
+    final client = Web3Client(rpcUrl, http.Client());
+    try {
+      final tx = Transaction(
+        to: EthereumAddress.fromHex(toAddress),
+        value: value != null ? EtherAmount.inWei(value) : EtherAmount.zero(),
+        data: data,
+        gasPrice: gasPrice != null ? EtherAmount.inWei(gasPrice) : null,
+        maxGas: maxGas,
+      );
+      return await client.sendTransaction(
+        _credentials!,
+        tx,
+        chainId: chainId,
+      );
+    } finally {
+      client.dispose();
+    }
+  }
+
+  /// Wait for a transaction to be confirmed on any EVM chain
+  /// Returns 'confirmed' or 'failed', or null if still pending
+  Future<String?> checkEvmTxStatus(String rpcUrl, String txHash) async {
+    try {
+      final client = http.Client();
+      try {
+        final response = await client.post(
+          Uri.parse(rpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'jsonrpc': '2.0',
+            'method': 'eth_getTransactionReceipt',
+            'params': [txHash],
+            'id': 1,
+          }),
+        ).timeout(const Duration(seconds: 10));
+        final body = jsonDecode(response.body);
+        final result = body['result'];
+        if (result == null) return null; // still pending
+        final statusHex = result['status'] as String? ?? '0x1';
+        return statusHex == '0x1' ? 'confirmed' : 'failed';
+      } finally {
+        client.close();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ================================================================
+  // Message Signing (EIP-191)
+  // ================================================================
+
+  /// Sign a personal message (EIP-191) for wallet verification.
+  /// Returns 0x-prefixed hex signature (65 bytes = 130 hex chars).
+  /// Used by WalletAuthService for challenge-sign-verify flow.
+  String signPersonalMessage(String message) {
+    if (_credentials == null) throw Exception('Wallet not unlocked');
+    final messageBytes = Uint8List.fromList(utf8.encode(message));
+    final signature =
+        _credentials!.signPersonalMessageToUint8List(messageBytes);
+    // Ensure v is in Ethereum standard (27/28), not raw (0/1)
+    // MetaMask and most servers expect v = 27 or 28
+    if (signature.last < 27) {
+      signature[signature.length - 1] += 27;
+    }
+    return '0x${HEX.encode(signature)}';
+  }
+
+  // ================================================================
   // Transaction Status Polling
   // ================================================================
 

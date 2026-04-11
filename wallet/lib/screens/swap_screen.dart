@@ -5,8 +5,10 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../models/chain_config.dart';
+import '../services/fee_service.dart';
 import '../services/swap_service.dart';
 import '../services/synth_service.dart';
+import '../services/wallet_auth_service.dart';
 import '../providers/wallet_provider.dart';
 import '../widgets/token_selector.dart';
 
@@ -41,6 +43,10 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   bool _isApproving = false;
   BigInt _allowance = BigInt.zero;
 
+  // Platform fee from tpix.online
+  SwapFeeConfig _swapFee = SwapFeeConfig.fallback();
+  bool _loadingFeeConfig = true;
+
   // Animation
   late AnimationController _flipController;
 
@@ -55,6 +61,17 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     _tokenIn = _chain.nativeToken;
     _tokenOut = _chain.knownTokens.isNotEmpty ? _chain.knownTokens.first : null;
     _loadBalance();
+    _loadFeeConfig();
+  }
+
+  Future<void> _loadFeeConfig() async {
+    final fee = await FeeService.getSwapFee();
+    if (mounted) {
+      setState(() {
+        _swapFee = fee;
+        _loadingFeeConfig = false;
+      });
+    }
   }
 
   @override
@@ -203,30 +220,81 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _approve() async {
-    if (_isApproving || _tokenIn == null) return;
+    if (_isApproving || _tokenIn == null || _chain.dexRouterAddress == null) return;
     setState(() => _isApproving = true);
     SynthService.playTap();
 
-    // Build approve tx — max uint256
-    final maxApproval = BigInt.parse(
-      'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-      radix: 16,
-    );
+    try {
+      final wallet = context.read<WalletProvider>();
+      // Max uint256 approval
+      final maxApproval = BigInt.parse(
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        radix: 16,
+      );
 
-    // Show "approval sent" — in real implementation, sign and broadcast
-    await Future.delayed(const Duration(seconds: 2));
+      // Build ERC-20 approve calldata
+      final approveData = SwapService.buildApproveData(
+        _chain.dexRouterAddress!,
+        maxApproval,
+      );
 
-    if (mounted) {
-      setState(() {
-        _allowance = maxApproval;
-        _isApproving = false;
-      });
-      SynthService.playSendSuccess();
+      // Get gas price for this chain
+      final gasPrice = await SwapService.getGasPrice(_chain);
+
+      // Sign and broadcast approval tx to the token contract
+      final txHash = await wallet.sendEvmTransaction(
+        rpcUrl: _chain.rpcUrl,
+        chainId: _chain.chainId,
+        toAddress: _tokenIn!.address,
+        data: approveData,
+        gasPrice: gasPrice,
+        maxGas: 60000, // ERC-20 approve typically costs ~46K gas
+      );
+
+      // Wait for confirmation (poll up to 30s)
+      if (mounted) {
+        String? status;
+        for (int i = 0; i < 15; i++) {
+          await Future.delayed(const Duration(seconds: 2));
+          if (!mounted) return;
+          status = await wallet.checkEvmTxStatus(_chain.rpcUrl, txHash);
+          if (status != null) break;
+        }
+
+        if (status == 'confirmed') {
+          // Reload actual allowance from chain
+          _allowance = await SwapService.checkAllowance(
+            chain: _chain,
+            tokenAddress: _tokenIn!.address,
+            ownerAddress: wallet.address!,
+          );
+          if (mounted) {
+            setState(() => _isApproving = false);
+            SynthService.playSendSuccess();
+          }
+        } else {
+          throw Exception(status == 'failed' ? 'Approval transaction failed' : 'Approval timed out');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        final l = context.read<LocaleProvider>();
+        SynthService.playError();
+        final errMsg = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${l.t('swap.approvalFailed')}: $errMsg'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+        setState(() => _isApproving = false);
+      }
     }
   }
 
   Future<void> _executeSwap() async {
     if (_isSwapping || _tokenIn == null || _tokenOut == null || _quoteAmount == null) return;
+    if (_chain.dexRouterAddress == null) return;
 
     final amountStr = _amountController.text.trim();
     if (amountStr.isEmpty) return;
@@ -241,14 +309,15 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     SynthService.playSend();
 
     try {
-      // Build swap data
-      final amountOutMin = SwapService.applySlippage(_quoteAmount!, _slippagePercent);
       final wallet = context.read<WalletProvider>();
+      final amountOutMin = SwapService.applySlippage(_quoteAmount!, _slippagePercent);
 
       final tokenInAddr = _tokenIn!.isNative ? TokenDef.nativeAddress : _tokenIn!.address;
       final tokenOutAddr = _tokenOut!.isNative ? TokenDef.nativeAddress : _tokenOut!.address;
+      final isFromNative = _tokenIn!.isNative;
 
-      SwapService.buildSwapData(
+      // Build swap calldata for the DEX router
+      final swapData = SwapService.buildSwapData(
         chain: _chain,
         tokenIn: tokenInAddr,
         tokenOut: tokenOutAddr,
@@ -257,30 +326,84 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         recipientAddress: wallet.address!,
       );
 
-      // In real implementation: sign tx with wallet private key and broadcast
-      // For now: simulate success
-      await Future.delayed(const Duration(seconds: 3));
+      // Get gas price
+      final gasPrice = await SwapService.getGasPrice(_chain);
 
-      if (mounted) {
+      // Sign and broadcast swap tx to the DEX router
+      final txHash = await wallet.sendEvmTransaction(
+        rpcUrl: _chain.rpcUrl,
+        chainId: _chain.chainId,
+        toAddress: _chain.dexRouterAddress!,
+        data: swapData,
+        // For native→token swaps, send the native value with the tx
+        value: isFromNative ? amountIn : null,
+        gasPrice: gasPrice,
+        maxGas: 300000, // DEX swaps typically cost 150K-250K gas
+      );
+
+      // Wait for confirmation (poll up to 60s)
+      String? status;
+      for (int i = 0; i < 20; i++) {
+        await Future.delayed(const Duration(seconds: 3));
+        if (!mounted) return;
+        status = await wallet.checkEvmTxStatus(_chain.rpcUrl, txHash);
+        if (status != null) break;
+      }
+
+      if (!mounted) return;
+
+      if (status == 'confirmed') {
         SynthService.playSendSuccess();
-        _showSuccessDialog();
+        _showSuccessDialog(txHash);
+
+        // Record swap on backend (best-effort, non-blocking)
+        final outAmount = _quoteAmount != null
+            ? SwapService.formatAmount(_quoteAmount!, _tokenOut!.decimals)
+            : 0.0;
+        final feeAmt = SwapService.formatAmount(
+          _swapFee.calculateFee(amountIn),
+          _tokenIn!.decimals,
+        );
+        WalletAuthService.recordSwap(
+          walletAddress: wallet.address!,
+          fromToken: _tokenIn!.isNative ? '0x0000000000000000000000000000000000000000' : _tokenIn!.address,
+          toToken: _tokenOut!.isNative ? '0x0000000000000000000000000000000000000000' : _tokenOut!.address,
+          fromAmount: double.tryParse(amountStr) ?? 0,
+          toAmount: outAmount,
+          feeAmount: feeAmt,
+          txHash: txHash,
+          chainId: _chain.chainId,
+          signFn: wallet.signPersonalMessage,
+        );
+      } else if (status == 'failed') {
+        throw Exception('Swap transaction reverted on-chain');
+      } else {
+        // Still pending after 60s — show tx hash so user can track
+        SynthService.playSendSuccess();
+        _showSuccessDialog(txHash);
       }
     } catch (e) {
       if (mounted) {
+        final l = context.read<LocaleProvider>();
         SynthService.playError();
+        final errMsg = e.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Swap failed: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text('${l.t('swap.failed')}: $errMsg'),
             backgroundColor: AppTheme.danger,
           ),
         );
       }
     } finally {
-      if (mounted) setState(() => _isSwapping = false);
+      if (mounted) {
+        setState(() => _isSwapping = false);
+        _loadBalance(); // Refresh balance after swap
+      }
     }
   }
 
   Future<bool?> _showConfirmDialog(String amountStr, BigInt amountIn) {
+    final l = context.read<LocaleProvider>();
     final outFormatted = _quoteAmount != null
         ? SwapService.formatAmount(_quoteAmount!, _tokenOut!.decimals)
         : 0.0;
@@ -291,33 +414,43 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           )
         : 0.0;
 
+    // Platform fee calculation
+    final feeAmount = _swapFee.calculateFee(amountIn);
+    final feeFormatted = SwapService.formatAmount(feeAmount, _tokenIn!.decimals);
+
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Confirm Swap',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        title: Text(
+          l.t('swap.confirmTitle'),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _confirmRow('From', '$amountStr ${_tokenIn!.symbol}'),
-            _confirmRow('To (estimated)', '${outFormatted.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
-            _confirmRow('Min received', '${minOut.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
-            _confirmRow('Slippage', '${_slippagePercent % 1 == 0 ? _slippagePercent.toInt() : _slippagePercent}%'),
-            _confirmRow('Network', _chain.name),
+            _confirmRow(l.t('swap.from'), '$amountStr ${_tokenIn!.symbol}'),
+            _confirmRow(l.t('swap.toEstimated'), '${outFormatted.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
+            _confirmRow(l.t('swap.minReceived'), '${minOut.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
+            _confirmRow(l.t('swap.slippage'), '${_slippagePercent % 1 == 0 ? _slippagePercent.toInt() : _slippagePercent}%'),
+            if (_swapFee.feePercent > 0) ...[
+              const Divider(color: AppTheme.textMuted, height: 16),
+              _confirmRow(l.t('swap.platformFee'), '${feeFormatted.toStringAsFixed(6)} ${_tokenIn!.symbol} (${_swapFee.feePercent}%)'),
+              if (_swapFee.feeWallet.isNotEmpty)
+                _confirmRow(l.t('swap.feeWallet'), FeeService.shortWallet(_swapFee.feeWallet)),
+            ],
+            _confirmRow(l.t('swap.network'), _chain.name),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('send.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Swap', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
+            child: Text(l.t('swap.button'), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -343,22 +476,56 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     );
   }
 
-  void _showSuccessDialog() {
+  void _showSuccessDialog(String txHash) {
+    final l = context.read<LocaleProvider>();
+    final shortTx = txHash.length > 16
+        ? '${txHash.substring(0, 10)}...${txHash.substring(txHash.length - 6)}'
+        : txHash;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.check_circle, color: AppTheme.success, size: 28),
-            SizedBox(width: 8),
-            Text('Swap Successful!', style: TextStyle(color: AppTheme.success)),
+            const Icon(Icons.check_circle, color: AppTheme.success, size: 28),
+            const SizedBox(width: 8),
+            Flexible(child: Text(l.t('swap.success'), style: const TextStyle(color: AppTheme.success))),
           ],
         ),
-        content: const Text(
-          'Your swap has been submitted to the network.',
-          style: TextStyle(color: AppTheme.textSecondary),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l.t('swap.successDesc'), style: const TextStyle(color: AppTheme.textSecondary)),
+            const SizedBox(height: 12),
+            // TX Hash row
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: Colors.white.withValues(alpha: 0.04),
+              ),
+              child: Row(
+                children: [
+                  const Text('TX: ', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  Expanded(
+                    child: Text(shortTx, style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontFamily: 'monospace')),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: txHash));
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(content: Text(l.t('tx.hashCopied')), duration: const Duration(seconds: 1)),
+                      );
+                    },
+                    child: const Icon(Icons.copy_rounded, color: AppTheme.textMuted, size: 16),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -366,7 +533,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               Navigator.pop(ctx);
               Navigator.pop(context);
             },
-            child: const Text('Done', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
+            child: Text(l.t('swap.done'), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -717,10 +884,11 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildSlippageSelector() {
+    final l = context.read<LocaleProvider>();
     const options = [0.5, 1.0, 3.0];
     return Row(
       children: [
-        const Text('Slippage:', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+        Text('${l.t('swap.slippage')}:', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
         const SizedBox(width: 8),
         ...options.map((s) {
           final isActive = _slippagePercent == s;
@@ -756,7 +924,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         GestureDetector(
           onTap: _showSlippageDialog,
           child: Text(
-            'Custom',
+            l.t('swap.custom'),
             style: TextStyle(
               fontSize: 12,
               color: AppTheme.accent.withValues(alpha: 0.7),
@@ -774,6 +942,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       return const SizedBox.shrink();
     }
 
+    final l = context.read<LocaleProvider>();
     final amountStr = _amountController.text.trim();
     if (amountStr.isEmpty) return const SizedBox.shrink();
 
@@ -789,6 +958,10 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       _tokenOut!.decimals,
     );
 
+    // Platform fee
+    final feeAmount = _swapFee.calculateFee(amountIn);
+    final feeFormatted = SwapService.formatAmount(feeAmount, _tokenIn!.decimals);
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -798,10 +971,32 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       ),
       child: Column(
         children: [
-          _infoRow('Rate', '1 ${_tokenIn!.symbol} = ${rate.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
-          _infoRow('Min. received', '${minReceived.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
-          _infoRow('Slippage tolerance', '${_slippagePercent % 1 == 0 ? _slippagePercent.toInt() : _slippagePercent}%'),
-          _infoRow('Network', _chain.name),
+          _infoRow(l.t('swap.rate'), '1 ${_tokenIn!.symbol} = ${rate.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
+          _infoRow(l.t('swap.minReceived'), '${minReceived.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
+          _infoRow(l.t('swap.slippage'), '${_slippagePercent % 1 == 0 ? _slippagePercent.toInt() : _slippagePercent}%'),
+          if (_swapFee.feePercent > 0)
+            _infoRow(l.t('swap.platformFee'), '${feeFormatted.toStringAsFixed(6)} ${_tokenIn!.symbol} (${_swapFee.feePercent}%)'),
+          if (_swapFee.feeWallet.isNotEmpty)
+            _infoRow(l.t('swap.feeWallet'), FeeService.shortWallet(_swapFee.feeWallet)),
+          _infoRow(l.t('swap.network'), _chain.name),
+          // Fee source badge
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (_loadingFeeConfig)
+                const Padding(
+                  padding: EdgeInsets.only(right: 4),
+                  child: SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1, color: AppTheme.textMuted)),
+                ),
+              Icon(Icons.verified_rounded, color: AppTheme.primary.withValues(alpha: 0.5), size: 12),
+              const SizedBox(width: 4),
+              Text(
+                'TPIX.ONLINE',
+                style: TextStyle(fontSize: 10, color: AppTheme.primary.withValues(alpha: 0.5), fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -902,13 +1097,14 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   void _showSlippageDialog() {
+    final l = context.read<LocaleProvider>();
     final controller = TextEditingController(text: _slippagePercent.toString());
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Slippage Tolerance', style: TextStyle(color: Colors.white)),
+        title: Text(l.t('swap.slippage'), style: const TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -923,7 +1119,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('send.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
           ),
           TextButton(
             onPressed: () {
@@ -933,7 +1129,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               }
               Navigator.pop(ctx);
             },
-            child: const Text('Set', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
+            child: Text(l.t('swap.set'), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
