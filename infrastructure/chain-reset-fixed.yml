@@ -37,23 +37,27 @@ jobs:
             cp "$CHAIN/genesis.json" "$BACKUP/" 2>/dev/null || true
 
             echo "[3/8] Wipe data..."
-            docker run --rm -v "$CHAIN:/chain" alpine sh -c "rm -rf /chain/data /chain/genesis.json"
+            docker run --rm -v "$CHAIN:/chain" alpine sh -c "rm -rf /chain/data /chain/genesis.json && mkdir -p /chain"
             mkdir -p "$CHAIN"
 
             echo "[4/8] Generate 4 validator keys..."
             for i in 1 2 3 4; do
-              mkdir -p "$CHAIN/data/validator-${i}"
-              docker run --rm -v "$CHAIN/data/validator-${i}:/data" $IMG secrets init --data-dir /data --insecure
+              echo "  Generating validator $i..."
+              docker run --rm -v "$CHAIN:/chain" $IMG secrets init --data-dir /chain/data/validator-${i} --insecure 2>&1 || { echo "secrets init failed for validator $i"; exit 1; }
             done
-            ADDR1=$(docker run --rm -v "$CHAIN/data/validator-1:/data" $IMG secrets output --data-dir /data 2>&1 | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            ADDR2=$(docker run --rm -v "$CHAIN/data/validator-2:/data" $IMG secrets output --data-dir /data 2>&1 | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            ADDR3=$(docker run --rm -v "$CHAIN/data/validator-3:/data" $IMG secrets output --data-dir /data 2>&1 | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            ADDR4=$(docker run --rm -v "$CHAIN/data/validator-4:/data" $IMG secrets output --data-dir /data 2>&1 | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            NID1=$(docker run --rm -v "$CHAIN/data/validator-1:/data" $IMG secrets output --data-dir /data 2>&1 | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            NID2=$(docker run --rm -v "$CHAIN/data/validator-2:/data" $IMG secrets output --data-dir /data 2>&1 | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            NID3=$(docker run --rm -v "$CHAIN/data/validator-3:/data" $IMG secrets output --data-dir /data 2>&1 | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            NID4=$(docker run --rm -v "$CHAIN/data/validator-4:/data" $IMG secrets output --data-dir /data 2>&1 | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            echo "  Extracting addresses and node IDs..."
+            ADDR1=$(docker run --rm -v "$CHAIN:/chain" $IMG secrets output --data-dir /chain/data/validator-1 2>&1 | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            ADDR2=$(docker run --rm -v "$CHAIN:/chain" $IMG secrets output --data-dir /chain/data/validator-2 2>&1 | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            ADDR3=$(docker run --rm -v "$CHAIN:/chain" $IMG secrets output --data-dir /chain/data/validator-3 2>&1 | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            ADDR4=$(docker run --rm -v "$CHAIN:/chain" $IMG secrets output --data-dir /chain/data/validator-4 2>&1 | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            NID1=$(docker run --rm -v "$CHAIN:/chain" $IMG secrets output --data-dir /chain/data/validator-1 2>&1 | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            NID2=$(docker run --rm -v "$CHAIN:/chain" $IMG secrets output --data-dir /chain/data/validator-2 2>&1 | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            NID3=$(docker run --rm -v "$CHAIN:/chain" $IMG secrets output --data-dir /chain/data/validator-3 2>&1 | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            NID4=$(docker run --rm -v "$CHAIN:/chain" $IMG secrets output --data-dir /chain/data/validator-4 2>&1 | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
             echo "V1=$ADDR1 V2=$ADDR2 V3=$ADDR3 V4=$ADDR4"
+            echo "NID1=$NID1"
+            test -n "$ADDR1" || { echo "ERROR: failed to get validator addresses"; exit 1; }
+            test -n "$NID1" || { echo "ERROR: failed to get node IDs"; exit 1; }
 
             echo "[5/8] Generate genesis..."
             docker run --rm -v "$CHAIN/data/validator-1:/data/validator-1" -v "$CHAIN/data/validator-2:/data/validator-2" -v "$CHAIN/data/validator-3:/data/validator-3" -v "$CHAIN/data/validator-4:/data/validator-4" -v "$CHAIN:/chain" $IMG genesis --consensus ibft --ibft-validators-prefix-path /data/validator- --ibft-validator-type bls --chain-id 4289 --name tpix-chain --block-gas-limit 20000000 --epoch-size 100000 --block-time 2s --bootnode "/ip4/tpix-validator-1/tcp/10001/p2p/${NID1}" --bootnode "/ip4/tpix-validator-2/tcp/10001/p2p/${NID2}" --bootnode "/ip4/tpix-validator-3/tcp/10001/p2p/${NID3}" --bootnode "/ip4/tpix-validator-4/tcp/10001/p2p/${NID4}" --premine "0x2112b98e3ec5A252b7b2A8f02d498B64a2186A7f:1400000000000000000000000000" --premine "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7:1710000000000000000000000000" --premine "0xf46131C82819d7621163F482b3fe88a228A7807c:700000000000000000000000000" --premine "0x3F8EB4046F5C79fd0D67C7547B5830cB2Cfb401A:700000000000000000000000000" --premine "0x3da3776e0AB0F442c181aa031f47FA83696859AF:1050000000000000000000000000" --premine "0xA945d1bE9c1DDeaE75BBb9B39981D1CE6Ed7d9d5:1400000000000000000000000000" --premine "${ADDR1}:10000000000000000000000000" --premine "${ADDR2}:10000000000000000000000000" --premine "${ADDR3}:10000000000000000000000000" --premine "${ADDR4}:10000000000000000000000000" --dir /chain/genesis.json
