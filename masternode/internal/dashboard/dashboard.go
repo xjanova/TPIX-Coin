@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -44,36 +45,67 @@ var activeWSConnections int32
 
 // Dashboard serves the web UI and WebSocket for real-time updates
 type Dashboard struct {
-	cfg     *config.Config
-	node    *node.Node
-	monitor *monitor.Monitor
-	log     *logrus.Logger
-	router  *mux.Router
+	cfg      *config.Config
+	node     *node.Node
+	monitor  *monitor.Monitor
+	log      *logrus.Logger
+	router   *mux.Router
+	apiToken string
 }
 
 // New creates a new dashboard server
 func New(cfg *config.Config, n *node.Node, mon *monitor.Monitor, log *logrus.Logger) *Dashboard {
+	// Generate a random API token for this session
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		log.Fatalf("Failed to generate secure API token: %v", err)
+	}
+	apiToken := fmt.Sprintf("%x", tokenBytes)
+
 	d := &Dashboard{
-		cfg:     cfg,
-		node:    n,
-		monitor: mon,
-		log:     log,
-		router:  mux.NewRouter(),
+		cfg:      cfg,
+		node:     n,
+		monitor:  mon,
+		log:      log,
+		router:   mux.NewRouter(),
+		apiToken: apiToken,
 	}
 	d.setupRoutes()
+	log.Infof("Dashboard API token: %s... (use full token for auth)", apiToken[:8])
 	return d
 }
 
-func (d *Dashboard) setupRoutes() {
-	// API endpoints
-	api := d.router.PathPrefix("/api").Subrouter()
-	api.HandleFunc("/status", d.handleStatus).Methods("GET")
-	api.HandleFunc("/metrics", d.handleMetrics).Methods("GET")
-	api.HandleFunc("/rewards", d.handleRewards).Methods("GET")
-	api.HandleFunc("/network", d.handleNetwork).Methods("GET")
+// requireAuth middleware checks for valid API token via Bearer header or query param
+func (d *Dashboard) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := ""
+		// Check Authorization header first
+		auth := r.Header.Get("Authorization")
+		if strings.HasPrefix(auth, "Bearer ") {
+			token = strings.TrimPrefix(auth, "Bearer ")
+		}
+		// Fallback to query parameter
+		if token == "" {
+			token = r.URL.Query().Get("token")
+		}
+		if token != d.apiToken {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
 
-	// WebSocket for real-time updates
-	d.router.HandleFunc("/ws", d.handleWebSocket)
+func (d *Dashboard) setupRoutes() {
+	// API endpoints (require authentication)
+	api := d.router.PathPrefix("/api").Subrouter()
+	api.HandleFunc("/status", d.requireAuth(d.handleStatus)).Methods("GET")
+	api.HandleFunc("/metrics", d.requireAuth(d.handleMetrics)).Methods("GET")
+	api.HandleFunc("/rewards", d.requireAuth(d.handleRewards)).Methods("GET")
+	api.HandleFunc("/network", d.requireAuth(d.handleNetwork)).Methods("GET")
+
+	// WebSocket for real-time updates (requires token query param)
+	d.router.HandleFunc("/ws", d.requireAuth(d.handleWebSocket))
 
 	// Serve embedded static files
 	d.router.PathPrefix("/static/").Handler(http.FileServer(http.FS(staticFS)))
@@ -98,7 +130,7 @@ func (d *Dashboard) Start(ctx context.Context) {
 		server.Close()
 	}()
 
-	d.log.Infof("Dashboard listening on http://localhost%s", addr)
+	d.log.Infof("Dashboard listening on http://%s", addr)
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		d.log.Errorf("Dashboard error: %v", err)
 	}
@@ -188,8 +220,13 @@ func (d *Dashboard) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetAPIToken returns the dashboard API token for use by the Electron frontend
+func (d *Dashboard) GetAPIToken() string {
+	return d.apiToken
+}
+
 func writeJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// No CORS header — dashboard is localhost-only, no cross-origin access needed
 	json.NewEncoder(w).Encode(data)
 }

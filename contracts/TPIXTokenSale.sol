@@ -137,13 +137,14 @@ contract TPIXTokenSale is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @notice รับ BNB ตรง (fallback)
+    /// @notice รับ BNB ตรง (fallback) — revert เมื่อ sale ปิดเพื่อไม่ให้ BNB ค้างใน contract
     receive() external payable {
-        if (saleActive) {
-            totalBnbRaised += msg.value;
-            (bool sent, ) = payable(treasuryWallet).call{value: msg.value}("");
-            require(sent, "BNB transfer failed");
-            emit PurchaseWithBNB(msg.sender, msg.value, block.timestamp);
-        }
+        require(saleActive, "Sale not active");
+        require(msg.value > 0, "Amount must be > 0");
+
+        totalBnbRaised += msg.value;
+        (bool sent, ) = payable(treasuryWallet).call{value: msg.value}("");
+        require(sent, "BNB transfer failed");
+        emit PurchaseWithBNB(msg.sender, msg.value, block.timestamp);
     }
 }

@@ -108,6 +108,28 @@ function createTray() {
 
 // ─── IPC Handlers ──────────────────────────────────────────────
 
+// Sanitize error messages before sending to renderer process.
+// Strips file paths, stack traces, and internal details.
+function sanitizeError(err) {
+    const msg = err && err.message ? err.message : String(err);
+    // Known safe error messages to pass through
+    const safePatterns = [
+        'Wallet not found', 'No active wallet', 'Wrong password',
+        'Invalid input', 'Invalid address', 'Invalid private key',
+        'Maximum', 'already exists', 'already imported',
+        'Password is required', 'Sale not active', 'No wallet',
+        'Name cannot be empty', 'Name too long', 'not found',
+        'rate limit', 'circuit breaker', 'RPC timeout',
+        'Insufficient', 'Amount must be', 'Invalid mnemonic',
+    ];
+    for (const pattern of safePatterns) {
+        if (msg.includes(pattern)) return msg;
+    }
+    // Generic message for unknown errors (log full error server-side)
+    console.error('[IPC Error]', err);
+    return 'Operation failed. Please try again.';
+}
+
 function setupIPC() {
     // Initialize core services
     db = new TpixDatabase();
@@ -125,7 +147,7 @@ function setupIPC() {
             if (typeof password !== 'string') password = '';
             return { success: true, data: walletManager.create(password, name) };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -135,7 +157,7 @@ function setupIPC() {
             if (typeof password !== 'string') password = '';
             return { success: true, data: walletManager.importFromKey(privateKey, password, name) };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -157,7 +179,7 @@ function setupIPC() {
             walletManager.switchWallet(walletId);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -166,7 +188,7 @@ function setupIPC() {
             walletManager.renameWallet(walletId, newName);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -176,7 +198,7 @@ function setupIPC() {
             walletManager.deleteWallet(walletId, password);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -201,7 +223,7 @@ function setupIPC() {
             if (typeof password !== 'string') password = '';
             const key = walletManager.exportKey(walletId, password);
             return { success: true, key };
-        } catch (err) { return { success: false, error: err.message }; }
+        } catch (err) { return { success: false, error: sanitizeError(err) }; }
     });
 
     ipcMain.handle('wallet:exists', () => {
@@ -236,7 +258,7 @@ function setupIPC() {
             );
             return { success: true, data: result };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -244,7 +266,7 @@ function setupIPC() {
         try {
             return { success: true, data: await txManager.estimateGas(toAddress, amount) };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -279,7 +301,7 @@ function setupIPC() {
             await txManager.scanIncoming(walletId, address, blockCount || 100);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -317,7 +339,7 @@ function setupIPC() {
             const id = db.insertStaking({ walletId, walletAddress, rewardWallet, tier, stakeAmount, nodeName });
             return { success: true, stakingId: id };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -348,7 +370,7 @@ function setupIPC() {
             db.stopStaking(walletId);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -366,7 +388,7 @@ function setupIPC() {
             const mnemonic = walletManager.getMnemonic(password);
             return { success: true, mnemonic };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -376,7 +398,7 @@ function setupIPC() {
             const result = await walletManager.recoverFromMnemonic(mnemonic, password);
             return { success: true, data: result };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -400,7 +422,7 @@ function setupIPC() {
             identityManager.setSecurityQuestions(walletId, questions);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -415,7 +437,7 @@ function setupIPC() {
             identityManager.setRecoveryKey(walletId, key, hint);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -423,7 +445,7 @@ function setupIPC() {
         try {
             return identityManager.attemptRecovery(walletId, data);
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -433,7 +455,7 @@ function setupIPC() {
             identityManager.registerGPSLocation(walletId, label, lat, lng);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -448,7 +470,7 @@ function setupIPC() {
             identityManager.removeGPSLocation(walletId, locationId);
             return { success: true };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -471,7 +493,7 @@ function setupIPC() {
             const block = await rpcCall('eth_getBlockByNumber', [hexBlock, true], 15000);
             return { success: true, data: block };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -489,7 +511,7 @@ function setupIPC() {
             }
             return { success: true, data: blocks };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -500,7 +522,7 @@ function setupIPC() {
             const receipt = await rpcCall('eth_getTransactionReceipt', [txHash], 10000);
             return { success: true, data: { tx, receipt } };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -561,7 +583,7 @@ function setupIPC() {
                 },
             };
         } catch (err) {
-            return { success: false, error: err.message };
+            return { success: false, error: sanitizeError(err) };
         }
     });
 
@@ -584,12 +606,12 @@ function setupIPC() {
 
     ipcMain.handle('node:start', async (_, config) => {
         try { await nodeManager.start(config); return { success: true }; }
-        catch (err) { return { success: false, error: err.message }; }
+        catch (err) { return { success: false, error: sanitizeError(err) }; }
     });
 
     ipcMain.handle('node:stop', async () => {
         try { await nodeManager.stop(); return { success: true }; }
-        catch (err) { return { success: false, error: err.message }; }
+        catch (err) { return { success: false, error: sanitizeError(err) }; }
     });
 
     ipcMain.handle('node:status', () => nodeManager.getStatus());

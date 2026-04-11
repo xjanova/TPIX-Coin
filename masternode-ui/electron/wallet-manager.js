@@ -61,6 +61,9 @@ class WalletManager {
      * @returns {{ mnemonic: string, seedId: number }}
      */
     initHDWallet(password = '') {
+        if (!password || password.length === 0) {
+            throw new Error('Password is required to create a wallet');
+        }
         const existing = this.db.getDefaultSeed();
         if (existing) {
             throw new Error('HD wallet already initialized. Use createFromSeed() to add wallets.');
@@ -90,6 +93,9 @@ class WalletManager {
      * @returns {{ id, slot, name, address, hdIndex, mnemonic? }}
      */
     createFromSeed(password = '', name) {
+        if (!password || password.length === 0) {
+            throw new Error('Password is required to create a wallet');
+        }
         const count = this.db.getWalletCount();
         if (count >= MAX_WALLETS) {
             throw new Error(`Maximum ${MAX_WALLETS} wallets reached`);
@@ -452,35 +458,77 @@ class WalletManager {
     }
 
     _decrypt(walletRow, password = '') {
+        // Try current iteration count (600K) first
         try {
-            const key = this._deriveKey(password, walletRow.salt);
+            const key = this._deriveKey(password, walletRow.salt, 600000);
             const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(walletRow.iv, 'hex'));
             decipher.setAuthTag(Buffer.from(walletRow.auth_tag, 'hex'));
             let decrypted = decipher.update(walletRow.encrypted_key, 'hex', 'utf8');
             decrypted += decipher.final('utf8');
             return decrypted;
         } catch {
-            throw new Error('Failed to decrypt wallet. Wrong password?');
+            // Fall back to legacy iteration count (100K) for pre-upgrade wallets
+            try {
+                const legacyKey = this._deriveKey(password, walletRow.salt, 100000);
+                const decipher = crypto.createDecipheriv('aes-256-gcm', legacyKey, Buffer.from(walletRow.iv, 'hex'));
+                decipher.setAuthTag(Buffer.from(walletRow.auth_tag, 'hex'));
+                let decrypted = decipher.update(walletRow.encrypted_key, 'hex', 'utf8');
+                decrypted += decipher.final('utf8');
+
+                // Auto-migrate: re-encrypt with stronger iterations
+                const upgraded = this._encrypt(decrypted, password);
+                try {
+                    this.db.db.prepare(
+                        'UPDATE wallets SET encrypted_key = ?, iv = ?, auth_tag = ?, salt = ? WHERE id = ?'
+                    ).run(upgraded.encryptedKey, upgraded.iv, upgraded.authTag, upgraded.salt, walletRow.id);
+                    console.log('[Wallet] Migrated wallet', walletRow.id, 'to 600K PBKDF2 iterations');
+                } catch { /* migration is best-effort */ }
+
+                return decrypted;
+            } catch {
+                throw new Error('Failed to decrypt wallet. Wrong password?');
+            }
         }
     }
 
     _decryptSeed(seedRow, password = '') {
+        // Try current iteration count (600K) first
         try {
-            const key = this._deriveKey(password, seedRow.salt);
+            const key = this._deriveKey(password, seedRow.salt, 600000);
             const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(seedRow.iv, 'hex'));
             decipher.setAuthTag(Buffer.from(seedRow.auth_tag, 'hex'));
             let decrypted = decipher.update(seedRow.encrypted_mnemonic, 'hex', 'utf8');
             decrypted += decipher.final('utf8');
             return decrypted;
         } catch {
-            throw new Error('Failed to decrypt seed. Wrong password?');
+            // Fall back to legacy iteration count (100K) for pre-upgrade seeds
+            try {
+                const legacyKey = this._deriveKey(password, seedRow.salt, 100000);
+                const decipher = crypto.createDecipheriv('aes-256-gcm', legacyKey, Buffer.from(seedRow.iv, 'hex'));
+                decipher.setAuthTag(Buffer.from(seedRow.auth_tag, 'hex'));
+                let decrypted = decipher.update(seedRow.encrypted_mnemonic, 'hex', 'utf8');
+                decrypted += decipher.final('utf8');
+
+                // Auto-migrate: re-encrypt with stronger iterations
+                const upgraded = this._encrypt(decrypted, password);
+                try {
+                    this.db.db.prepare(
+                        'UPDATE hd_seeds SET encrypted_mnemonic = ?, iv = ?, auth_tag = ?, salt = ? WHERE id = ?'
+                    ).run(upgraded.encryptedKey, upgraded.iv, upgraded.authTag, upgraded.salt, seedRow.id);
+                    console.log('[Wallet] Migrated seed', seedRow.id, 'to 600K PBKDF2 iterations');
+                } catch { /* migration is best-effort */ }
+
+                return decrypted;
+            } catch {
+                throw new Error('Failed to decrypt seed. Wrong password?');
+            }
         }
     }
 
-    _deriveKey(password = '', salt = '') {
+    _deriveKey(password = '', salt = '', iterations = 600000) {
         const machineId = os.hostname() + os.userInfo().username;
         const combined = password + ':' + machineId + ':' + salt;
-        return crypto.pbkdf2Sync(combined, 'tpix-node-wallet:' + salt, 100000, 32, 'sha256');
+        return crypto.pbkdf2Sync(combined, 'tpix-node-wallet:' + salt, iterations, 32, 'sha256');
     }
 
     _privateKeyToAddress(privKeyBytes) {

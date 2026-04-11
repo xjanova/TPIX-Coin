@@ -21,6 +21,20 @@ x-validator-common: &validator-common
   restart: unless-stopped
   networks:
     - tpix-net
+  deploy:
+    resources:
+      limits:
+        cpus: '2.0'
+        memory: 4G
+      reservations:
+        cpus: '0.5'
+        memory: 1G
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://localhost:8545 -T 5 || exit 1"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 30s
 
 services:
   # ─── Validator 1 (Boot Node + Primary RPC) ───────────────
@@ -38,7 +52,7 @@ services:
       --max-slots 4096
       --block-gas-target 0x1312D00
       --price-limit 0
-      --max-enqueued 4096
+      --max-enqueued 1024
     volumes:
       - validator1-data:/data
       - ./genesis.json:/genesis/genesis.json:ro
@@ -62,7 +76,7 @@ services:
       --max-slots 4096
       --block-gas-target 0x1312D00
       --price-limit 0
-      --max-enqueued 4096
+      --max-enqueued 1024
     volumes:
       - validator2-data:/data
       - ./genesis.json:/genesis/genesis.json:ro
@@ -86,7 +100,7 @@ services:
       --max-slots 4096
       --block-gas-target 0x1312D00
       --price-limit 0
-      --max-enqueued 4096
+      --max-enqueued 1024
     volumes:
       - validator3-data:/data
       - ./genesis.json:/genesis/genesis.json:ro
@@ -110,7 +124,7 @@ services:
       --max-slots 4096
       --block-gas-target 0x1312D00
       --price-limit 0
-      --max-enqueued 4096
+      --max-enqueued 1024
     volumes:
       - validator4-data:/data
       - ./genesis.json:/genesis/genesis.json:ro

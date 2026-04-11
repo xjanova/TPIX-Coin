@@ -42,8 +42,14 @@ contract TPIXIdentity {
     // State
     // ================================================================
 
-    mapping(address => Identity) public identities;
+    mapping(address => Identity) private identities;
     mapping(address => RecoveryRequest) public recoveries;
+
+    /// @notice Cooldown period after a cancelled recovery before a new one can be requested
+    uint256 public constant RECOVERY_COOLDOWN = 24 hours;
+
+    /// @notice Timestamp of last cancelled recovery per wallet
+    mapping(address => uint256) public lastRecoveryCancelledAt;
 
     uint256 public constant TIMELOCK_DURATION = 48 hours;
     uint256 public totalRegistered;
@@ -130,7 +136,26 @@ contract TPIXIdentity {
     ) external {
         require(identities[_wallet].exists, "Wallet has no identity");
         require(_newOwner != address(0), "Invalid new owner");
+        require(_newOwner != _wallet, "New owner same as old");
         require(!recoveries[_wallet].active, "Recovery already pending");
+        require(
+            block.timestamp >= lastRecoveryCancelledAt[_wallet] + RECOVERY_COOLDOWN,
+            "Recovery cooldown active"
+        );
+        require(_proof != bytes32(0), "Empty proof");
+
+        // Validate proof: caller must provide keccak256(identityRoot, newOwner, block.chainid)
+        // This prevents replay attacks and proves knowledge of the identity root
+        // without simply reading the public identityRoot value.
+        bytes32 expectedProof = keccak256(abi.encodePacked(
+            identities[_wallet].identityRoot,
+            _newOwner,
+            block.chainid
+        ));
+        require(
+            _proof == expectedProof,
+            "Proof does not match identity"
+        );
 
         recoveries[_wallet] = RecoveryRequest({
             newOwner: _newOwner,
@@ -154,6 +179,7 @@ contract TPIXIdentity {
         require(recoveries[msg.sender].active, "No active recovery");
 
         recoveries[msg.sender].active = false;
+        lastRecoveryCancelledAt[msg.sender] = block.timestamp;
         emit RecoveryCancelled(msg.sender);
     }
 
@@ -182,8 +208,9 @@ contract TPIXIdentity {
             exists: true
         });
 
-        // Mark old identity as migrated (keep for history)
-        // The old address still has identity data but new owner controls it
+        // Invalidate old identity to prevent duplication and state fork
+        id.exists = false;
+        id.identityRoot = bytes32(0);
 
         emit RecoveryExecuted(_wallet, req.newOwner);
     }
@@ -199,12 +226,9 @@ contract TPIXIdentity {
         return identities[_wallet].exists;
     }
 
-    /**
-     * @notice Get identity root hash for a wallet.
-     */
-    function getIdentityRoot(address _wallet) external view returns (bytes32) {
-        return identities[_wallet].identityRoot;
-    }
+    // getIdentityRoot() intentionally removed — identityRoot must not be publicly
+    // readable to prevent attackers from trivially computing recovery proofs.
+    // The wallet app stores identityRoot locally after registration.
 
     /**
      * @notice Get recovery status for a wallet.

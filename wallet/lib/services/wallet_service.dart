@@ -311,9 +311,17 @@ class WalletService {
   }
 
   /// Save biometric unlock token (call after successful PIN unlock + biometric enable)
+  /// Stores a HMAC-derived token from PIN hash, never the raw PIN.
   Future<void> saveBiometricToken(String pin) async {
-    // Store the PIN encrypted by secure storage (hardware-backed)
-    await _storage.write(key: _keyBiometricToken, value: pin);
+    // Derive token from the stored PIN hash (not the raw PIN)
+    final pinSalt = await _storage.read(key: _keyPinSalt);
+    final pinHash = await _storage.read(key: _keyPin);
+    if (pinSalt == null || pinHash == null) return;
+
+    final bioSalt = _generateSalt();
+    final token = _hashPin(pinHash, bioSalt);
+    // Store biometric salt + token, never the raw PIN
+    await _storage.write(key: _keyBiometricToken, value: '$bioSalt:$token');
   }
 
   /// Remove biometric unlock token
@@ -322,10 +330,30 @@ class WalletService {
   }
 
   /// Unlock wallet using biometric token (skips PIN entry)
+  /// Compares stored biometric token against PIN hash — never exposes raw PIN.
   Future<bool> unlockWithBiometric() async {
-    final pin = await _storage.read(key: _keyBiometricToken);
-    if (pin == null) return false;
-    return await unlockWallet(pin);
+    final stored = await _storage.read(key: _keyBiometricToken);
+    if (stored == null || !stored.contains(':')) return false;
+    final parts = stored.split(':');
+    if (parts.length != 2) return false;
+    final salt = parts[0];
+    final storedToken = parts[1];
+
+    // Load PIN hash + salt from secure storage and verify match
+    final pinHash = await _storage.read(key: _keyPin);
+    final pinSalt = await _storage.read(key: _keyPinSalt);
+    if (pinHash == null || pinSalt == null) return false;
+
+    // We need to verify the biometric token was generated from the correct PIN
+    // by checking that the stored PIN hash matches what we have on record.
+    // Then proceed with the normal unlock flow using the PIN hash directly.
+    // Re-derive token from stored PIN: iterate all possible PINs is not feasible,
+    // so we store a verification hash derived from the PIN hash itself.
+    final verifyToken = _hashPin(pinHash, salt);
+    if (!_constantTimeEquals(verifyToken, storedToken)) return false;
+
+    // Biometric token verified — proceed to load wallet data without PIN
+    return await _loadWalletData();
   }
 
   /// Check if PIN is currently locked out
@@ -420,6 +448,45 @@ class WalletService {
         _address = activeWallet?.address;
       }
     }
+
+    return _credentials != null;
+  }
+
+  /// Load wallet data from storage (used by biometric unlock after token verification)
+  Future<bool> _loadWalletData() async {
+    // Load wallet list
+    final walletsJson = await _storage.read(key: _keyWallets);
+    if (walletsJson != null) {
+      final list = jsonDecode(walletsJson) as List;
+      _wallets = list.map((j) => WalletInfo.fromJson(j as Map<String, dynamic>)).toList();
+    } else {
+      await _migrateLegacy();
+    }
+
+    // Load mnemonic
+    _mnemonic = await _storage.read(key: _keyMnemonic);
+
+    // Load active slot
+    final activeSlotStr = await _storage.read(key: _keyActiveSlot);
+    if (activeSlotStr != null) {
+      _activeSlot = int.tryParse(activeSlotStr) ?? -1;
+    }
+    if (_activeSlot == -1 && _wallets.isNotEmpty) {
+      _activeSlot = _wallets.first.slot;
+    }
+
+    // Load active wallet credentials
+    if (_activeSlot > 0) {
+      final pk = await _storage.read(key: 'tpix_pk_$_activeSlot');
+      if (pk != null) {
+        _credentials = EthPrivateKey.fromHex(pk);
+        _address = activeWallet?.address;
+      }
+    }
+
+    // Reset failed attempts on successful biometric unlock
+    await _storage.delete(key: _keyPinAttempts);
+    await _storage.delete(key: _keyPinLockUntil);
 
     return _credentials != null;
   }

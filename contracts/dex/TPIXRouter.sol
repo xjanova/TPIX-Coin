@@ -62,6 +62,15 @@ contract TPIXRouter is ReentrancyGuard, Ownable, Pausable {
     /// @notice The current fee rate in basis points (e.g., 30 = 0.3%).
     uint256 public feeRate;
 
+    /// @notice Timelock duration for critical admin changes (2 days).
+    uint256 public constant ADMIN_TIMELOCK = 2 days;
+
+    /// @notice Pending router change (address(0) = no pending change).
+    address public pendingRouter;
+
+    /// @notice Timestamp when pending router change can be executed.
+    uint256 public pendingRouterExecuteAfter;
+
     // =========================================================================
     //                               EVENTS
     // =========================================================================
@@ -116,6 +125,18 @@ contract TPIXRouter is ReentrancyGuard, Ownable, Pausable {
      * @param newRouter The new router address.
      */
     event RouterUpdated(address indexed oldRouter, address indexed newRouter);
+
+    /**
+     * @notice Emitted when a router change is queued via timelock.
+     * @param newRouter The proposed new router address.
+     * @param executeAfter The timestamp after which the change can be executed.
+     */
+    event RouterChangeQueued(address indexed newRouter, uint256 executeAfter);
+
+    /**
+     * @notice Emitted when a queued router change is cancelled.
+     */
+    event RouterChangeCancelled(address indexed cancelledRouter);
 
     /**
      * @notice Emitted when tokens are withdrawn via the emergency withdrawal function.
@@ -446,23 +467,52 @@ contract TPIXRouter is ReentrancyGuard, Ownable, Pausable {
     }
 
     /**
-     * @notice Updates the underlying DEX router address.
+     * @notice Queue a router change with 2-day timelock.
      * @param _newRouter The address of the new Uniswap V2-compatible DEX router.
      *
      * @dev Only callable by the contract owner.
-     *      Reverts with `ZeroAddress` if `_newRouter` is the zero address.
-     *      Emits a {RouterUpdated} event.
-     *
-     *      WARNING: Changing the router may affect existing token approvals.
-     *      Ensure the new router is a trusted, audited contract.
+     *      The change must be executed via `executeRouterChange()` after the timelock.
      */
-    function setRouter(address _newRouter) external onlyOwner {
+    function queueRouterChange(address _newRouter) external onlyOwner {
         if (_newRouter == address(0)) revert ZeroAddress();
 
-        address oldRouter = address(dexRouter);
-        dexRouter = IUniswapV2Router02(_newRouter);
+        pendingRouter = _newRouter;
+        pendingRouterExecuteAfter = block.timestamp + ADMIN_TIMELOCK;
 
-        emit RouterUpdated(oldRouter, _newRouter);
+        emit RouterChangeQueued(_newRouter, pendingRouterExecuteAfter);
+    }
+
+    /**
+     * @notice Execute a queued router change after the timelock has expired.
+     *
+     * @dev Only callable by the contract owner.
+     *      Reverts if no pending change or timelock not expired.
+     */
+    function executeRouterChange() external onlyOwner {
+        require(pendingRouter != address(0), "No pending router change");
+        require(block.timestamp >= pendingRouterExecuteAfter, "Timelock not expired");
+
+        address oldRouter = address(dexRouter);
+        dexRouter = IUniswapV2Router02(pendingRouter);
+
+        emit RouterUpdated(oldRouter, pendingRouter);
+
+        pendingRouter = address(0);
+        pendingRouterExecuteAfter = 0;
+    }
+
+    /**
+     * @notice Cancel a queued router change.
+     *
+     * @dev Only callable by the contract owner.
+     */
+    function cancelRouterChange() external onlyOwner {
+        require(pendingRouter != address(0), "No pending router change");
+
+        emit RouterChangeCancelled(pendingRouter);
+
+        pendingRouter = address(0);
+        pendingRouterExecuteAfter = 0;
     }
 
     // =========================================================================

@@ -118,8 +118,8 @@ class NodeManager extends EventEmitter {
         this._lastSavedUptime = 0;
         this.addLog('info', `Starting TPIX Master Node "${this.config.nodeName}"...`);
         this.addLog('info', `Tier: ${this.config.tier} | Chain: ${this.config.chainId}`);
-        this.addLog('info', `Wallet: ${this.config.walletAddress || 'Not set'}`);
-        this.addLog('info', `Reward Wallet: ${this.config.rewardWallet || this.config.walletAddress || 'Not set'}`);
+        this.addLog('info', `Wallet: ${this._maskAddress(this.config.walletAddress) || 'Not set'}`);
+        this.addLog('info', `Reward Wallet: ${this._maskAddress(this.config.rewardWallet || this.config.walletAddress) || 'Not set'}`);
 
         // Determine the binary path
         const binPath = this.findBinary();
@@ -240,12 +240,13 @@ class NodeManager extends EventEmitter {
 
                 // Graceful shutdown — Windows doesn't support SIGTERM reliably
                 if (os.platform() === 'win32') {
-                    const { exec } = require('child_process');
-                    exec(`taskkill /PID ${pid} /T`, () => {
+                    const { execFile } = require('child_process');
+                    const safePid = String(Math.floor(Number(pid)));
+                    execFile('taskkill', ['/PID', safePid, '/T'], () => {
                         // Force kill after 10 seconds if still alive
                         setTimeout(() => {
                             if (this.process) {
-                                exec(`taskkill /PID ${pid} /T /F`, () => {});
+                                execFile('taskkill', ['/PID', safePid, '/T', '/F'], () => {});
                             }
                         }, 10000);
                     });
@@ -690,6 +691,11 @@ class NodeManager extends EventEmitter {
     }
 
     // ─── System Metrics ────────────────────────────────────────
+
+    _maskAddress(addr) {
+        if (!addr || addr.length < 10) return addr;
+        return addr.substring(0, 6) + '...' + addr.substring(addr.length - 4);
+    }
 
     getSystemMetrics() {
         const cpus = os.cpus();
