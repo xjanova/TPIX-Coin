@@ -5,25 +5,25 @@
   "validators": [
     {
       "id": 1,
-      "address": "0xb45bA09f924B27D32870df7B133FCc3a672D7BF6"
+      "address": "0xafF40043811B634628b50d8Bf4e4bC98DFd6332F"
     },
     {
       "id": 2,
-      "address": "0xd1E716a7e1570b14Fc24764941a3b1Fd96e14D2e"
+      "address": "0xcFc840b2F756fD369C28cC54Cb04A9A9D76a99b9"
     },
     {
       "id": 3,
-      "address": "0x32eD1f6bCf759c4ee5120637EE66f5eb865E63f2"
+      "address": "0x11993fa65fFD72eFe8C0226429C8d83Ee52b1309"
     },
     {
       "id": 4,
-      "address": "0xfCAA2B62B69C41C9F0b62FDe1A17279A6a933238"
+      "address": "0x7A67ACEa14ddA82B14275DceeB681dbf4A532F03"
     }
   ],
   "bootnodes": [
-    "/ip4/tpix-validator-1/tcp/10001/p2p/16Uiu2HAmGfVCRCg5CrDQsfA5Y5PzETpRr6ufgGLLsmxXCzWHqM2j",
-    "/ip4/tpix-validator-2/tcp/10001/p2p/16Uiu2HAmMFVQRZr5vcRWuRwaxptenpsRWcfg4fFaiEHuGeTeWfo1",
-    "/ip4/tpix-validator-3/tcp/10001/p2p/16Uiu2HAm9923tUwc6CfhjNm4X2DGhkAk7kkSRTJsk4mva4EDT3vm",
-    "/ip4/tpix-validator-4/tcp/10001/p2p/16Uiu2HAmSRGg5sDhYEpWAgXBuoTYCVwrozjKCTJMZwHkDdEgU9kT"
+    "/ip4/tpix-validator-1/tcp/10001/p2p/16Uiu2HAmJydWNunXWHXSTRxUuJmvUnLY5NdvGekJMnqtTJGkr3bu",
+    "/ip4/tpix-validator-2/tcp/10001/p2p/16Uiu2HAmAgLzspeuCsWBqJVTPwesBexcLhbNnqnLTmSzMVaFScsb",
+    "/ip4/tpix-validator-3/tcp/10001/p2p/16Uiu2HAm7QCB32o3zxiKEpEjP76fo2pTnRJxoEQtH6gxJZttgePs",
+    "/ip4/tpix-validator-4/tcp/10001/p2p/16Uiu2HAmPBwJRdU2WsQ7rUxt3Jk1VU8eGynCwYoXP3Wrbx1hNLJm"
   ]
 }
