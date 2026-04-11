@@ -64,6 +64,7 @@ class UpdateService {
         releaseNotes: release.body,
         releaseDate: release.publishedAt,
         apkDownloadUrl: release.apkDownloadUrl,
+        apkSize: release.apkSize,
       );
     } catch (e) {
       debugPrint('Update check error: $e');
@@ -89,9 +90,11 @@ class UpdateService {
 
   /// Download APK from GitHub and install it
   /// Returns true if download+install was initiated, false if fallback needed
+  /// [expectedSize] from GitHub API asset metadata for integrity verification
   Future<bool> downloadAndInstall(
     String downloadUrl,
     String version, {
+    int? expectedSize,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -120,6 +123,13 @@ class UpdateService {
       // Verify file exists and has content
       final file = File(filePath);
       if (!file.existsSync() || file.lengthSync() < 1024) {
+        return false;
+      }
+
+      // Verify file size matches GitHub API metadata to detect truncation/tampering
+      if (expectedSize != null && file.lengthSync() != expectedSize) {
+        debugPrint('APK size mismatch: expected $expectedSize, got ${file.lengthSync()}');
+        file.deleteSync();
         return false;
       }
 
@@ -214,6 +224,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       final success = await widget.service.downloadAndInstall(
         apkUrl,
         widget.result.latestVersion ?? 'latest',
+        expectedSize: widget.result.apkSize,
         onProgress: (received, total) {
           if (!mounted) return;
           if (total > 0) {
@@ -457,22 +468,26 @@ class ReleaseInfo {
   final String? body;
   final String? publishedAt;
   final String? apkDownloadUrl;
+  final int? apkSize; // expected file size from GitHub API
 
   ReleaseInfo({
     required this.version,
     this.body,
     this.publishedAt,
     this.apkDownloadUrl,
+    this.apkSize,
   });
 
   factory ReleaseInfo.fromJson(Map<String, dynamic> json) {
     // Find the .apk asset in the release
     String? apkUrl;
+    int? apkSize;
     final assets = json['assets'] as List<dynamic>? ?? [];
     for (final asset in assets) {
       final name = (asset['name'] as String? ?? '').toLowerCase();
       if (name.endsWith('.apk')) {
         apkUrl = asset['browser_download_url'] as String?;
+        apkSize = asset['size'] as int?;
         break;
       }
     }
@@ -482,6 +497,7 @@ class ReleaseInfo {
       body: json['body'] as String?,
       publishedAt: json['published_at'] as String?,
       apkDownloadUrl: apkUrl,
+      apkSize: apkSize,
     );
   }
 }
@@ -494,6 +510,7 @@ class UpdateResult {
   final String? releaseNotes;
   final String? releaseDate;
   final String? apkDownloadUrl;
+  final int? apkSize; // expected file size for integrity verification
 
   UpdateResult({
     required this.available,
@@ -502,5 +519,6 @@ class UpdateResult {
     this.releaseNotes,
     this.releaseDate,
     this.apkDownloadUrl,
+    this.apkSize,
   });
 }

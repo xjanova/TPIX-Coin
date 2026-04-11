@@ -124,15 +124,27 @@ class BridgeFeeConfig {
         enabled: true,
       );
 
-  /// Calculate fee for a given amount
+  /// Calculate fee for a given amount (double convenience for UI display)
   double calculateFee(double amount) {
     if (feePercent <= 0 || feeWallet.isEmpty) return 0;
     return amount * feePercent / 100;
   }
 
+  /// Calculate fee using BigInt for precision (use for actual transactions)
+  BigInt calculateFeeBigInt(BigInt amountIn) {
+    if (feePercent <= 0 || feeWallet.isEmpty) return BigInt.zero;
+    final feeBasis = (feePercent * 10000).round(); // e.g. 0.1% → 1000
+    return amountIn * BigInt.from(feeBasis) ~/ BigInt.from(1000000);
+  }
+
   /// Amount user receives after fee
   double receiveAmount(double amount) {
     return amount - calculateFee(amount);
+  }
+
+  /// Amount user receives after fee (BigInt precision)
+  BigInt receiveAmountBigInt(BigInt amountIn) {
+    return amountIn - calculateFeeBigInt(amountIn);
   }
 }
 
@@ -210,13 +222,20 @@ class FeeService {
     return config.bridge;
   }
 
-  /// Cached swap fee (sync, for UI display after initial fetch)
-  static SwapFeeConfig get swapFee =>
-      _cachedConfig?.swap ?? SwapFeeConfig.fallback();
+  /// Whether cached config is still within TTL
+  static bool get _isCacheValid =>
+      _cachedConfig != null &&
+      DateTime.now().difference(_cachedConfig!.fetchedAt) < _cacheDuration;
 
-  /// Cached bridge fee (sync, for UI display after initial fetch)
+  /// Cached swap fee (sync, for UI display after initial fetch).
+  /// Returns fallback if cache is expired — call getConfig() to refresh.
+  static SwapFeeConfig get swapFee =>
+      _isCacheValid ? _cachedConfig!.swap : SwapFeeConfig.fallback();
+
+  /// Cached bridge fee (sync, for UI display after initial fetch).
+  /// Returns fallback if cache is expired — call getConfig() to refresh.
   static BridgeFeeConfig get bridgeFee =>
-      _cachedConfig?.bridge ?? BridgeFeeConfig.fallback();
+      _isCacheValid ? _cachedConfig!.bridge : BridgeFeeConfig.fallback();
 
   /// Short fee wallet display (0x1234...5678)
   static String shortWallet(String address) {

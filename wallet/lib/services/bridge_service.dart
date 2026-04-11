@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/chain_config.dart';
 import 'fee_service.dart';
@@ -120,26 +121,30 @@ class BridgeService {
         ).timeout(const Duration(seconds: 10));
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          // Validate API-returned fee wallet; reject invalid addresses
+          // Validate API-returned fee wallet; reject entire API response if invalid
+          // to prevent mismatch between quoted fee wallet and execute fee wallet
           final apiWallet = data['feeWallet'] as String? ?? '';
-          final wallet = FeeService.isValidFeeWallet(apiWallet)
-              ? apiWallet
-              : feeConfig.feeWallet;
-          final percent = (data['feePercent'] as num?)?.toDouble() ?? feeConfig.feePercent;
-          final fee = (data['fee'] as num?)?.toDouble() ?? amount * percent / 100;
-          return BridgeFee(
-            feeAmount: fee,
-            feePercent: percent,
-            feeWallet: wallet,
-            estimatedTime: data['estimatedMinutes'] as int? ?? feeConfig.estimatedMinutes,
-            receiveAmount: (data['receive'] as num?)?.toDouble() ?? (amount - fee),
-          );
+          if (!FeeService.isValidFeeWallet(apiWallet)) {
+            // Invalid API wallet — fall through to FeeService fallback below
+            // This ensures quote and execute always use the same wallet
+          } else {
+            final percent = (data['feePercent'] as num?)?.toDouble() ?? feeConfig.feePercent;
+            final fee = (data['fee'] as num?)?.toDouble() ?? amount * percent / 100;
+            return BridgeFee(
+              feeAmount: fee,
+              feePercent: percent,
+              feeWallet: apiWallet,
+              estimatedTime: data['estimatedMinutes'] as int? ?? feeConfig.estimatedMinutes,
+              receiveAmount: (data['receive'] as num?)?.toDouble() ?? (amount - fee),
+            );
+          }
         }
       } finally {
         client.close();
       }
-    } catch (_) {
+    } catch (e) {
       // Use FeeService config as fallback
+      debugPrint('Bridge fee API fallback: $e');
     }
 
     // Fallback: calculate from FeeService config
@@ -191,7 +196,9 @@ class BridgeService {
       } finally {
         client.close();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Bridge status check failed: $e');
+    }
     return null;
   }
 }

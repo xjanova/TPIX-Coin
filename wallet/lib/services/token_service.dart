@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../models/chain_config.dart';
 import '../models/token_info.dart';
 import 'db_service.dart';
 import 'wallet_service.dart';
@@ -99,11 +100,16 @@ class TokenService {
   // Known tokens on TPIX Chain (can be expanded)
   // ================================================================
 
-  /// Get list of known/popular tokens on TPIX Chain
-  static List<Map<String, String>> get knownTokens => [
-    // Add known TPIX Chain tokens here as they launch
-    // {'address': '0x...', 'name': 'Wrapped TPIX', 'symbol': 'WTPIX'},
-  ];
+  /// Get list of known/popular tokens for any chain.
+  /// Token lists come from ChainConfig — no TPIX Chain tokens deployed yet.
+  static List<Map<String, String>> knownTokensForChain(int chainId) {
+    final chain = ChainConfig.byId(chainId);
+    return chain.knownTokens.map((t) => {
+      'address': t.address,
+      'name': t.name,
+      'symbol': t.symbol,
+    }).toList();
+  }
 
   // ================================================================
   // RPC Helpers

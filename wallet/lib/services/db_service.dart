@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/tx_record.dart';
@@ -124,11 +125,21 @@ class DbService {
         // Step 4: Drop old table
         await db.execute('DROP TABLE tokens_old');
       }
-    } catch (_) {
+    } catch (e) {
       // Fallback: just try to add the column if recreation failed
+      debugPrint('Token table migration failed, trying ALTER fallback: $e');
       try {
         await db.execute('ALTER TABLE tokens ADD COLUMN chain_id INTEGER NOT NULL DEFAULT 4289');
-      } catch (_) {}
+      } catch (e2) {
+        debugPrint('ALTER TABLE fallback also failed: $e2');
+        // If both fail, the column may already exist from a partial migration.
+        // Verify by checking table_info; throw if column truly missing.
+        final tableInfo = await db.rawQuery("PRAGMA table_info('tokens')");
+        final hasChainId = tableInfo.any((col) => col['name'] == 'chain_id');
+        if (!hasChainId) {
+          throw Exception('Critical: tokens table missing chain_id column after migration');
+        }
+      }
     }
     await db.execute('CREATE INDEX IF NOT EXISTS idx_token_slot ON tokens(wallet_slot)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_token_chain ON tokens(chain_id, wallet_slot)');

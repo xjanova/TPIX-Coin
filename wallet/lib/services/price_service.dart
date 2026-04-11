@@ -92,7 +92,7 @@ class PriceService {
     if (count > 0) return;
 
     // Seed 7 days of hourly data with realistic micro-variations around $0.18
-    final rng = Random(42);
+    final rng = Random.secure();
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     double price = defaultPrice;
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:bip39/bip39.dart' as bip39;
+import 'package:flutter/foundation.dart';
 import 'package:bip32/bip32.dart' as bip32;
 import 'package:crypto/crypto.dart' show Hmac, sha256;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -54,6 +55,7 @@ class WalletService {
   EthPrivateKey? _credentials;
   String? _address;
   String? _mnemonic;
+  int? _cachedNonce; // local nonce cache to prevent collision on rapid sends
 
   List<WalletInfo> _wallets = [];
   int _activeSlot = -1;
@@ -649,8 +651,9 @@ class WalletService {
       }
       // Remove legacy key after successful migration
       await _storage.delete(key: _keyTxHistory);
-    } catch (_) {
+    } catch (e) {
       // Migration failed — keep legacy data, will retry next time
+      debugPrint('TX migration failed: $e');
       _txMigrated = false;
     }
   }
@@ -666,6 +669,7 @@ class WalletService {
     try {
       final latestBlock = await web3.getBlockNumber();
       final startBlock = max(0, latestBlock - blockCount);
+      int consecutiveEmpty = 0; // early termination after 10 empty blocks
 
       for (int i = latestBlock; i >= startBlock; i--) {
         try {
@@ -678,13 +682,24 @@ class WalletService {
               'params': ['0x${i.toRadixString(16)}', true],
               'id': i,
             }),
-          );
+          ).timeout(const Duration(seconds: 5));
 
           final body = jsonDecode(response.body);
           final block = body['result'];
-          if (block == null) continue;
+          if (block == null) {
+            consecutiveEmpty++;
+            if (consecutiveEmpty >= 10) break; // early termination
+            continue;
+          }
 
           final txs = block['transactions'] as List? ?? [];
+          if (txs.isEmpty) {
+            consecutiveEmpty++;
+            if (consecutiveEmpty >= 10) break;
+            continue;
+          }
+          consecutiveEmpty = 0; // reset on non-empty block
+
           final blockTimestamp = block['timestamp'] != null
               ? int.parse(block['timestamp'].toString().replaceFirst('0x', ''), radix: 16)
               : DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -716,7 +731,8 @@ class WalletService {
             }
           }
         } catch (_) {
-          // Skip problematic blocks
+          consecutiveEmpty++;
+          if (consecutiveEmpty >= 10) break; // stop on repeated failures
         }
       }
 
@@ -724,8 +740,8 @@ class WalletService {
       if (found.isNotEmpty) {
         await DbService.insertTxBatch(found, _activeSlot);
       }
-    } catch (_) {
-      // Network error
+    } catch (e) {
+      debugPrint('Block scan error: $e');
     } finally {
       client.close();
     }
@@ -782,6 +798,8 @@ class WalletService {
       chainId: TpixChain.chainId,
     );
 
+    _incrementNonce();
+
     // Store transaction locally
     final txRecord = TxRecord(
       txHash: tx,
@@ -796,10 +814,23 @@ class WalletService {
     return tx;
   }
 
-  /// Get transaction count (nonce)
+  /// Get transaction count (nonce) with local cache to prevent collision on rapid sends.
+  /// After sending a tx, the cached nonce is incremented locally so the next send
+  /// uses nonce+1 even before the previous tx is mined.
   Future<int> getTransactionCount() async {
     if (_address == null) return 0;
-    return await web3.getTransactionCount(EthereumAddress.fromHex(_address!));
+    final onChain = await web3.getTransactionCount(EthereumAddress.fromHex(_address!));
+    // Use whichever is higher: on-chain nonce or our local cache
+    if (_cachedNonce != null && _cachedNonce! > onChain) {
+      return _cachedNonce!;
+    }
+    _cachedNonce = onChain;
+    return onChain;
+  }
+
+  /// Increment local nonce after a successful send
+  void _incrementNonce() {
+    _cachedNonce = (_cachedNonce ?? 0) + 1;
   }
 
   // ================================================================
@@ -829,11 +860,25 @@ class WalletService {
         gasPrice: gasPrice != null ? EtherAmount.inWei(gasPrice) : null,
         maxGas: maxGas,
       );
-      return await client.sendTransaction(
+      final txHash = await client.sendTransaction(
         _credentials!,
         tx,
         chainId: chainId,
       );
+      _incrementNonce();
+
+      // Store cross-chain transaction locally so it appears in history
+      final txRecord = TxRecord(
+        txHash: txHash,
+        fromAddress: _address!,
+        toAddress: toAddress,
+        value: (value ?? BigInt.zero).toString(),
+        direction: 'sent',
+        status: 'pending',
+      );
+      await saveTxRecord(txRecord);
+
+      return txHash;
     } finally {
       client.dispose();
     }
@@ -858,7 +903,8 @@ class WalletService {
         final body = jsonDecode(response.body);
         final result = body['result'];
         if (result == null) return null; // still pending
-        final statusHex = result['status'] as String? ?? '0x1';
+        final statusHex = result['status'] as String?;
+        if (statusHex == null) return null; // status unknown, treat as pending
         return statusHex == '0x1' ? 'confirmed' : 'failed';
       } finally {
         client.close();
@@ -911,7 +957,8 @@ class WalletService {
         final result = body['result'];
         if (result == null) return null; // still pending
 
-        final statusHex = result['status'] as String? ?? '0x1';
+        final statusHex = result['status'] as String?;
+        if (statusHex == null) return null; // status unknown, treat as pending
         return statusHex == '0x1' ? 'confirmed' : 'failed';
       } finally {
         client.close();

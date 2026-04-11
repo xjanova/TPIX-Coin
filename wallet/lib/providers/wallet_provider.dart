@@ -16,6 +16,15 @@ import '../services/wallet_service.dart';
 class WalletProvider extends ChangeNotifier {
   final WalletService _walletService = WalletService();
 
+  /// Sanitize error messages to prevent leaking RPC URLs, file paths, or stack traces
+  static String _sanitizeError(Object e) {
+    final msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+    // Strip URLs that might reveal RPC endpoints
+    final sanitized = msg.replaceAll(RegExp(r'https?://[^\s]+'), '[server]');
+    // Limit length to prevent stack traces reaching UI
+    return sanitized.length > 200 ? '${sanitized.substring(0, 200)}...' : sanitized;
+  }
+
   bool _isLoading = false;
   bool _isUnlocked = false;
   bool _hasWallet = false;
@@ -40,9 +49,12 @@ class WalletProvider extends ChangeNotifier {
 
   Timer? _balanceTimer;
   Timer? _txPollTimer;
+  Timer? _mnemonicClearTimer; // auto-clear mnemonic from memory
   String? _pendingTxHash;
   int _pollCount = 0;
   static const int _maxPolls = 100; // 100 x 3s = 5 min max
+  bool _isRefreshing = false; // guard against overlapping balance refreshes
+  bool _isPolling = false; // guard against overlapping tx polls
 
   // Getters
   bool get isLoading => _isLoading;
@@ -101,6 +113,15 @@ class WalletProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clear mnemonic from memory after a timeout (for security)
+  void _scheduleMnemonicClear() {
+    _mnemonicClearTimer?.cancel();
+    _mnemonicClearTimer = Timer(const Duration(seconds: 120), () {
+      _mnemonic = null;
+      notifyListeners();
+    });
+  }
+
   /// Create new wallet
   Future<Map<String, String>> createWallet({String? name}) async {
     _isLoading = true;
@@ -111,9 +132,10 @@ class WalletProvider extends ChangeNotifier {
       final result = await _walletService.createWallet(name: name);
       _mnemonic = result['mnemonic'];
       _address = result['address'];
+      _scheduleMnemonicClear();
       return result;
     } catch (e) {
-      _error = e.toString();
+      _error = _sanitizeError(e);
       rethrow;
     } finally {
       _isLoading = false;
@@ -130,8 +152,9 @@ class WalletProvider extends ChangeNotifier {
     try {
       _address = await _walletService.importFromMnemonic(mnemonic, name: name);
       _mnemonic = mnemonic;
+      _scheduleMnemonicClear();
     } catch (e) {
-      _error = e.toString();
+      _error = _sanitizeError(e);
       rethrow;
     } finally {
       _isLoading = false;
@@ -148,7 +171,7 @@ class WalletProvider extends ChangeNotifier {
     try {
       _address = await _walletService.importFromPrivateKey(key, name: name);
     } catch (e) {
-      _error = e.toString();
+      _error = _sanitizeError(e);
       rethrow;
     } finally {
       _isLoading = false;
@@ -260,7 +283,7 @@ class WalletProvider extends ChangeNotifier {
       _startTxPolling(txHash);
       return txHash;
     } catch (e) {
-      _error = e.toString();
+      _error = _sanitizeError(e);
       rethrow;
     } finally {
       _isLoading = false;
@@ -351,7 +374,7 @@ class WalletProvider extends ChangeNotifier {
       await loadTxHistory();
       await loadTokens();
     } catch (e) {
-      _error = e.toString();
+      _error = _sanitizeError(e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -372,7 +395,7 @@ class WalletProvider extends ChangeNotifier {
       await loadTxHistory();
       return result;
     } catch (e) {
-      _error = e.toString();
+      _error = _sanitizeError(e);
       rethrow;
     } finally {
       _isLoading = false;
@@ -469,19 +492,25 @@ class WalletProvider extends ChangeNotifier {
     _txPollTimer = Timer.periodic(
       const Duration(seconds: 3),
       (_) async {
-        _pollCount++;
-        if (_pollCount > _maxPolls || _pendingTxHash == null) {
-          _txPollTimer?.cancel();
-          return;
-        }
+        if (_isPolling) return; // prevent overlapping polls
+        _isPolling = true;
+        try {
+          _pollCount++;
+          if (_pollCount > _maxPolls || _pendingTxHash == null) {
+            _txPollTimer?.cancel();
+            return;
+          }
 
-        final status = await _walletService.checkTransactionStatus(_pendingTxHash!);
-        if (status != null) {
-          await _walletService.updateTxStatus(_pendingTxHash!, status, slot: pollSlot);
-          await loadTxHistory();
-          await refreshBalance();
-          _txPollTimer?.cancel();
-          _pendingTxHash = null;
+          final status = await _walletService.checkTransactionStatus(_pendingTxHash!);
+          if (status != null) {
+            await _walletService.updateTxStatus(_pendingTxHash!, status, slot: pollSlot);
+            await loadTxHistory();
+            await refreshBalance();
+            _txPollTimer?.cancel();
+            _pendingTxHash = null;
+          }
+        } finally {
+          _isPolling = false;
         }
       },
     );
@@ -492,8 +521,10 @@ class WalletProvider extends ChangeNotifier {
     _walletService.lock();
     WalletAuthService.clearSession(); // Clear auth on lock
     _isUnlocked = false;
+    _mnemonic = null; // clear sensitive data immediately
     _balanceTimer?.cancel();
     _txPollTimer?.cancel();
+    _mnemonicClearTimer?.cancel();
     _pendingTxHash = null;
     _tokens = [];
     _tokenBalances = {};
@@ -526,9 +557,15 @@ class WalletProvider extends ChangeNotifier {
     _balanceTimer?.cancel();
     _balanceTimer = Timer.periodic(
       const Duration(seconds: 15),
-      (_) {
-        refreshBalance();
-        refreshTokenBalances();
+      (_) async {
+        if (_isRefreshing) return; // prevent overlapping refreshes
+        _isRefreshing = true;
+        try {
+          await refreshBalance();
+          await refreshTokenBalances();
+        } finally {
+          _isRefreshing = false;
+        }
       },
     );
   }
@@ -537,6 +574,7 @@ class WalletProvider extends ChangeNotifier {
   void dispose() {
     _balanceTimer?.cancel();
     _txPollTimer?.cancel();
+    _mnemonicClearTimer?.cancel();
     _walletService.dispose();
     super.dispose();
   }
