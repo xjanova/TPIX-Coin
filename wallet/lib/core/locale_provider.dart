@@ -314,6 +314,26 @@ class LocaleProvider extends ChangeNotifier {
       // Home - DeFi
       'home.bridge': 'บริดจ์',
       'home.bridgeSub': 'Cross-Chain',
+      'home.connect': 'เชื่อมต่อ',
+      'home.connectSub': 'WalletConnect',
+
+      // WalletConnect
+      'wc.title': 'เชื่อมต่อ dApp',
+      'wc.sectionTitle': 'WALLETCONNECT',
+      'wc.scanTitle': 'สแกน QR Code',
+      'wc.scanConnect': 'สแกนเพื่อเชื่อมต่อ',
+      'wc.pairing': 'กำลังเชื่อมต่อ...',
+      'wc.wantsToConnect': 'ต้องการเชื่อมต่อกับกระเป๋าของคุณ',
+      'wc.approve': 'อนุมัติ',
+      'wc.reject': 'ปฏิเสธ',
+      'wc.confirm': 'ยืนยัน',
+      'wc.disconnect': 'ยกเลิกเชื่อมต่อ',
+      'wc.disconnectTitle': 'ยกเลิกเชื่อมต่อ?',
+      'wc.disconnectMsg': 'ยกเลิกเชื่อมต่อจาก',
+      'wc.activeSessions': 'เชื่อมต่ออยู่',
+      'wc.activeCount': 'การเชื่อมต่อ',
+      'wc.noSessions': 'ไม่มีการเชื่อมต่อ',
+      'wc.noSessionsDesc': 'สแกน QR จากเว็บเทรดเพื่อเชื่อมต่อกระเป๋า',
     },
     'en': {
       // Splash
@@ -601,6 +621,26 @@ class LocaleProvider extends ChangeNotifier {
       // Home - DeFi
       'home.bridge': 'Bridge',
       'home.bridgeSub': 'Cross-Chain',
+      'home.connect': 'Connect',
+      'home.connectSub': 'WalletConnect',
+
+      // WalletConnect
+      'wc.title': 'Connect dApp',
+      'wc.sectionTitle': 'WALLETCONNECT',
+      'wc.scanTitle': 'Scan QR Code',
+      'wc.scanConnect': 'Scan to Connect',
+      'wc.pairing': 'Connecting...',
+      'wc.wantsToConnect': 'wants to connect to your wallet',
+      'wc.approve': 'Approve',
+      'wc.reject': 'Reject',
+      'wc.confirm': 'Confirm',
+      'wc.disconnect': 'Disconnect',
+      'wc.disconnectTitle': 'Disconnect?',
+      'wc.disconnectMsg': 'Disconnect from',
+      'wc.activeSessions': 'ACTIVE CONNECTIONS',
+      'wc.activeCount': 'connections',
+      'wc.noSessions': 'No connections',
+      'wc.noSessionsDesc': 'Scan a QR code from a trading site to connect your wallet',
     },
   };
 }

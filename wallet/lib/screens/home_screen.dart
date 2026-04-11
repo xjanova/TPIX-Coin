@@ -20,6 +20,9 @@ import 'settings_screen.dart';
 import 'add_token_screen.dart';
 import 'swap_screen.dart';
 import 'bridge_screen.dart';
+import 'dapp_connect_screen.dart';
+import '../services/walletconnect_service.dart';
+import 'package:app_links/app_links.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -52,6 +55,62 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     _loadVersion();
+    _initWalletConnect();
+    _initDeepLinks();
+  }
+
+  /// Initialize WalletConnect service after wallet is ready.
+  void _initWalletConnect() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final wp = context.read<WalletProvider>();
+      final wc = context.read<WalletConnectService>();
+
+      if (wp.address != null && !wc.initialized) {
+        wc.init(wp);
+      }
+
+      // Show dApp approval dialog when proposal arrives
+      wc.onProposalReceived = (_) {
+        if (!mounted) return;
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const DAppConnectScreen(),
+        ));
+      };
+
+      // Show signing dialog when request arrives
+      wc.onRequestReceived = (_) {
+        if (!mounted) return;
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const DAppConnectScreen(),
+        ));
+      };
+    });
+  }
+
+  /// Handle WalletConnect deep links (wc: URI scheme).
+  void _initDeepLinks() {
+    final appLinks = AppLinks();
+
+    // Handle link that opened the app
+    appLinks.getInitialLink().then((uri) {
+      if (uri != null) _handleDeepLink(uri);
+    });
+
+    // Handle links while app is running
+    appLinks.uriLinkStream.listen((uri) {
+      _handleDeepLink(uri);
+    });
+  }
+
+  void _handleDeepLink(Uri uri) {
+    final uriStr = uri.toString();
+    if (uriStr.startsWith('wc:')) {
+      // WalletConnect URI — open dApp connect screen
+      if (!mounted) return;
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => DAppConnectScreen(initialUri: uriStr),
+      ));
+    }
   }
 
   Future<void> _loadVersion() async {
@@ -487,6 +546,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               sublabel: l.t('home.bridgeSub'),
               color: const Color(0xFF00D4FF),
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BridgeScreen())),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _buildActionBtn(
+              icon: Icons.qr_code_scanner_rounded,
+              label: l.t('home.connect'),
+              sublabel: l.t('home.connectSub'),
+              color: const Color(0xFF8B5CF6),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DAppConnectScreen())),
             )),
           ],
         ),

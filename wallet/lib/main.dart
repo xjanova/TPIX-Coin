@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'core/locale_provider.dart';
 import 'core/theme.dart';
 import 'providers/wallet_provider.dart';
+import 'services/walletconnect_service.dart';
 import 'screens/splash_screen.dart';
 
 void main() {
@@ -22,6 +23,7 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider.value(value: localeProvider),
+        ChangeNotifierProvider(create: (_) => WalletConnectService()),
       ],
       child: FutureBuilder(
         future: localeProvider.init(),

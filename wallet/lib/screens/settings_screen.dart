@@ -11,6 +11,8 @@ import '../services/wallet_service.dart';
 import 'backup_screen.dart';
 import 'pin_screen.dart';
 import 'onboarding_screen.dart';
+import 'dapp_connect_screen.dart';
+import '../services/walletconnect_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -103,6 +105,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildInfoTile(Icons.token_rounded, l.t('settings.symbol'), TpixChain.symbol, AppTheme.warm),
                       const SizedBox(height: 8),
                       _buildInfoTile(Icons.speed, l.t('home.consensus'), 'IBFT 2.0', AppTheme.success),
+
+                      const SizedBox(height: 24),
+
+                      // --- WalletConnect ---
+                      _sectionTitle(l.t('wc.sectionTitle')),
+                      const SizedBox(height: 8),
+                      _buildWalletConnectTile(l),
 
                       const SizedBox(height: 24),
 
@@ -359,6 +368,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Icon(Icons.copy, size: 12, color: AppTheme.textMuted),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildWalletConnectTile(LocaleProvider l) {
+    final wc = context.watch<WalletConnectService>();
+    final sessionCount = wc.sessions.length;
+
+    return _buildTile(
+      icon: Icons.qr_code_scanner_rounded,
+      color: AppTheme.accent,
+      title: l.t('wc.title'),
+      subtitle: sessionCount > 0
+          ? '$sessionCount ${l.t('wc.activeCount')}'
+          : l.t('wc.noSessions'),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const DAppConnectScreen()),
       ),
     );
   }

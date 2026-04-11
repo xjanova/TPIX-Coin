@@ -18,6 +18,10 @@ dependencies:
   hex: ^0.2.0
   http: ^1.4.0
 
+  # WalletConnect v2 (Reown)
+  reown_walletkit: ^1.1.0
+  app_links: ^6.3.2
+
   # Security
   flutter_secure_storage: ^9.2.4
   local_auth: ^2.3.0
