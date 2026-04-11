@@ -21,6 +21,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   String _appVersion = '';
+  bool _isBioToggling = false;
 
   @override
   void initState() {
@@ -231,32 +232,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
             final enabled = enabledSnap.data ?? false;
             return GestureDetector(
               onTap: () async {
-                final newVal = !enabled;
-                final wallet = context.read<WalletProvider>();
-                if (newVal) {
-                  // Ask for PIN to save biometric token
-                  final pin = await _askPinDialog(l);
-                  if (pin == null || !mounted) return;
+                if (_isBioToggling) return; // double-tap guard
+                setState(() => _isBioToggling = true);
 
-                  final pinValid = await WalletService.verifyPin(pin);
-                  if (!pinValid) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(l.t('pin.wrong')), backgroundColor: AppTheme.danger, duration: const Duration(seconds: 2)),
-                    );
-                    return;
+                try {
+                  final newVal = !enabled;
+                  final wallet = context.read<WalletProvider>();
+                  if (newVal) {
+                    // Ask for PIN to save biometric token
+                    final pin = await _askPinDialog(l);
+                    if (pin == null || !mounted) return;
+
+                    final pinValid = await WalletService.verifyPin(pin);
+                    if (!pinValid) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(l.t('pin.wrong')), backgroundColor: AppTheme.danger, duration: const Duration(seconds: 2)),
+                      );
+                      return;
+                    }
+
+                    final authed = await bioService.authenticate(l.t('home.biometricSetup'));
+                    if (!authed || !mounted) return;
+
+                    await bioService.setEnabled(true);
+                    await wallet.saveBiometricToken(pin);
+                  } else {
+                    await bioService.setEnabled(false);
+                    await wallet.clearBiometricToken();
                   }
-
-                  final authed = await bioService.authenticate(l.t('home.biometricSetup'));
-                  if (!authed) return;
-
-                  await bioService.setEnabled(true);
-                  await wallet.saveBiometricToken(pin);
-                } else {
-                  await bioService.setEnabled(false);
-                  await wallet.clearBiometricToken();
+                } finally {
+                  if (mounted) setState(() => _isBioToggling = false);
                 }
-                if (mounted) setState(() {});
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

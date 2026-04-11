@@ -66,7 +66,9 @@ class TokenService {
     final divisor = BigInt.from(10).pow(decimals);
     final whole = balanceWei ~/ divisor;
     final frac = balanceWei % divisor;
-    return double.parse('$whole.${frac.toString().padLeft(decimals, '0').substring(0, 6)}');
+    final fracStr = frac.toString().padLeft(decimals, '0');
+    final displayDecimals = fracStr.length < 6 ? fracStr.length : 6;
+    return double.parse('$whole.${fracStr.substring(0, displayDecimals)}');
   }
 
   /// Get all token balances for a wallet slot

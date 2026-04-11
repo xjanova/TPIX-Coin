@@ -245,6 +245,12 @@ class LocaleProvider extends ChangeNotifier {
       // Sub-wallet
       'wallets.addSub': 'เพิ่มกระเป๋ารอง',
       'wallets.addSubDesc': 'สร้างจาก Seed เดียวกัน',
+      'wallets.maxReached': 'กระเป๋าเต็ม 128 แล้ว',
+
+      // Price Chart
+      'price.title': 'กราฟราคา TPIX',
+      'price.portfolio': 'มูลค่าพอร์ต',
+      'price.loading': 'กำลังโหลดข้อมูล...',
     },
     'en': {
       // Splash
@@ -463,6 +469,12 @@ class LocaleProvider extends ChangeNotifier {
       // Sub-wallet
       'wallets.addSub': 'Add Sub-wallet',
       'wallets.addSubDesc': 'Derive from same seed',
+      'wallets.maxReached': 'Maximum 128 wallets reached',
+
+      // Price Chart
+      'price.title': 'TPIX Price Chart',
+      'price.portfolio': 'Portfolio Value',
+      'price.loading': 'Loading chart data...',
     },
   };
 }

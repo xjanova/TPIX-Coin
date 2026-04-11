@@ -8,6 +8,7 @@ import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
+import '../widgets/price_chart.dart';
 import 'send_screen.dart';
 import 'receive_screen.dart';
 import 'tx_history_screen.dart';
@@ -51,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Future<void> _loadVersion() async {
     final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
     setState(() => _appVersion = info.version);
   }
 
@@ -84,9 +86,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 child: Column(
                   children: [
                     _buildHeader(wallet, l),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
+                    // Wallet selector (when multiple wallets)
+                    if (wallet.walletCount > 1) ...[
+                      _buildWalletSelector(wallet, l),
+                      const SizedBox(height: 16),
+                    ],
                     _buildBalanceCard(wallet, l),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
+                    // Price chart
+                    PriceChartWidget(
+                      currentPrice: wallet.tpixPrice,
+                      balanceTPIX: wallet.balance,
+                    ),
+                    const SizedBox(height: 20),
                     _buildActionButtons(context, l),
                     const SizedBox(height: 24),
                     _buildTokenList(wallet, l),
@@ -142,6 +155,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                   if (wallet.walletCount > 1) ...[
                     const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        color: AppTheme.accent.withValues(alpha: 0.15),
+                      ),
+                      child: Text(
+                        '${wallet.walletCount}',
+                        style: const TextStyle(fontSize: 10, color: AppTheme.accent, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(width: 2),
                     Icon(Icons.expand_more, size: 18, color: AppTheme.textMuted),
                   ],
                   if (_appVersion.isNotEmpty) ...[
@@ -221,6 +246,111 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  /// Horizontal wallet selector — shows all wallets as scrollable chips
+  Widget _buildWalletSelector(WalletProvider wallet, LocaleProvider l) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              l.t('wallets.title'),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textMuted),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: AppTheme.primary.withValues(alpha: 0.1),
+              ),
+              child: Text(
+                '${wallet.walletCount}',
+                style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 42,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: wallet.wallets.length,
+            itemBuilder: (_, index) {
+              final w = wallet.wallets[index];
+              final isActive = w.slot == wallet.activeSlot;
+              return Padding(
+                padding: EdgeInsets.only(right: index < wallet.wallets.length - 1 ? 8 : 0),
+                child: GestureDetector(
+                  onTap: isActive
+                      ? null
+                      : () async {
+                          SynthService.playTap();
+                          await wallet.switchWallet(w.slot);
+                        },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: isActive
+                          ? AppTheme.primary.withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.04),
+                      border: Border.all(
+                        color: isActive
+                            ? AppTheme.primary.withValues(alpha: 0.4)
+                            : Colors.white.withValues(alpha: 0.08),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: isActive
+                                ? const LinearGradient(colors: [AppTheme.primary, AppTheme.accent])
+                                : null,
+                            color: isActive ? null : AppTheme.bgSurface,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '${w.slot}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isActive ? Colors.white : AppTheme.textMuted,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          w.name,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                            color: isActive ? AppTheme.primary : AppTheme.textSecondary,
+                          ),
+                        ),
+                        if (isActive) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.check_circle, color: AppTheme.success, size: 14),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBalanceCard(WalletProvider wallet, LocaleProvider l) {
     return AnimatedBuilder(
       animation: _balanceScale,
@@ -287,7 +417,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '≈ \$${(wallet.balance * 0.18).toStringAsFixed(2)} USD',
+                  '≈ \$${wallet.portfolioValueUSD.toStringAsFixed(2)} USD',
                   style: TextStyle(fontSize: 14, color: AppTheme.textMuted.withValues(alpha: 0.7)),
                 ),
               ],

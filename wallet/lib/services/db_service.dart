@@ -19,13 +19,16 @@ class DbService {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createTokensTable(db);
+        }
+        if (oldVersion < 3) {
+          await _createPriceHistoryTable(db);
         }
       },
     );
@@ -54,6 +57,9 @@ class DbService {
 
     // Tokens table
     await _createTokensTable(db);
+
+    // Price history table
+    await _createPriceHistoryTable(db);
   }
 
   static Future<void> _createTokensTable(Database db) async {
@@ -71,6 +77,17 @@ class DbService {
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_token_slot ON tokens(wallet_slot)');
+  }
+
+  static Future<void> _createPriceHistoryTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS price_history(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        price REAL NOT NULL,
+        timestamp INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_price_ts ON price_history(timestamp)');
   }
 
   // ================================================================
@@ -237,6 +254,70 @@ class DbService {
   static Future<void> deleteTokensForSlot(int walletSlot) async {
     final db = await database;
     await db.delete('tokens', where: 'wallet_slot = ?', whereArgs: [walletSlot]);
+  }
+
+  // ================================================================
+  // Price History CRUD
+  // ================================================================
+
+  /// Insert a price point
+  static Future<void> insertPricePoint(double price, int timestamp) async {
+    final db = await database;
+    await db.insert('price_history', {
+      'price': price,
+      'timestamp': timestamp,
+    });
+  }
+
+  /// Get price history since a given timestamp
+  static Future<List<Map<String, dynamic>>> getPriceHistory(int sinceTimestamp) async {
+    final db = await database;
+    return db.query(
+      'price_history',
+      where: 'timestamp >= ?',
+      whereArgs: [sinceTimestamp],
+      orderBy: 'timestamp ASC',
+    );
+  }
+
+  /// Get the last recorded price
+  static Future<double?> getLastPrice() async {
+    final db = await database;
+    final rows = await db.query(
+      'price_history',
+      columns: ['price'],
+      orderBy: 'timestamp DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return (rows.first['price'] as num).toDouble();
+  }
+
+  /// Get timestamp of last price entry
+  static Future<int?> getLastPriceTimestamp() async {
+    final db = await database;
+    final rows = await db.query(
+      'price_history',
+      columns: ['timestamp'],
+      orderBy: 'timestamp DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['timestamp'] as int;
+  }
+
+  /// Get total count of price entries
+  static Future<int> getPriceCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM price_history');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// Clean up old price data (keep last N days)
+  static Future<void> pruneOldPrices({int keepDays = 90}) async {
+    final db = await database;
+    final cutoff = DateTime.now().subtract(Duration(days: keepDays)).millisecondsSinceEpoch ~/ 1000;
+    await db.delete('price_history', where: 'timestamp < ?', whereArgs: [cutoff]);
   }
 
   // ================================================================

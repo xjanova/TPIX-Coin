@@ -20,6 +20,7 @@ class AddTokenScreen extends StatefulWidget {
 class _AddTokenScreenState extends State<AddTokenScreen> {
   final _controller = TextEditingController();
   bool _isLoading = false;
+  bool _isAdding = false;
   TokenInfo? _foundToken;
   String? _errorMsg;
   double? _balance;
@@ -114,23 +115,28 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   }
 
   Future<void> _addToken() async {
-    if (_foundToken == null) return;
+    if (_foundToken == null || _isAdding) return; // double-tap guard
+    setState(() => _isAdding = true);
 
-    await DbService.addToken(_foundToken!);
-    if (!mounted) return;
+    try {
+      await DbService.addToken(_foundToken!);
+      if (!mounted) return;
 
-    // Refresh token list in provider
-    context.read<WalletProvider>().loadTokens();
+      // Refresh token list in provider
+      context.read<WalletProvider>().loadTokens();
 
-    final l = context.read<LocaleProvider>();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${l.t('token.added')} ${_foundToken!.symbol}'),
-        backgroundColor: AppTheme.success,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-    Navigator.pop(context);
+      final l = context.read<LocaleProvider>();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${l.t('token.added')} ${_foundToken!.symbol}'),
+          backgroundColor: AppTheme.success,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      Navigator.pop(context);
+    } finally {
+      if (mounted) setState(() => _isAdding = false);
+    }
   }
 
   @override
@@ -340,7 +346,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _addToken,
+              onPressed: _isAdding ? null : _addToken,
               icon: const Icon(Icons.add_circle_outline, color: Colors.white, size: 20),
               label: Text(l.t('token.add'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
               style: ElevatedButton.styleFrom(

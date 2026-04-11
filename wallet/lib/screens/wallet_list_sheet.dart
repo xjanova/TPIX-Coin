@@ -318,6 +318,8 @@ class WalletListSheet extends StatelessWidget {
 
   void _addWallet(BuildContext context, LocaleProvider l) async {
     final wallet = context.read<WalletProvider>();
+    if (wallet.isLoading) return; // double-tap guard via provider state
+
     try {
       SynthService.playTap();
       await wallet.addWallet();
@@ -332,8 +334,12 @@ class WalletListSheet extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger),
+          SnackBar(
+            content: Text(msg.contains('Maximum') ? l.t('wallets.maxReached') : l.t('import.errorGeneral')),
+            backgroundColor: AppTheme.danger,
+          ),
         );
       }
     }

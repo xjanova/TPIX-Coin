@@ -5,6 +5,7 @@ import '../models/token_info.dart';
 import '../models/tx_record.dart';
 import '../services/biometric_service.dart';
 import '../services/db_service.dart';
+import '../services/price_service.dart';
 import '../services/token_service.dart';
 import '../services/wallet_service.dart';
 
@@ -25,6 +26,9 @@ class WalletProvider extends ChangeNotifier {
   // Token state
   List<TokenInfo> _tokens = [];
   Map<String, double> _tokenBalances = {};
+
+  // Price state
+  double _tpixPrice = PriceService.defaultPrice;
 
   Timer? _balanceTimer;
   Timer? _txPollTimer;
@@ -56,15 +60,23 @@ class WalletProvider extends ChangeNotifier {
   Map<String, double> get tokenBalances => _tokenBalances;
   double getTokenBalance(String contractAddress) => _tokenBalances[contractAddress.toLowerCase()] ?? 0;
 
+  // Price getters
+  double get tpixPrice => _tpixPrice;
+  double get portfolioValueUSD => _balance * _tpixPrice;
+
   String get formattedBalance {
     if (_balance >= 1000000) return '${(_balance / 1000000).toStringAsFixed(2)}M';
     if (_balance >= 1000) return '${(_balance / 1000).toStringAsFixed(2)}K';
     return _balance.toStringAsFixed(4);
   }
 
-  /// Initialize — check if wallet exists
+  /// Initialize — check if wallet exists + seed price data
   Future<void> init() async {
     _hasWallet = await _walletService.hasWallet();
+    // Load last known price & seed initial chart data
+    await PriceService.loadLastPrice();
+    _tpixPrice = PriceService.lastPrice;
+    await PriceService.seedInitialData();
     notifyListeners();
   }
 
@@ -197,10 +209,12 @@ class WalletProvider extends ChangeNotifier {
     await _walletService.clearBiometricToken();
   }
 
-  /// Refresh balance
+  /// Refresh balance + price
   Future<void> refreshBalance() async {
     try {
       _balance = await _walletService.getBalance();
+      // Fetch latest price in background
+      _tpixPrice = await PriceService.fetchPrice();
       notifyListeners();
     } catch (_) {}
   }

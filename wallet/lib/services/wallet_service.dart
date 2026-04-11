@@ -377,6 +377,7 @@ class WalletService {
 
   /// Lightweight PIN verification — only checks hash, no wallet loading.
   /// Safe to call from any context without creating a full WalletService instance.
+  /// Increments failed attempts and applies lockout like unlockWallet.
   static Future<bool> verifyPin(String pin) async {
     // Check rate limiting
     final lockUntilStr = await _storage.read(key: _keyPinLockUntil);
@@ -388,18 +389,38 @@ class WalletService {
     final storedPinHash = await _storage.read(key: _keyPin);
     if (storedPinHash == null) return false;
 
+    bool pinCorrect;
     final salt = await _storage.read(key: _keyPinSalt);
     if (salt != null) {
       final computed = _hashPinStatic(pin, salt);
-      return _constantTimeEqualsStatic(computed, storedPinHash);
+      pinCorrect = _constantTimeEqualsStatic(computed, storedPinHash);
     } else {
       final bytes = utf8.encode(pin + 'tpix_salt_v1');
       var hash = 0;
       for (var byte in bytes) {
         hash = ((hash << 5) - hash + byte) & 0xFFFFFFFF;
       }
-      return _constantTimeEqualsStatic(hash.toRadixString(16), storedPinHash);
+      pinCorrect = _constantTimeEqualsStatic(hash.toRadixString(16), storedPinHash);
     }
+
+    if (!pinCorrect) {
+      // Increment failed attempts — brute-force protection
+      final attemptsStr = await _storage.read(key: _keyPinAttempts) ?? '0';
+      final attempts = (int.tryParse(attemptsStr) ?? 0) + 1;
+      await _storage.write(key: _keyPinAttempts, value: attempts.toString());
+      if (attempts >= _maxPinAttempts) {
+        final lockUntil = DateTime.now().millisecondsSinceEpoch +
+            (_pinLockoutMinutes * 60 * 1000);
+        await _storage.write(key: _keyPinLockUntil, value: lockUntil.toString());
+        await _storage.write(key: _keyPinAttempts, value: '0');
+      }
+      return false;
+    }
+
+    // Reset attempts on success
+    await _storage.delete(key: _keyPinAttempts);
+    await _storage.delete(key: _keyPinLockUntil);
+    return true;
   }
 
   /// Static PBKDF2 hash for verifyPin
