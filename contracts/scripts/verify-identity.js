@@ -39,14 +39,14 @@ async function main() {
     const tx = await contract.register(testRoot);
     await tx.wait();
     console.log("✅ Registered! TX:", tx.hash);
-
-    const root = await contract.getIdentityRoot(signer.address);
-    console.log("   Identity root:", root);
+    console.log("   Identity root (local):", testRoot);
   } else {
     console.log("✅ Already registered");
-    const root = await contract.getIdentityRoot(signer.address);
-    console.log("   Identity root:", root);
   }
+
+  // Check cooldown constant
+  const cooldown = await contract.RECOVERY_COOLDOWN();
+  console.log("   Recovery cooldown:", cooldown.toString(), "seconds (24 hours)");
 
   // Check recovery status
   const [active, newOwner, executeAfter, executed] = await contract.getRecoveryStatus(signer.address);

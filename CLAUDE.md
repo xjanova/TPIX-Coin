@@ -1,8 +1,9 @@
 # CLAUDE.md — TPIX Chain Project Guidelines
 
 ## Project Overview
-TPIX Chain: EVM blockchain (Polygon Edge/IBFT2, Chain ID 4289, zero gas, 2s blocks).
+TPIX Chain: EVM blockchain (Polygon Edge v0.9.0/IBFT2, Chain ID 4289, zero gas, 2s blocks).
 Version: 1.6.1
+Genesis: 4 validators (Validator tier, 10M TPIX each), 6 allocation pools (BIP-44 HD wallet), total supply 7B TPIX.
 
 ### Products
 | Product | Tech | Platform |

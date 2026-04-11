@@ -17,7 +17,7 @@
 version: '3.8'
 
 x-validator-common: &validator-common
-  image: 0xpolygon/polygon-edge:latest
+  image: 0xpolygon/polygon-edge:0.9.0
   restart: unless-stopped
   networks:
     - tpix-net

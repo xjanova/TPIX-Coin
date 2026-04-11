@@ -110,18 +110,49 @@ echo ""
 # ─── Step 2: Generate Genesis ─────────────────────────────────
 log "Step 2/4 — Generating genesis.json with IBFT2 consensus..."
 
-# Build premine args (7 Billion TPIX total, 18 decimals)
-PREMINE_ARGS=""
-PREMINE_ARGS+=" --premine 0x0000000000000000000000000000000000001001:1400000000000000000000000000"
-PREMINE_ARGS+=" --premine 0x0000000000000000000000000000000000001002:700000000000000000000000000"
-PREMINE_ARGS+=" --premine 0x0000000000000000000000000000000000001003:2100000000000000000000000000"
-PREMINE_ARGS+=" --premine 0x0000000000000000000000000000000000001004:1400000000000000000000000000"
-PREMINE_ARGS+=" --premine 0x0000000000000000000000000000000000001005:700000000000000000000000000"
-PREMINE_ARGS+=" --premine 0x0000000000000000000000000000000000001006:700000000000000000000000000"
+# ─── Allocation Addresses ────────────────────────────────────
+# Derived from project HD wallet (BIP-44: m/44'/60'/0'/0/N)
+# All pools are controlled by the same mnemonic, different derivation paths.
+# See WHITEPAPER.md Section 6 (Tokenomics) for full details.
+#
+# Path  | Address                                    | Pool
+# 0     | 0x0B263D083969946fA2bB44Af2debA69D3d3d0220 | Main Wallet (Reward Receiver)
+# 1     | 0x2112b98e3ec5A252b7b2A8f02d498B64a2186A7f | Master Node Rewards
+# 2     | 0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7 | Ecosystem Development
+# 3     | 0xf46131C82819d7621163F482b3fe88a228A7807c | Team & Advisors
+# 4     | 0x3F8EB4046F5C79fd0D67C7547B5830cB2Cfb401A | Token Sale
+# 5     | 0x3da3776e0AB0F442c181aa031f47FA83696859AF | Liquidity & Market Making
+# 6     | 0xA945d1bE9c1DDeaE75BBb9B39981D1CE6Ed7d9d5 | Community & Rewards
 
-# Premine 1000 TPIX to each validator
+# Build premine args (7 Billion TPIX total, 18 decimals)
+# Allocation per WHITEPAPER.md Tokenomics section:
+#   Master Node Rewards:      1,400,000,000 TPIX (20.00%)
+#   Ecosystem Development:    1,710,000,000 TPIX (24.43%) — reduced by 40M for validator stakes
+#   Team & Advisors:            700,000,000 TPIX (10.00%)
+#   Token Sale:                 700,000,000 TPIX (10.00%)
+#   Liquidity & Market Making:1,050,000,000 TPIX (15.00%)
+#   Community & Rewards:      1,400,000,000 TPIX (20.00%)
+#   4x Validator Stakes:         40,000,000 TPIX ( 0.57%) — 10M each, funded from Ecosystem Dev
+#   Total:                    7,000,000,000 TPIX (100%)
+
+PREMINE_ARGS=""
+# Pool 1: Master Node Rewards (20%) — m/44'/60'/0'/0/1
+PREMINE_ARGS+=" --premine 0x2112b98e3ec5A252b7b2A8f02d498B64a2186A7f:1400000000000000000000000000"
+# Pool 2: Ecosystem Development (24.43%) — m/44'/60'/0'/0/2 — originally 1,750M, minus 40M for validator stakes
+PREMINE_ARGS+=" --premine 0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7:1710000000000000000000000000"
+# Pool 3: Team & Advisors (10%) — m/44'/60'/0'/0/3
+PREMINE_ARGS+=" --premine 0xf46131C82819d7621163F482b3fe88a228A7807c:700000000000000000000000000"
+# Pool 4: Token Sale (10%) — m/44'/60'/0'/0/4
+PREMINE_ARGS+=" --premine 0x3F8EB4046F5C79fd0D67C7547B5830cB2Cfb401A:700000000000000000000000000"
+# Pool 5: Liquidity & Market Making (15%) — m/44'/60'/0'/0/5
+PREMINE_ARGS+=" --premine 0x3da3776e0AB0F442c181aa031f47FA83696859AF:1050000000000000000000000000"
+# Pool 6: Community & Rewards (20%) — m/44'/60'/0'/0/6
+PREMINE_ARGS+=" --premine 0xA945d1bE9c1DDeaE75BBb9B39981D1CE6Ed7d9d5:1400000000000000000000000000"
+
+# Premine 10,000,000 TPIX to each validator (Validator tier — highest tier)
+# Funded from Ecosystem Development allocation (40M total)
 for addr in "${VALIDATOR_ADDRS[@]}"; do
-    PREMINE_ARGS+=" --premine ${addr}:1000000000000000000000"
+    PREMINE_ARGS+=" --premine ${addr}:10000000000000000000000000"
 done
 
 # Build bootnode args

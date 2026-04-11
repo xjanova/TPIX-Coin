@@ -194,15 +194,18 @@ TPIX is the native cryptocurrency of TPIX Chain with a fixed supply of **7 billi
 
 ### Distribution
 
-| Allocation | Amount | Percentage |
-|-----------|--------|------------|
-| **Master Node Rewards** | 1,400,000,000 TPIX | 20.0% |
-| **Ecosystem Development** | 1,750,000,000 TPIX | 25.0% |
-| **Team & Advisors** | 700,000,000 TPIX | 10.0% |
-| **Token Sale** | 700,000,000 TPIX | 10.0% |
-| **Liquidity & Market Making** | 1,050,000,000 TPIX | 15.0% |
-| **Community & Rewards** | 1,400,000,000 TPIX | 20.0% |
-| **Total** | **7,000,000,000 TPIX** | **100%** |
+| Allocation | Amount | Percentage | Wallet Address | BIP-44 Path |
+|-----------|--------|------------|----------------|-------------|
+| **Master Node Rewards** | 1,400,000,000 TPIX | 20.00% | `0x2112b98e3ec5A252b7b2A8f02d498B64a2186A7f` | m/44'/60'/0'/0/1 |
+| **Ecosystem Development** | 1,710,000,000 TPIX | 24.43% | `0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7` | m/44'/60'/0'/0/2 |
+| **Team & Advisors** | 700,000,000 TPIX | 10.00% | `0xf46131C82819d7621163F482b3fe88a228A7807c` | m/44'/60'/0'/0/3 |
+| **Token Sale** | 700,000,000 TPIX | 10.00% | `0x3F8EB4046F5C79fd0D67C7547B5830cB2Cfb401A` | m/44'/60'/0'/0/4 |
+| **Liquidity & Market Making** | 1,050,000,000 TPIX | 15.00% | `0x3da3776e0AB0F442c181aa031f47FA83696859AF` | m/44'/60'/0'/0/5 |
+| **Community & Rewards** | 1,400,000,000 TPIX | 20.00% | `0xA945d1bE9c1DDeaE75BBb9B39981D1CE6Ed7d9d5` | m/44'/60'/0'/0/6 |
+| **Validator Stakes** (4x 10M) | 40,000,000 TPIX | 0.57% | 4 validator addresses (generated at genesis) | — |
+| **Total** | **7,000,000,000 TPIX** | **100%** | | |
+
+> **Note:** Ecosystem Development was originally allocated 1,750,000,000 TPIX (25%). 40,000,000 TPIX was allocated to fund 4 genesis Validator nodes (10M TPIX each, Validator tier — the highest staking tier). All allocation wallets are derived from a single BIP-44 HD wallet for unified treasury management. The main reward receiver wallet is at path m/44'/60'/0'/0/0 (`0x0B263D083969946fA2bB44Af2debA69D3d3d0220`).
 
 ### Token Sale Phases
 

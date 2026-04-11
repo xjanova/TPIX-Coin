@@ -8,6 +8,12 @@ module.exports = {
       optimizer: { enabled: true, runs: 200 },
     },
   },
+  paths: {
+    sources: "./src",      // consolidated source directory
+    scripts: "./scripts",
+    cache: "./cache",
+    artifacts: "./artifacts",
+  },
   networks: {
     tpix: {
       url: "https://rpc.tpix.online",
