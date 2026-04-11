@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/wallet_info.dart';
+import '../models/token_info.dart';
 import '../models/tx_record.dart';
 import '../services/biometric_service.dart';
+import '../services/db_service.dart';
+import '../services/token_service.dart';
 import '../services/wallet_service.dart';
 
 class WalletProvider extends ChangeNotifier {
@@ -18,6 +21,10 @@ class WalletProvider extends ChangeNotifier {
   String? _lastTxHash;
   List<TxRecord> _txHistory = [];
   bool _isScanning = false;
+
+  // Token state
+  List<TokenInfo> _tokens = [];
+  Map<String, double> _tokenBalances = {};
 
   Timer? _balanceTimer;
   Timer? _txPollTimer;
@@ -43,6 +50,11 @@ class WalletProvider extends ChangeNotifier {
   int get walletCount => _walletService.walletCount;
   int get activeSlot => _walletService.activeSlot;
   WalletInfo? get activeWallet => _walletService.activeWallet;
+
+  // Token getters
+  List<TokenInfo> get tokens => _tokens;
+  Map<String, double> get tokenBalances => _tokenBalances;
+  double getTokenBalance(String contractAddress) => _tokenBalances[contractAddress.toLowerCase()] ?? 0;
 
   String get formattedBalance {
     if (_balance >= 1000000) return '${(_balance / 1000000).toStringAsFixed(2)}M';
@@ -139,6 +151,7 @@ class WalletProvider extends ChangeNotifier {
         }
         await refreshBalance();
         await loadTxHistory();
+        await loadTokens();
         _startBalanceRefresh();
       } else {
         _error = 'Invalid PIN';
@@ -164,6 +177,7 @@ class WalletProvider extends ChangeNotifier {
         _mnemonic = _walletService.mnemonic;
         await refreshBalance();
         await loadTxHistory();
+        await loadTokens();
         _startBalanceRefresh();
       }
       return success;
@@ -231,6 +245,7 @@ class WalletProvider extends ChangeNotifier {
       _address = _walletService.address;
       await refreshBalance();
       await loadTxHistory();
+      await loadTokens();
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -308,6 +323,35 @@ class WalletProvider extends ChangeNotifier {
   }
 
   // ═══════════════════════════════════════════════════════════
+  //  Custom Tokens
+  // ═══════════════════════════════════════════════════════════
+
+  /// Load tokens from SQLite
+  Future<void> loadTokens() async {
+    _tokens = await DbService.getTokensForSlot(_walletService.activeSlot);
+    notifyListeners();
+    // Refresh balances in background
+    refreshTokenBalances();
+  }
+
+  /// Refresh all token balances
+  Future<void> refreshTokenBalances() async {
+    if (_address == null || _tokens.isEmpty) return;
+    _tokenBalances = await TokenService.getAllTokenBalances(
+      _walletService.activeSlot,
+      _address!,
+    );
+    notifyListeners();
+  }
+
+  /// Remove a token
+  Future<void> removeToken(String contractAddress) async {
+    await DbService.removeToken(contractAddress, _walletService.activeSlot);
+    _tokenBalances.remove(contractAddress.toLowerCase());
+    await loadTokens();
+  }
+
+  // ═══════════════════════════════════════════════════════════
   //  TX Status Polling
   // ═══════════════════════════════════════════════════════════
 
@@ -345,6 +389,8 @@ class WalletProvider extends ChangeNotifier {
     _balanceTimer?.cancel();
     _txPollTimer?.cancel();
     _pendingTxHash = null;
+    _tokens = [];
+    _tokenBalances = {};
     notifyListeners();
   }
 
@@ -357,6 +403,8 @@ class WalletProvider extends ChangeNotifier {
     _balance = 0;
     _mnemonic = null;
     _txHistory = [];
+    _tokens = [];
+    _tokenBalances = {};
     _balanceTimer?.cancel();
     _txPollTimer?.cancel();
     _pendingTxHash = null;
@@ -367,7 +415,10 @@ class WalletProvider extends ChangeNotifier {
     _balanceTimer?.cancel();
     _balanceTimer = Timer.periodic(
       const Duration(seconds: 15),
-      (_) => refreshBalance(),
+      (_) {
+        refreshBalance();
+        refreshTokenBalances();
+      },
     );
   }
 

@@ -375,6 +375,54 @@ class WalletService {
     return remaining > 0 ? (remaining / 1000).ceil() : 0;
   }
 
+  /// Lightweight PIN verification — only checks hash, no wallet loading.
+  /// Safe to call from any context without creating a full WalletService instance.
+  static Future<bool> verifyPin(String pin) async {
+    // Check rate limiting
+    final lockUntilStr = await _storage.read(key: _keyPinLockUntil);
+    if (lockUntilStr != null) {
+      final lockUntil = int.tryParse(lockUntilStr) ?? 0;
+      if (DateTime.now().millisecondsSinceEpoch < lockUntil) return false;
+    }
+
+    final storedPinHash = await _storage.read(key: _keyPin);
+    if (storedPinHash == null) return false;
+
+    final salt = await _storage.read(key: _keyPinSalt);
+    if (salt != null) {
+      final computed = _hashPinStatic(pin, salt);
+      return _constantTimeEqualsStatic(computed, storedPinHash);
+    } else {
+      final bytes = utf8.encode(pin + 'tpix_salt_v1');
+      var hash = 0;
+      for (var byte in bytes) {
+        hash = ((hash << 5) - hash + byte) & 0xFFFFFFFF;
+      }
+      return _constantTimeEqualsStatic(hash.toRadixString(16), storedPinHash);
+    }
+  }
+
+  /// Static PBKDF2 hash for verifyPin
+  static String _hashPinStatic(String pin, String saltHex) {
+    final salt = Uint8List.fromList(HEX.decode(saltHex));
+    var key = Uint8List.fromList(utf8.encode(pin));
+    for (int i = 0; i < _pbkdf2Iterations; i++) {
+      final hmac = Hmac(sha256, key);
+      key = Uint8List.fromList(hmac.convert(salt).bytes);
+    }
+    return HEX.encode(key);
+  }
+
+  /// Static constant-time comparison
+  static bool _constantTimeEqualsStatic(String a, String b) {
+    if (a.length != b.length) return false;
+    var result = 0;
+    for (int i = 0; i < a.length; i++) {
+      result |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return result == 0;
+  }
+
   /// Load wallet from storage (requires PIN)
   Future<bool> unlockWallet(String pin) async {
     // Check rate limiting

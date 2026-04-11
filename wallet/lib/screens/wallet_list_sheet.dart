@@ -61,16 +61,23 @@ class WalletListSheet extends StatelessWidget {
                     child: Text('${wallet.walletCount}/128', style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                   ),
                   const Spacer(),
-                  // Add wallet button
-                  IconButton(
-                    onPressed: wallet.walletCount >= 128 ? null : () => _addWallet(context, l),
-                    icon: Container(
-                      padding: const EdgeInsets.all(6),
+                  // Add sub-wallet button (derives from same HD seed)
+                  GestureDetector(
+                    onTap: wallet.walletCount >= 128 ? null : () => _addWallet(context, l),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppTheme.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        color: AppTheme.primary.withValues(alpha: 0.12),
                       ),
-                      child: const Icon(Icons.add, color: AppTheme.primary, size: 20),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.add, color: AppTheme.primary, size: 16),
+                          const SizedBox(width: 4),
+                          Text(l.t('wallets.addSub'), style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
                     ),
                   ),
                 ],

@@ -224,6 +224,27 @@ class LocaleProvider extends ChangeNotifier {
       'settings.noMnemonic': 'กระเป๋านี้ไม่มี Seed Phrase (นำเข้าด้วยคีย์)',
       'settings.enterPin': 'ใส่ PIN',
       'settings.enterPinHint': 'ใส่ PIN 6 หลักเพื่อยืนยัน',
+
+      // Tokens
+      'token.myTokens': 'โทเค็นของฉัน',
+      'token.title': 'เพิ่มโทเค็น',
+      'token.subtitle': 'Add Custom Token',
+      'token.contractAddress': 'Contract Address',
+      'token.decimalsLabel': 'Decimals',
+      'token.search': 'ค้นหาโทเค็น',
+      'token.searching': 'กำลังค้นหา...',
+      'token.add': 'เพิ่ม',
+      'token.added': 'เพิ่มโทเค็นแล้ว!',
+      'token.invalidAddress': 'ที่อยู่ Contract ไม่ถูกต้อง',
+      'token.alreadyAdded': 'โทเค็นนี้ถูกเพิ่มแล้ว',
+      'token.notFound': 'ไม่พบโทเค็น ERC-20 ที่ Contract นี้',
+      'token.removeConfirm': 'ลบโทเค็นนี้?',
+      'token.howTo': 'วิธีเพิ่มโทเค็น',
+      'token.howToDesc': '1. ใส่ Contract Address ของโทเค็น ERC-20 บน TPIX Chain\n2. หรือสแกน QR Code ของ Contract\n3. ระบบจะดึงข้อมูลชื่อ สัญลักษณ์ จำนวนทศนิยมอัตโนมัติ\n4. กด เพิ่ม เพื่อเริ่มติดตามยอดคงเหลือ',
+
+      // Sub-wallet
+      'wallets.addSub': 'เพิ่มกระเป๋ารอง',
+      'wallets.addSubDesc': 'สร้างจาก Seed เดียวกัน',
     },
     'en': {
       // Splash
@@ -421,6 +442,27 @@ class LocaleProvider extends ChangeNotifier {
       'settings.noMnemonic': 'This wallet has no Seed Phrase (imported via key)',
       'settings.enterPin': 'Enter PIN',
       'settings.enterPinHint': 'Enter 6-digit PIN to verify',
+
+      // Tokens
+      'token.myTokens': 'My Tokens',
+      'token.title': 'Add Token',
+      'token.subtitle': 'Add Custom ERC-20 Token',
+      'token.contractAddress': 'Contract Address',
+      'token.decimalsLabel': 'Decimals',
+      'token.search': 'Search Token',
+      'token.searching': 'Searching...',
+      'token.add': 'Add',
+      'token.added': 'Token added!',
+      'token.invalidAddress': 'Invalid contract address',
+      'token.alreadyAdded': 'This token is already added',
+      'token.notFound': 'No ERC-20 token found at this contract',
+      'token.removeConfirm': 'Remove this token?',
+      'token.howTo': 'How to add tokens',
+      'token.howToDesc': '1. Enter the ERC-20 contract address on TPIX Chain\n2. Or scan the contract QR code\n3. Token name, symbol, and decimals are fetched automatically\n4. Tap Add to start tracking balance',
+
+      // Sub-wallet
+      'wallets.addSub': 'Add Sub-wallet',
+      'wallets.addSubDesc': 'Derive from same seed',
     },
   };
 }

@@ -1,9 +1,10 @@
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/tx_record.dart';
+import '../models/token_info.dart';
 
 /// SQLite database service for TPIX Wallet
-/// Stores transactions persistently with indexed queries
+/// Stores transactions and custom tokens persistently
 class DbService {
   static Database? _db;
 
@@ -18,28 +19,58 @@ class DbService {
 
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE transactions(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tx_hash TEXT UNIQUE NOT NULL,
-            from_address TEXT NOT NULL,
-            to_address TEXT NOT NULL,
-            value TEXT NOT NULL,
-            direction TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            block_number INTEGER,
-            timestamp INTEGER,
-            created_at TEXT NOT NULL,
-            wallet_slot INTEGER NOT NULL
-          )
-        ''');
-        await db.execute('CREATE INDEX idx_tx_slot ON transactions(wallet_slot)');
-        await db.execute('CREATE INDEX idx_tx_hash ON transactions(tx_hash)');
-        await db.execute('CREATE INDEX idx_tx_timestamp ON transactions(wallet_slot, timestamp DESC)');
+        await _createTables(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _createTokensTable(db);
+        }
       },
     );
+  }
+
+  static Future<void> _createTables(Database db) async {
+    // Transactions table
+    await db.execute('''
+      CREATE TABLE transactions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tx_hash TEXT UNIQUE NOT NULL,
+        from_address TEXT NOT NULL,
+        to_address TEXT NOT NULL,
+        value TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        block_number INTEGER,
+        timestamp INTEGER,
+        created_at TEXT NOT NULL,
+        wallet_slot INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_tx_slot ON transactions(wallet_slot)');
+    await db.execute('CREATE INDEX idx_tx_hash ON transactions(tx_hash)');
+    await db.execute('CREATE INDEX idx_tx_timestamp ON transactions(wallet_slot, timestamp DESC)');
+
+    // Tokens table
+    await _createTokensTable(db);
+  }
+
+  static Future<void> _createTokensTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS tokens(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contract_address TEXT NOT NULL,
+        name TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        decimals INTEGER NOT NULL DEFAULT 18,
+        wallet_slot INTEGER NOT NULL,
+        logo_url TEXT,
+        added_at TEXT NOT NULL,
+        UNIQUE(contract_address, wallet_slot)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_token_slot ON tokens(wallet_slot)');
   }
 
   // ================================================================
@@ -117,11 +148,7 @@ class DbService {
   /// Delete all transactions for a wallet slot
   static Future<void> deleteTxForSlot(int walletSlot) async {
     final db = await database;
-    await db.delete(
-      'transactions',
-      where: 'wallet_slot = ?',
-      whereArgs: [walletSlot],
-    );
+    await db.delete('transactions', where: 'wallet_slot = ?', whereArgs: [walletSlot]);
   }
 
   /// Bulk insert transactions (for migration or scan)
@@ -150,6 +177,69 @@ class DbService {
   }
 
   // ================================================================
+  // Token CRUD
+  // ================================================================
+
+  /// Add a custom token for a wallet slot
+  static Future<void> addToken(TokenInfo token) async {
+    final db = await database;
+    await db.insert(
+      'tokens',
+      {
+        'contract_address': token.contractAddress.toLowerCase(),
+        'name': token.name,
+        'symbol': token.symbol,
+        'decimals': token.decimals,
+        'wallet_slot': token.walletSlot,
+        'logo_url': token.logoUrl,
+        'added_at': token.addedAt.toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Get all tokens for a wallet slot
+  static Future<List<TokenInfo>> getTokensForSlot(int walletSlot) async {
+    final db = await database;
+    final rows = await db.query(
+      'tokens',
+      where: 'wallet_slot = ?',
+      whereArgs: [walletSlot],
+      orderBy: 'added_at ASC',
+    );
+    return rows.map(_rowToTokenInfo).toList();
+  }
+
+  /// Check if a token already exists for this wallet
+  static Future<bool> tokenExists(String contractAddress, int walletSlot) async {
+    final db = await database;
+    final result = await db.query(
+      'tokens',
+      columns: ['id'],
+      where: 'contract_address = ? AND wallet_slot = ?',
+      whereArgs: [contractAddress.toLowerCase(), walletSlot],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
+  /// Remove a token for a wallet slot
+  static Future<void> removeToken(String contractAddress, int walletSlot) async {
+    final db = await database;
+    await db.delete(
+      'tokens',
+      where: 'contract_address = ? AND wallet_slot = ?',
+      whereArgs: [contractAddress.toLowerCase(), walletSlot],
+    );
+  }
+
+  /// Delete all tokens for a wallet slot
+  static Future<void> deleteTokensForSlot(int walletSlot) async {
+    final db = await database;
+    await db.delete('tokens', where: 'wallet_slot = ?', whereArgs: [walletSlot]);
+  }
+
+  // ================================================================
   // Helpers
   // ================================================================
 
@@ -164,6 +254,18 @@ class DbService {
       blockNumber: row['block_number'] as int?,
       timestamp: row['timestamp'] as int?,
       createdAt: row['created_at'] as String?,
+    );
+  }
+
+  static TokenInfo _rowToTokenInfo(Map<String, dynamic> row) {
+    return TokenInfo(
+      contractAddress: row['contract_address'] as String,
+      name: row['name'] as String,
+      symbol: row['symbol'] as String,
+      decimals: row['decimals'] as int? ?? 18,
+      walletSlot: row['wallet_slot'] as int,
+      logoUrl: row['logo_url'] as String?,
+      addedAt: DateTime.tryParse(row['added_at'] as String? ?? ''),
     );
   }
 

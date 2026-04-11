@@ -238,8 +238,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   final pin = await _askPinDialog(l);
                   if (pin == null || !mounted) return;
 
-                  final ws = WalletService();
-                  final pinValid = await ws.unlockWallet(pin);
+                  final pinValid = await WalletService.verifyPin(pin);
                   if (!pinValid) {
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(

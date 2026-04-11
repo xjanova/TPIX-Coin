@@ -14,6 +14,7 @@ import 'tx_history_screen.dart';
 import 'wallet_list_sheet.dart';
 import 'identity_screen.dart';
 import 'settings_screen.dart';
+import 'add_token_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -87,6 +88,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     _buildBalanceCard(wallet, l),
                     const SizedBox(height: 24),
                     _buildActionButtons(context, l),
+                    const SizedBox(height: 24),
+                    _buildTokenList(wallet, l),
                     const SizedBox(height: 24),
                     _buildIdentityCard(l),
                     const SizedBox(height: 24),
@@ -361,6 +364,132 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Token balances list with add button
+  Widget _buildTokenList(WalletProvider wallet, LocaleProvider l) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: glassCard(borderRadius: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(l.t('token.myTokens'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () async {
+                  await Navigator.push(context, MaterialPageRoute(builder: (_) => const AddTokenScreen()));
+                  // Refresh tokens when returning
+                  if (mounted) wallet.loadTokens();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    color: AppTheme.primary.withValues(alpha: 0.12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.add, color: AppTheme.primary, size: 16),
+                      const SizedBox(width: 4),
+                      Text(l.t('token.add'), style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // TPIX native — always first
+          _buildTokenRow(
+            symbol: 'TPIX',
+            name: 'TPIX Chain',
+            balance: wallet.formattedBalance,
+            isNative: true,
+          ),
+          // Custom ERC-20 tokens
+          ...wallet.tokens.map((token) {
+            final bal = wallet.getTokenBalance(token.contractAddress);
+            return _buildTokenRow(
+              symbol: token.symbol,
+              name: token.name,
+              balance: bal >= 1000 ? '${(bal / 1000).toStringAsFixed(2)}K' : bal.toStringAsFixed(4),
+              onLongPress: () => _confirmRemoveToken(token, wallet, l),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTokenRow({
+    required String symbol,
+    required String name,
+    required String balance,
+    bool isNative = false,
+    VoidCallback? onLongPress,
+  }) {
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            // Logo
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isNative ? AppTheme.primary.withValues(alpha: 0.12) : AppTheme.accent.withValues(alpha: 0.12),
+              ),
+              child: isNative
+                  ? ClipOval(child: Image.asset('assets/images/logowallet.png', width: 36, height: 36, fit: BoxFit.cover))
+                  : Center(child: Text(symbol.isNotEmpty ? symbol[0] : '?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.accent))),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(symbol, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+                  Text(name, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                ],
+              ),
+            ),
+            Text(balance, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmRemoveToken(dynamic token, WalletProvider wallet, LocaleProvider l) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(l.t('token.removeConfirm'), style: const TextStyle(color: AppTheme.danger)),
+        content: Text('${token.name} (${token.symbol})', style: const TextStyle(color: AppTheme.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              wallet.removeToken(token.contractAddress);
+            },
+            child: Text(l.t('wallets.delete'), style: const TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700)),
+          ),
+        ],
       ),
     );
   }
