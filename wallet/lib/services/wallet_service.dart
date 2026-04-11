@@ -155,7 +155,7 @@ class WalletService {
   }
 
   /// Import wallet from mnemonic (recovers first wallet)
-  Future<String> importFromMnemonic(String mnemonic) async {
+  Future<String> importFromMnemonic(String mnemonic, {String? name}) async {
     if (!bip39.validateMnemonic(mnemonic.trim())) {
       throw Exception('Invalid mnemonic phrase');
     }
@@ -179,7 +179,7 @@ class WalletService {
 
     final walletInfo = WalletInfo(
       slot: slot,
-      name: 'Wallet $slot',
+      name: name?.isNotEmpty == true ? name! : 'Wallet $slot',
       address: address,
       isHD: true,
     );
@@ -194,7 +194,7 @@ class WalletService {
   }
 
   /// Import wallet from private key
-  Future<String> importFromPrivateKey(String privateKey) async {
+  Future<String> importFromPrivateKey(String privateKey, {String? name}) async {
     final key = privateKey.startsWith('0x') ? privateKey.substring(2) : privateKey;
     final credentials = EthPrivateKey.fromHex(key);
 
@@ -208,7 +208,7 @@ class WalletService {
 
     final walletInfo = WalletInfo(
       slot: slot,
-      name: 'Imported $slot',
+      name: name?.isNotEmpty == true ? name! : 'Imported $slot',
       address: address,
       isHD: false,
     );

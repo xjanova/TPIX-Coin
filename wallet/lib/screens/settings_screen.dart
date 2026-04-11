@@ -73,16 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         color: AppTheme.accent,
                         title: l.t('settings.backup'),
                         subtitle: l.t('settings.backupDesc'),
-                        onTap: () {
-                          final mnemonic = context.read<WalletProvider>().mnemonic;
-                          if (mnemonic == null || mnemonic.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(l.t('settings.noMnemonic')), backgroundColor: AppTheme.warm, duration: const Duration(seconds: 2)),
-                            );
-                            return;
-                          }
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => BackupScreen(mnemonic: mnemonic)));
-                        },
+                        onTap: () => _viewBackup(l),
                       ),
                       const SizedBox(height: 8),
                       _buildTile(
@@ -370,6 +361,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  /// View backup seed phrase — requires PIN verification first
+  Future<void> _viewBackup(LocaleProvider l) async {
+    final mnemonic = context.read<WalletProvider>().mnemonic;
+    if (mnemonic == null || mnemonic.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l.t('settings.noMnemonic')), backgroundColor: AppTheme.warm, duration: const Duration(seconds: 2)),
+      );
+      return;
+    }
+
+    // Require PIN verification before showing seed phrase
+    final pin = await _askPinDialog(l);
+    if (pin == null || !mounted) return;
+
+    final pinValid = await WalletService.verifyPin(pin);
+    if (!pinValid) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l.t('pin.wrong')), backgroundColor: AppTheme.danger, duration: const Duration(seconds: 2)),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => BackupScreen(mnemonic: mnemonic)));
   }
 
   Future<void> _confirmDeleteAll(LocaleProvider l) async {

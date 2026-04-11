@@ -15,11 +15,13 @@ class ImportScreen extends StatefulWidget {
 
 class _ImportScreenState extends State<ImportScreen> {
   final _controller = TextEditingController();
+  final _nameController = TextEditingController();
   bool _isMnemonic = true;
 
   @override
   void dispose() {
     _controller.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -42,13 +44,14 @@ class _ImportScreenState extends State<ImportScreen> {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
 
+    final walletName = _nameController.text.trim();
     final l = context.read<LocaleProvider>();
     final provider = context.read<WalletProvider>();
     try {
       if (_isMnemonic) {
-        await provider.importFromMnemonic(input);
+        await provider.importFromMnemonic(input, name: walletName.isEmpty ? null : walletName);
       } else {
-        await provider.importFromPrivateKey(input);
+        await provider.importFromPrivateKey(input, name: walletName.isEmpty ? null : walletName);
       }
       if (!mounted) return;
       Navigator.pushReplacement(
@@ -126,7 +129,36 @@ class _ImportScreenState extends State<ImportScreen> {
 
                 const SizedBox(height: 24),
 
-                // Input
+                // Wallet name
+                TextField(
+                  controller: _nameController,
+                  maxLength: 24,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: l.t('wallets.namePlaceholder'),
+                    hintStyle: const TextStyle(color: AppTheme.textMuted),
+                    counterStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 10),
+                    prefixIcon: const Icon(Icons.label_outline, color: AppTheme.textMuted, size: 20),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.04),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.primary),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Key / Seed input
                 TextField(
                   controller: _controller,
                   maxLines: 4,

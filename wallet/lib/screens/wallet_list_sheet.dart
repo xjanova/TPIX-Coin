@@ -320,9 +320,61 @@ class WalletListSheet extends StatelessWidget {
     final wallet = context.read<WalletProvider>();
     if (wallet.isLoading) return; // double-tap guard via provider state
 
+    // Ask for wallet name
+    final nameController = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(l.t('wallets.nameTitle'), style: const TextStyle(color: Colors.white, fontSize: 18)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(l.t('wallets.nameHint'), style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              maxLength: 24,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: l.t('wallets.namePlaceholder'),
+                hintStyle: const TextStyle(color: AppTheme.textMuted),
+                filled: true,
+                fillColor: AppTheme.bgSurface,
+                counterStyle: const TextStyle(color: AppTheme.textMuted),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppTheme.borderDim),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppTheme.primary),
+                ),
+              ),
+              onSubmitted: (_) => Navigator.pop(ctx, nameController.text.trim()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
+            child: Text(l.t('wallets.save'), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    if (name == null || !context.mounted) return;
+
     try {
       SynthService.playTap();
-      await wallet.addWallet();
+      await wallet.addWallet(name: name.isEmpty ? null : name);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

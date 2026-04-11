@@ -101,13 +101,13 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Import from mnemonic
-  Future<void> importFromMnemonic(String mnemonic) async {
+  Future<void> importFromMnemonic(String mnemonic, {String? name}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      _address = await _walletService.importFromMnemonic(mnemonic);
+      _address = await _walletService.importFromMnemonic(mnemonic, name: name);
       _mnemonic = mnemonic;
     } catch (e) {
       _error = e.toString();
@@ -119,13 +119,13 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Import from private key
-  Future<void> importFromPrivateKey(String key) async {
+  Future<void> importFromPrivateKey(String key, {String? name}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      _address = await _walletService.importFromPrivateKey(key);
+      _address = await _walletService.importFromPrivateKey(key, name: name);
     } catch (e) {
       _error = e.toString();
       rethrow;

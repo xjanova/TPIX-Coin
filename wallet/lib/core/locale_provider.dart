@@ -246,6 +246,9 @@ class LocaleProvider extends ChangeNotifier {
       'wallets.addSub': 'เพิ่มกระเป๋ารอง',
       'wallets.addSubDesc': 'สร้างจาก Seed เดียวกัน',
       'wallets.maxReached': 'กระเป๋าเต็ม 128 แล้ว',
+      'wallets.nameTitle': 'ตั้งชื่อกระเป๋า',
+      'wallets.nameHint': 'ตั้งชื่อเพื่อให้จำง่าย (เว้นว่างได้)',
+      'wallets.namePlaceholder': 'เช่น กระเป๋าหลัก, ออม, เทรด...',
 
       // Price Chart
       'price.title': 'กราฟราคา TPIX',
@@ -470,6 +473,9 @@ class LocaleProvider extends ChangeNotifier {
       'wallets.addSub': 'Add Sub-wallet',
       'wallets.addSubDesc': 'Derive from same seed',
       'wallets.maxReached': 'Maximum 128 wallets reached',
+      'wallets.nameTitle': 'Name Your Wallet',
+      'wallets.nameHint': 'Give it a name for easy recognition (optional)',
+      'wallets.namePlaceholder': 'e.g. Main, Savings, Trading...',
 
       // Price Chart
       'price.title': 'TPIX Price Chart',

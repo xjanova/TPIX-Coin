@@ -34,9 +34,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   void _createWallet() async {
+    final l = context.read<LocaleProvider>();
+    // Ask for wallet name first
+    final name = await _askWalletName(l);
+    if (name == null || !mounted) return;
+
     final provider = context.read<WalletProvider>();
     try {
-      final result = await provider.createWallet();
+      final result = await provider.createWallet(name: name.isEmpty ? null : name);
       if (!mounted) return;
       Navigator.push(
         context,
@@ -47,9 +52,65 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger),
+        SnackBar(
+          content: Text(l.t('import.errorGeneral')),
+          backgroundColor: AppTheme.danger,
+        ),
       );
     }
+  }
+
+  Future<String?> _askWalletName(LocaleProvider l) async {
+    final controller = TextEditingController(text: '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(l.t('wallets.nameTitle'), style: const TextStyle(color: Colors.white, fontSize: 18)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(l.t('wallets.nameHint'), style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: 24,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: l.t('wallets.namePlaceholder'),
+                hintStyle: const TextStyle(color: AppTheme.textMuted),
+                filled: true,
+                fillColor: AppTheme.bgSurface,
+                counterStyle: const TextStyle(color: AppTheme.textMuted),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppTheme.borderDim),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppTheme.primary),
+                ),
+              ),
+              onSubmitted: (_) => Navigator.pop(ctx, controller.text.trim()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text(l.t('wallets.save'), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
   }
 
   void _importWallet() {
