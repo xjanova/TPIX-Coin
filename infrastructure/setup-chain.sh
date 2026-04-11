@@ -162,19 +162,19 @@ for bn in "${BOOTNODE_URLS[@]}"; do
 done
 
 # Generate genesis
-# Flags verified against polygon-edge v1.3.x source:
-#   --validators-prefix (not --ibft-validators-prefix-path)
+# Flags verified against polygon-edge v0.9.0:
+#   --ibft-validators-prefix-path (not --validators-prefix)
+#   --ibft-validator-type bls
 #   --price-limit is a server flag, not genesis — omit here
 polygon-edge genesis \
     --consensus ibft \
-    --validators-prefix "${DATA_DIR}/validator-" \
+    --ibft-validators-prefix-path "${DATA_DIR}/validator-" \
+    --ibft-validator-type bls \
     --chain-id "${CHAIN_ID}" \
     --name "tpix-chain" \
     --block-gas-limit "${BLOCK_GAS_TARGET}" \
     --epoch-size "${EPOCH_LENGTH}" \
     --block-time "${BLOCK_TIME}s" \
-    --max-validator-count 21 \
-    --min-validator-count 1 \
     ${BOOTNODE_ARGS} \
     ${PREMINE_ARGS} \
     --dir "${GENESIS_OUT}"
