@@ -97,7 +97,7 @@ for i in $(seq 1 "${NUM_VALIDATORS}"); do
 
     # Bootnode multiaddr (docker internal network)
     if [[ -n "${NODE_ID:-}" ]]; then
-        BOOTNODE_URLS+=("/ip4/tpix-validator-${i}/tcp/10001/p2p/${NODE_ID}")
+        BOOTNODE_URLS+=("/dns4/tpix-validator-${i}/tcp/10001/p2p/${NODE_ID}")
     fi
 
     log "Validator ${i}: ${ADDR} (node: ${NODE_ID:-unknown})"

@@ -139,10 +139,10 @@ CMD=(polygon-edge genesis
     --block-gas-limit 20000000
     --epoch-size 100000
     --block-time "2s"
-    --bootnode "/ip4/tpix-validator-1/tcp/10001/p2p/${NODE_IDS[1]}"
-    --bootnode "/ip4/tpix-validator-2/tcp/10001/p2p/${NODE_IDS[2]}"
-    --bootnode "/ip4/tpix-validator-3/tcp/10001/p2p/${NODE_IDS[3]}"
-    --bootnode "/ip4/tpix-validator-4/tcp/10001/p2p/${NODE_IDS[4]}"
+    --bootnode "/dns4/tpix-validator-1/tcp/10001/p2p/${NODE_IDS[1]}"
+    --bootnode "/dns4/tpix-validator-2/tcp/10001/p2p/${NODE_IDS[2]}"
+    --bootnode "/dns4/tpix-validator-3/tcp/10001/p2p/${NODE_IDS[3]}"
+    --bootnode "/dns4/tpix-validator-4/tcp/10001/p2p/${NODE_IDS[4]}"
     --premine "0x2112b98e3ec5A252b7b2A8f02d498B64a2186A7f:1400000000000000000000000000"
     --premine "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7:1710000000000000000000000000"
     --premine "0xf46131C82819d7621163F482b3fe88a228A7807c:700000000000000000000000000"
