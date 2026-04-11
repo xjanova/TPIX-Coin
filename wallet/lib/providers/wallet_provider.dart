@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../models/chain_config.dart';
 import '../models/wallet_info.dart';
 import '../models/token_info.dart';
 import '../models/tx_record.dart';
 import '../services/biometric_service.dart';
 import '../services/db_service.dart';
 import '../services/price_service.dart';
+import '../services/swap_service.dart';
 import '../services/token_service.dart';
 import '../services/wallet_service.dart';
 
@@ -26,6 +28,10 @@ class WalletProvider extends ChangeNotifier {
   // Token state
   List<TokenInfo> _tokens = [];
   Map<String, double> _tokenBalances = {};
+
+  // Multi-chain state
+  int _activeChainId = 4289; // default: TPIX Chain
+  Map<int, BigInt> _chainBalances = {}; // chainId → native balance (wei)
 
   // Price state
   double _tpixPrice = PriceService.defaultPrice;
@@ -59,6 +65,19 @@ class WalletProvider extends ChangeNotifier {
   List<TokenInfo> get tokens => _tokens;
   Map<String, double> get tokenBalances => _tokenBalances;
   double getTokenBalance(String contractAddress) => _tokenBalances[contractAddress.toLowerCase()] ?? 0;
+
+  // Chain getters
+  int get activeChainId => _activeChainId;
+  ChainConfig get activeChain => ChainConfig.byId(_activeChainId);
+  Map<int, BigInt> get chainBalances => _chainBalances;
+
+  /// Get native balance for a specific chain in human-readable format
+  double getChainBalance(int chainId) {
+    final bal = _chainBalances[chainId];
+    if (bal == null || bal == BigInt.zero) return 0.0;
+    final chain = ChainConfig.byId(chainId);
+    return SwapService.formatAmount(bal, chain.decimals);
+  }
 
   // Price getters
   double get tpixPrice => _tpixPrice;
@@ -164,6 +183,7 @@ class WalletProvider extends ChangeNotifier {
         await refreshBalance();
         await loadTxHistory();
         await loadTokens();
+        loadChainBalances(); // Load multi-chain balances in background
         _startBalanceRefresh();
       } else {
         _error = 'Invalid PIN';
@@ -243,6 +263,33 @@ class WalletProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Multi-Chain Operations
+  // ═══════════════════════════════════════════════════════════
+
+  /// Switch active chain
+  Future<void> switchChain(int chainId) async {
+    _activeChainId = chainId;
+    notifyListeners();
+    await loadChainBalances();
+  }
+
+  /// Load native balances for all supported chains in background
+  Future<void> loadChainBalances() async {
+    if (_address == null) return;
+    for (final chain in ChainConfig.all) {
+      if (chain.chainId == 4289) {
+        // TPIX balance is already managed by _balance
+        continue;
+      }
+      try {
+        final bal = await SwapService.getNativeBalance(chain, _address!);
+        _chainBalances[chain.chainId] = bal;
+      } catch (_) {}
+    }
+    notifyListeners();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -405,6 +452,8 @@ class WalletProvider extends ChangeNotifier {
     _pendingTxHash = null;
     _tokens = [];
     _tokenBalances = {};
+    _chainBalances = {};
+    _activeChainId = 4289;
     notifyListeners();
   }
 
@@ -419,6 +468,8 @@ class WalletProvider extends ChangeNotifier {
     _txHistory = [];
     _tokens = [];
     _tokenBalances = {};
+    _chainBalances = {};
+    _activeChainId = 4289;
     _balanceTimer?.cancel();
     _txPollTimer?.cancel();
     _pendingTxHash = null;

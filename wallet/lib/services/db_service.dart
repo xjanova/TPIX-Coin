@@ -19,7 +19,7 @@ class DbService {
 
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -29,6 +29,9 @@ class DbService {
         }
         if (oldVersion < 3) {
           await _createPriceHistoryTable(db);
+        }
+        if (oldVersion < 4) {
+          await _addChainIdColumn(db);
         }
       },
     );
@@ -71,12 +74,25 @@ class DbService {
         symbol TEXT NOT NULL,
         decimals INTEGER NOT NULL DEFAULT 18,
         wallet_slot INTEGER NOT NULL,
+        chain_id INTEGER NOT NULL DEFAULT 4289,
         logo_url TEXT,
         added_at TEXT NOT NULL,
-        UNIQUE(contract_address, wallet_slot)
+        UNIQUE(contract_address, wallet_slot, chain_id)
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_token_slot ON tokens(wallet_slot)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_token_chain ON tokens(chain_id, wallet_slot)');
+  }
+
+  static Future<void> _addChainIdColumn(Database db) async {
+    // Add chain_id column to tokens table (default 4289 = TPIX Chain)
+    // Wrap in try/catch: column may already exist if DB was created fresh at v3+
+    try {
+      await db.execute('ALTER TABLE tokens ADD COLUMN chain_id INTEGER NOT NULL DEFAULT 4289');
+    } catch (_) {
+      // Column already exists — safe to ignore
+    }
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_token_chain ON tokens(chain_id, wallet_slot)');
   }
 
   static Future<void> _createPriceHistoryTable(Database db) async {
@@ -208,6 +224,7 @@ class DbService {
         'symbol': token.symbol,
         'decimals': token.decimals,
         'wallet_slot': token.walletSlot,
+        'chain_id': token.chainId,
         'logo_url': token.logoUrl,
         'added_at': token.addedAt.toIso8601String(),
       },
@@ -215,38 +232,44 @@ class DbService {
     );
   }
 
-  /// Get all tokens for a wallet slot
-  static Future<List<TokenInfo>> getTokensForSlot(int walletSlot) async {
+  /// Get all tokens for a wallet slot (optionally filtered by chain)
+  static Future<List<TokenInfo>> getTokensForSlot(int walletSlot, {int? chainId}) async {
     final db = await database;
+    String where = 'wallet_slot = ?';
+    List<Object?> whereArgs = [walletSlot];
+    if (chainId != null) {
+      where += ' AND chain_id = ?';
+      whereArgs.add(chainId);
+    }
     final rows = await db.query(
       'tokens',
-      where: 'wallet_slot = ?',
-      whereArgs: [walletSlot],
+      where: where,
+      whereArgs: whereArgs,
       orderBy: 'added_at ASC',
     );
     return rows.map(_rowToTokenInfo).toList();
   }
 
   /// Check if a token already exists for this wallet
-  static Future<bool> tokenExists(String contractAddress, int walletSlot) async {
+  static Future<bool> tokenExists(String contractAddress, int walletSlot, {int chainId = 4289}) async {
     final db = await database;
     final result = await db.query(
       'tokens',
       columns: ['id'],
-      where: 'contract_address = ? AND wallet_slot = ?',
-      whereArgs: [contractAddress.toLowerCase(), walletSlot],
+      where: 'contract_address = ? AND wallet_slot = ? AND chain_id = ?',
+      whereArgs: [contractAddress.toLowerCase(), walletSlot, chainId],
       limit: 1,
     );
     return result.isNotEmpty;
   }
 
   /// Remove a token for a wallet slot
-  static Future<void> removeToken(String contractAddress, int walletSlot) async {
+  static Future<void> removeToken(String contractAddress, int walletSlot, {int chainId = 4289}) async {
     final db = await database;
     await db.delete(
       'tokens',
-      where: 'contract_address = ? AND wallet_slot = ?',
-      whereArgs: [contractAddress.toLowerCase(), walletSlot],
+      where: 'contract_address = ? AND wallet_slot = ? AND chain_id = ?',
+      whereArgs: [contractAddress.toLowerCase(), walletSlot, chainId],
     );
   }
 
@@ -345,6 +368,7 @@ class DbService {
       symbol: row['symbol'] as String,
       decimals: row['decimals'] as int? ?? 18,
       walletSlot: row['wallet_slot'] as int,
+      chainId: row['chain_id'] as int? ?? 4289,
       logoUrl: row['logo_url'] as String?,
       addedAt: DateTime.tryParse(row['added_at'] as String? ?? ''),
     );

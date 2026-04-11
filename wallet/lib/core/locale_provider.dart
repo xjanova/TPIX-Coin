@@ -254,6 +254,39 @@ class LocaleProvider extends ChangeNotifier {
       'price.title': 'กราฟราคา TPIX',
       'price.portfolio': 'มูลค่าพอร์ต',
       'price.loading': 'กำลังโหลดข้อมูล...',
+
+      // Swap
+      'swap.title': 'แลกเปลี่ยน',
+      'swap.from': 'จาก',
+      'swap.to': 'เป็น',
+      'swap.balance': 'ยอด',
+      'swap.enterAmount': 'ใส่จำนวน',
+      'swap.insufficient': 'ยอดไม่เพียงพอ',
+      'swap.approve': 'อนุมัติ',
+      'swap.approving': 'กำลังอนุมัติ...',
+      'swap.button': 'แลกเปลี่ยน',
+      'swap.swapping': 'กำลังแลก...',
+      'swap.success': 'แลกเปลี่ยนสำเร็จ!',
+      'swap.rate': 'อัตราแลกเปลี่ยน',
+      'swap.minReceived': 'รับขั้นต่ำ',
+      'swap.slippage': 'ส่วนต่างที่ยอมรับ',
+
+      // Bridge
+      'bridge.title': 'บริดจ์',
+      'bridge.amount': 'จำนวน',
+      'bridge.fee': 'ค่าธรรมเนียม',
+      'bridge.feePercent': 'ค่าธรรมเนียม (%)',
+      'bridge.receive': 'คุณจะได้รับ',
+      'bridge.estTime': 'เวลาโดยประมาณ',
+      'bridge.button': 'เริ่มบริดจ์',
+      'bridge.status': 'สถานะ',
+      'bridge.monitoring': 'กำลังตรวจสอบ...',
+      'bridge.howItWorks': 'วิธีการทำงาน',
+      'bridge.howItWorksDesc': '1. ส่งโทเค็นจากเชนต้นทาง\n2. ระบบบริดจ์ตรวจสอบธุรกรรม\n3. โทเค็นถูกปล่อยบนเชนปลายทาง\n\nใช้เวลาประมาณ 5-15 นาที',
+
+      // Home - DeFi
+      'home.bridge': 'บริดจ์',
+      'home.bridgeSub': 'Cross-Chain',
     },
     'en': {
       // Splash
@@ -481,6 +514,39 @@ class LocaleProvider extends ChangeNotifier {
       'price.title': 'TPIX Price Chart',
       'price.portfolio': 'Portfolio Value',
       'price.loading': 'Loading chart data...',
+
+      // Swap
+      'swap.title': 'Swap',
+      'swap.from': 'From',
+      'swap.to': 'To',
+      'swap.balance': 'Balance',
+      'swap.enterAmount': 'Enter Amount',
+      'swap.insufficient': 'Insufficient Balance',
+      'swap.approve': 'Approve',
+      'swap.approving': 'Approving...',
+      'swap.button': 'Swap',
+      'swap.swapping': 'Swapping...',
+      'swap.success': 'Swap Successful!',
+      'swap.rate': 'Exchange Rate',
+      'swap.minReceived': 'Minimum Received',
+      'swap.slippage': 'Slippage Tolerance',
+
+      // Bridge
+      'bridge.title': 'Bridge',
+      'bridge.amount': 'Amount',
+      'bridge.fee': 'Fee',
+      'bridge.feePercent': 'Fee (%)',
+      'bridge.receive': 'You will receive',
+      'bridge.estTime': 'Estimated time',
+      'bridge.button': 'Start Bridge',
+      'bridge.status': 'Status',
+      'bridge.monitoring': 'Monitoring...',
+      'bridge.howItWorks': 'How it works',
+      'bridge.howItWorksDesc': '1. Send tokens from the source chain\n2. Bridge system verifies the transaction\n3. Tokens are released on the destination chain\n\nEstimated time: 5-15 minutes',
+
+      // Home - DeFi
+      'home.bridge': 'Bridge',
+      'home.bridgeSub': 'Cross-Chain',
     },
   };
 }

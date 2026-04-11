@@ -9,6 +9,8 @@ import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import '../widgets/price_chart.dart';
+import '../models/chain_config.dart';
+import '../widgets/token_selector.dart';
 import 'send_screen.dart';
 import 'receive_screen.dart';
 import 'tx_history_screen.dart';
@@ -16,6 +18,8 @@ import 'wallet_list_sheet.dart';
 import 'identity_screen.dart';
 import 'settings_screen.dart';
 import 'add_token_screen.dart';
+import 'swap_screen.dart';
+import 'bridge_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -225,21 +229,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(width: 8),
-        // Network badge
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            color: AppTheme.success.withValues(alpha: 0.1),
-            border: Border.all(color: AppTheme.success.withValues(alpha: 0.3)),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.circle, size: 6, color: AppTheme.success),
-              SizedBox(width: 4),
-              Text('TPIX Chain', style: TextStyle(fontSize: 11, color: AppTheme.success, fontWeight: FontWeight.w600)),
-            ],
+        // Network badge — tap to show chain info
+        GestureDetector(
+          onTap: () => _showChainInfo(wallet),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              color: wallet.activeChain.color.withValues(alpha: 0.1),
+              border: Border.all(color: wallet.activeChain.color.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ChainLogo(chain: wallet.activeChain, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  wallet.activeChain.shortName,
+                  style: TextStyle(fontSize: 11, color: wallet.activeChain.color, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -429,31 +439,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildActionButtons(BuildContext context, LocaleProvider l) {
-    return Row(
+    return Column(
       children: [
-        Expanded(child: _buildActionBtn(
-          icon: Icons.arrow_upward_rounded,
-          label: l.t('home.send'),
-          sublabel: l.t('home.sendSub'),
-          color: AppTheme.primary,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SendScreen())),
-        )),
-        const SizedBox(width: 12),
-        Expanded(child: _buildActionBtn(
-          icon: Icons.arrow_downward_rounded,
-          label: l.t('home.receive'),
-          sublabel: l.t('home.receiveSub'),
-          color: AppTheme.success,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReceiveScreen())),
-        )),
-        const SizedBox(width: 12),
-        Expanded(child: _buildActionBtn(
-          icon: Icons.receipt_long_rounded,
-          label: l.t('home.history'),
-          sublabel: l.t('home.historySub'),
-          color: AppTheme.accent,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TxHistoryScreen())),
-        )),
+        // Primary actions row
+        Row(
+          children: [
+            Expanded(child: _buildActionBtn(
+              icon: Icons.arrow_upward_rounded,
+              label: l.t('home.send'),
+              sublabel: l.t('home.sendSub'),
+              color: AppTheme.primary,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SendScreen())),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _buildActionBtn(
+              icon: Icons.arrow_downward_rounded,
+              label: l.t('home.receive'),
+              sublabel: l.t('home.receiveSub'),
+              color: AppTheme.success,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReceiveScreen())),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _buildActionBtn(
+              icon: Icons.receipt_long_rounded,
+              label: l.t('home.history'),
+              sublabel: l.t('home.historySub'),
+              color: AppTheme.accent,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TxHistoryScreen())),
+            )),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // DeFi actions row
+        Row(
+          children: [
+            Expanded(child: _buildActionBtn(
+              icon: Icons.swap_horiz_rounded,
+              label: l.t('home.swap'),
+              sublabel: l.t('home.swapSub'),
+              color: AppTheme.warm,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SwapScreen())),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: _buildActionBtn(
+              icon: Icons.account_tree_rounded,
+              label: l.t('home.bridge'),
+              sublabel: l.t('home.bridgeSub'),
+              color: const Color(0xFF00D4FF),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BridgeScreen())),
+            )),
+          ],
+        ),
       ],
     );
   }
@@ -593,6 +629,72 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
             Text(balance, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showChainInfo(WalletProvider wallet) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: AppTheme.bgCard,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.textMuted.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Multi-Chain Balances',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            ...ChainConfig.all.map((chain) {
+              double bal;
+              if (chain.chainId == 4289) {
+                bal = wallet.balance;
+              } else {
+                bal = wallet.getChainBalance(chain.chainId);
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    ChainLogo(chain: chain, size: 32),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(chain.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                          Text('Chain ID: ${chain.chainId}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${bal.toStringAsFixed(4)} ${chain.symbol}',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: chain.color),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 16),
           ],
         ),
       ),

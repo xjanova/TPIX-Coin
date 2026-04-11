@@ -5,6 +5,7 @@ class TokenInfo {
   final String symbol;
   final int decimals;
   final int walletSlot;
+  final int chainId; // Chain this token belongs to (default 4289 = TPIX)
   final String? logoUrl;
   final DateTime addedAt;
 
@@ -14,6 +15,7 @@ class TokenInfo {
     required this.symbol,
     this.decimals = 18,
     required this.walletSlot,
+    this.chainId = 4289,
     this.logoUrl,
     DateTime? addedAt,
   }) : addedAt = addedAt ?? DateTime.now();
@@ -27,6 +29,7 @@ class TokenInfo {
     'symbol': symbol,
     'decimals': decimals,
     'walletSlot': walletSlot,
+    'chainId': chainId,
     'logoUrl': logoUrl,
     'addedAt': addedAt.toIso8601String(),
   };
@@ -37,6 +40,7 @@ class TokenInfo {
     symbol: json['symbol'] as String,
     decimals: json['decimals'] as int? ?? 18,
     walletSlot: json['walletSlot'] as int? ?? json['wallet_slot'] as int? ?? 0,
+    chainId: json['chainId'] as int? ?? json['chain_id'] as int? ?? 4289,
     logoUrl: json['logoUrl'] as String? ?? json['logo_url'] as String?,
     addedAt: json['addedAt'] != null
         ? DateTime.tryParse(json['addedAt'] as String)
