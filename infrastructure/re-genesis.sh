@@ -129,6 +129,7 @@ EPOCH_LENGTH=100000
 BLOCK_GAS_TARGET=20000000
 
 VALIDATOR_ADDRS=()
+VALIDATOR_BLS=()
 BOOTNODE_URLS=()
 
 for i in $(seq 1 ${NUM_VALIDATORS}); do
@@ -137,19 +138,24 @@ for i in $(seq 1 ${NUM_VALIDATORS}); do
 
     polygon-edge secrets init --data-dir "${DIR}" --insecure --json > "${DIR}/secrets.json" 2>&1
 
-    # Extract address and node ID
+    # Extract address, BLS public key, and node ID
     ADDR=""
+    BLS_PUB=""
     NODE_ID=""
 
-    if [[ -f "${DIR}/secrets.json" ]]; then
-        ADDR=$(jq -r '.[0].address // empty' "${DIR}/secrets.json" 2>/dev/null || echo "")
-        NODE_ID=$(jq -r '.[0].node_id // empty' "${DIR}/secrets.json" 2>/dev/null || echo "")
+    # Try secrets output (most reliable)
+    SECRETS_OUT=$(polygon-edge secrets output --data-dir "${DIR}" 2>/dev/null || echo "")
+    if [[ -n "${SECRETS_OUT}" ]]; then
+        ADDR=$(echo "${SECRETS_OUT}" | grep -i "public key (address)" | awk '{print $NF}')
+        BLS_PUB=$(echo "${SECRETS_OUT}" | grep -i "bls public key" | awk '{print $NF}')
+        NODE_ID=$(echo "${SECRETS_OUT}" | grep -i "node id" | awk '{print $NF}')
     fi
 
-    # Fallback
-    if [[ -z "${ADDR}" ]]; then
-        ADDR=$(polygon-edge secrets output --data-dir "${DIR}" 2>/dev/null | grep -i "address" | awk '{print $NF}' || echo "")
-        NODE_ID=$(polygon-edge secrets output --data-dir "${DIR}" 2>/dev/null | grep -i "node id" | awk '{print $NF}' || echo "")
+    # Fallback to secrets.json
+    if [[ -z "${ADDR}" && -f "${DIR}/secrets.json" ]]; then
+        ADDR=$(jq -r '.[0].address // empty' "${DIR}/secrets.json" 2>/dev/null || echo "")
+        NODE_ID=$(jq -r '.[0].node_id // empty' "${DIR}/secrets.json" 2>/dev/null || echo "")
+        BLS_PUB=$(jq -r '.[0].bls_pubkey // empty' "${DIR}/secrets.json" 2>/dev/null || echo "")
     fi
 
     if [[ -z "${ADDR}" ]]; then
@@ -158,11 +164,13 @@ for i in $(seq 1 ${NUM_VALIDATORS}); do
     fi
 
     VALIDATOR_ADDRS+=("${ADDR}")
+    VALIDATOR_BLS+=("${BLS_PUB}")
     if [[ -n "${NODE_ID}" ]]; then
         BOOTNODE_URLS+=("/ip4/tpix-validator-${i}/tcp/10001/p2p/${NODE_ID}")
     fi
 
     log "Validator ${i}: ${ADDR}"
+    log "  BLS: ${BLS_PUB:0:20}..."
 done
 
 echo ""
@@ -198,15 +206,25 @@ for bn in "${BOOTNODE_URLS[@]}"; do
 done
 
 # Generate genesis
-# Flags for polygon-edge v0.9.0:
-#   --ibft-validators-prefix-path (not --validators-prefix)
-#   --block-time accepts duration format (e.g. "2s")
+# Using --ibft-validator with explicit address:blskey pairs
 GENESIS_OUT="./genesis.json"
 rm -f "${GENESIS_OUT}"
 
+# Build --ibft-validator args (address:bls_pubkey for BLS type)
+IBFT_VALIDATOR_ARGS=""
+for i in $(seq 0 $((${#VALIDATOR_ADDRS[@]} - 1))); do
+    addr="${VALIDATOR_ADDRS[$i]}"
+    bls="${VALIDATOR_BLS[$i]}"
+    if [[ -n "${bls}" ]]; then
+        IBFT_VALIDATOR_ARGS+=" --ibft-validator ${addr}:${bls}"
+    else
+        IBFT_VALIDATOR_ARGS+=" --ibft-validator ${addr}"
+    fi
+done
+
 polygon-edge genesis \
     --consensus ibft \
-    --ibft-validators-prefix-path "${DATA_DIR}/validator-" \
+    ${IBFT_VALIDATOR_ARGS} \
     --ibft-validator-type bls \
     --chain-id ${CHAIN_ID} \
     --name "tpix-chain" \
