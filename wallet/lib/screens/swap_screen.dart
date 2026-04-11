@@ -306,7 +306,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
             _confirmRow('From', '$amountStr ${_tokenIn!.symbol}'),
             _confirmRow('To (estimated)', '${outFormatted.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
             _confirmRow('Min received', '${minOut.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
-            _confirmRow('Slippage', '$_slippagePercent%'),
+            _confirmRow('Slippage', '${_slippagePercent % 1 == 0 ? _slippagePercent.toInt() : _slippagePercent}%'),
             _confirmRow('Network', _chain.name),
           ],
         ),
@@ -536,7 +536,14 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                   const SizedBox(width: 6),
                   GestureDetector(
                     onTap: () {
-                      _amountController.text = formattedBalance.toStringAsFixed(8);
+                      // Reserve gas for native token swaps on non-gasless chains
+                      double maxAmount = formattedBalance;
+                      if (_tokenIn != null && _tokenIn!.isNative && !_chain.isGasless) {
+                        // Reserve ~0.005 native token for gas (covers most swap gas costs)
+                        const gasReserve = 0.005;
+                        maxAmount = (formattedBalance - gasReserve).clamp(0.0, formattedBalance);
+                      }
+                      _amountController.text = maxAmount.toStringAsFixed(8);
                       _onAmountChanged(_amountController.text);
                     },
                     child: Container(
@@ -793,7 +800,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         children: [
           _infoRow('Rate', '1 ${_tokenIn!.symbol} = ${rate.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
           _infoRow('Min. received', '${minReceived.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
-          _infoRow('Slippage tolerance', '${_slippagePercent}%'),
+          _infoRow('Slippage tolerance', '${_slippagePercent % 1 == 0 ? _slippagePercent.toInt() : _slippagePercent}%'),
           _infoRow('Network', _chain.name),
         ],
       ),

@@ -210,6 +210,7 @@ class WalletProvider extends ChangeNotifier {
         await refreshBalance();
         await loadTxHistory();
         await loadTokens();
+        loadChainBalances(); // Load multi-chain balances in background
         _startBalanceRefresh();
       }
       return success;
@@ -276,18 +277,21 @@ class WalletProvider extends ChangeNotifier {
     await loadChainBalances();
   }
 
-  /// Load native balances for all supported chains in background
+  /// Load native balances for all supported chains in parallel
   Future<void> loadChainBalances() async {
     if (_address == null) return;
-    for (final chain in ChainConfig.all) {
-      if (chain.chainId == 4289) {
-        // TPIX balance is already managed by _balance
-        continue;
-      }
-      try {
-        final bal = await SwapService.getNativeBalance(chain, _address!);
-        _chainBalances[chain.chainId] = bal;
-      } catch (_) {}
+    final chains = ChainConfig.all.where((c) => c.chainId != 4289).toList();
+    final results = await Future.wait(
+      chains.map((chain) async {
+        try {
+          return MapEntry(chain.chainId, await SwapService.getNativeBalance(chain, _address!));
+        } catch (_) {
+          return MapEntry(chain.chainId, BigInt.zero);
+        }
+      }),
+    );
+    for (final entry in results) {
+      _chainBalances[entry.key] = entry.value;
     }
     notifyListeners();
   }

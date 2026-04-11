@@ -85,13 +85,52 @@ class DbService {
   }
 
   static Future<void> _addChainIdColumn(Database db) async {
-    // Add chain_id column to tokens table (default 4289 = TPIX Chain)
-    // Wrap in try/catch: column may already exist if DB was created fresh at v3+
+    // Recreate tokens table to update UNIQUE constraint for multi-chain support
+    // Old: UNIQUE(contract_address, wallet_slot)
+    // New: UNIQUE(contract_address, wallet_slot, chain_id)
+    // SQLite can't ALTER UNIQUE constraints, so we must recreate the table
     try {
-      await db.execute('ALTER TABLE tokens ADD COLUMN chain_id INTEGER NOT NULL DEFAULT 4289');
+      // Check if chain_id column already exists (fresh v3+ install)
+      final tableInfo = await db.rawQuery("PRAGMA table_info('tokens')");
+      final hasChainId = tableInfo.any((col) => col['name'] == 'chain_id');
+
+      if (!hasChainId) {
+        // Step 1: Rename old table
+        await db.execute('ALTER TABLE tokens RENAME TO tokens_old');
+
+        // Step 2: Create new table with updated UNIQUE constraint
+        await db.execute('''
+          CREATE TABLE tokens(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contract_address TEXT NOT NULL,
+            name TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            decimals INTEGER NOT NULL DEFAULT 18,
+            wallet_slot INTEGER NOT NULL,
+            chain_id INTEGER NOT NULL DEFAULT 4289,
+            logo_url TEXT,
+            added_at TEXT NOT NULL,
+            UNIQUE(contract_address, wallet_slot, chain_id)
+          )
+        ''');
+
+        // Step 3: Copy data from old table (all existing tokens get chain_id = 4289)
+        await db.execute('''
+          INSERT INTO tokens(contract_address, name, symbol, decimals, wallet_slot, chain_id, logo_url, added_at)
+          SELECT contract_address, name, symbol, decimals, wallet_slot, 4289, logo_url, added_at
+          FROM tokens_old
+        ''');
+
+        // Step 4: Drop old table
+        await db.execute('DROP TABLE tokens_old');
+      }
     } catch (_) {
-      // Column already exists — safe to ignore
+      // Fallback: just try to add the column if recreation failed
+      try {
+        await db.execute('ALTER TABLE tokens ADD COLUMN chain_id INTEGER NOT NULL DEFAULT 4289');
+      } catch (_) {}
     }
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_token_slot ON tokens(wallet_slot)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_token_chain ON tokens(chain_id, wallet_slot)');
   }
 
