@@ -171,15 +171,39 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
         onTap: () => _showTxDetail(tx, l),
         child: Row(
           children: [
-            // Direction icon
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: color.withValues(alpha: 0.12),
+            // TPIX logo with direction badge
+            SizedBox(
+              width: 46,
+              height: 46,
+              child: Stack(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color.withValues(alpha: 0.08),
+                    ),
+                    child: ClipOval(
+                      child: Image.asset('assets/images/logowallet.png', width: 42, height: 42, fit: BoxFit.cover),
+                    ),
+                  ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: color,
+                        border: Border.all(color: AppTheme.bgDark, width: 1.5),
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 11),
+                    ),
+                  ),
+                ],
               ),
-              child: Icon(icon, color: color, size: 22),
             ),
             const SizedBox(width: 12),
             // Address + date
@@ -268,7 +292,13 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            Text(l.t('tx.detail'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+            Row(
+              children: [
+                ClipOval(child: Image.asset('assets/images/logowallet.png', width: 28, height: 28, fit: BoxFit.cover)),
+                const SizedBox(width: 10),
+                Text(l.t('tx.detail'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+              ],
+            ),
             const SizedBox(height: 20),
             _detailRow(l.t('tx.hash'), tx.shortHash, onTap: () {
               Clipboard.setData(ClipboardData(text: tx.txHash));

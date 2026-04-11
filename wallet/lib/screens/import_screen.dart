@@ -17,6 +17,12 @@ class _ImportScreenState extends State<ImportScreen> {
   final _controller = TextEditingController();
   bool _isMnemonic = true;
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   void _scanQR() {
     Navigator.push(
       context,
@@ -36,6 +42,7 @@ class _ImportScreenState extends State<ImportScreen> {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
 
+    final l = context.read<LocaleProvider>();
     final provider = context.read<WalletProvider>();
     try {
       if (_isMnemonic) {
@@ -50,8 +57,20 @@ class _ImportScreenState extends State<ImportScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      // Show user-friendly error message
+      final msg = e.toString();
+      String errorMsg;
+      if (msg.contains('Invalid mnemonic')) {
+        errorMsg = l.t('import.errorInvalidMnemonic');
+      } else if (msg.contains('already exists')) {
+        errorMsg = l.t('import.errorDuplicate');
+      } else if (_isMnemonic) {
+        errorMsg = l.t('import.errorInvalidMnemonic');
+      } else {
+        errorMsg = l.t('import.errorInvalidKey');
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger),
+        SnackBar(content: Text(errorMsg), backgroundColor: AppTheme.danger),
       );
     }
   }
@@ -99,8 +118,8 @@ class _ImportScreenState extends State<ImportScreen> {
                   padding: const EdgeInsets.all(4),
                   child: Row(
                     children: [
-                      Expanded(child: _buildTab('Seed Phrase', _isMnemonic, () => setState(() => _isMnemonic = true))),
-                      Expanded(child: _buildTab('Private Key', !_isMnemonic, () => setState(() => _isMnemonic = false))),
+                      Expanded(child: _buildTab(l.t('import.tabSeed'), _isMnemonic, () => setState(() => _isMnemonic = true))),
+                      Expanded(child: _buildTab(l.t('import.tabKey'), !_isMnemonic, () => setState(() => _isMnemonic = false))),
                     ],
                   ),
                 ),

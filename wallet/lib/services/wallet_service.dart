@@ -10,6 +10,7 @@ import 'package:web3dart/web3dart.dart';
 import 'package:http/http.dart' as http;
 import '../models/wallet_info.dart';
 import '../models/tx_record.dart';
+import 'db_service.dart';
 
 /// TPIX Chain Configuration
 class TpixChain {
@@ -260,6 +261,7 @@ class WalletService {
 
     _wallets.removeAt(index);
     await _storage.delete(key: 'tpix_pk_$slot');
+    await DbService.deleteTxForSlot(slot);
 
     // If deleted active wallet, switch to first remaining
     if (_activeSlot == slot && _wallets.isNotEmpty) {
@@ -533,6 +535,7 @@ class WalletService {
   /// Delete ALL wallets
   Future<void> deleteWallet() async {
     await _storage.deleteAll();
+    await DbService.close();
     _credentials = null;
     _address = null;
     _mnemonic = null;
@@ -541,46 +544,46 @@ class WalletService {
   }
 
   // ================================================================
-  // Transaction History (Local Storage)
+  // Transaction History (SQLite)
   // ================================================================
 
-  /// Save a transaction record
+  /// Save a transaction record to SQLite
   Future<void> saveTxRecord(TxRecord tx) async {
-    final history = await getTxHistory();
-    final key = _activeSlot.toString();
-    history[key] ??= [];
-    // Prevent duplicates
-    if (history[key]!.any((t) => t.txHash == tx.txHash)) return;
-    history[key]!.insert(0, tx); // newest first
-    // Keep max 200 per wallet
-    if (history[key]!.length > 200) {
-      history[key] = history[key]!.sublist(0, 200);
-    }
-    await _saveTxHistory(history);
+    await DbService.insertTx(tx, _activeSlot);
   }
 
-  /// Get transaction history for active wallet
+  /// Get transaction history for active wallet from SQLite
   Future<List<TxRecord>> getActiveTxHistory() async {
-    final history = await getTxHistory();
-    return history[_activeSlot.toString()] ?? [];
+    // Migrate legacy JSON data on first access
+    await _migrateTxToSqlite();
+    return DbService.getTxForSlot(_activeSlot);
   }
 
-  /// Get all transaction history
-  Future<Map<String, List<TxRecord>>> getTxHistory() async {
+  /// Migrate legacy JSON tx history from SecureStorage to SQLite (one-time)
+  bool _txMigrated = false;
+  Future<void> _migrateTxToSqlite() async {
+    if (_txMigrated) return;
+    _txMigrated = true;
+
     final json = await _storage.read(key: _keyTxHistory);
-    if (json == null) return {};
-    final map = jsonDecode(json) as Map<String, dynamic>;
-    return map.map((key, value) {
-      final list = (value as List).map((j) => TxRecord.fromJson(j as Map<String, dynamic>)).toList();
-      return MapEntry(key, list);
-    });
-  }
+    if (json == null) return;
 
-  Future<void> _saveTxHistory(Map<String, List<TxRecord>> history) async {
-    final map = history.map((key, value) {
-      return MapEntry(key, value.map((t) => t.toJson()).toList());
-    });
-    await _storage.write(key: _keyTxHistory, value: jsonEncode(map));
+    try {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      for (final entry in map.entries) {
+        final slot = int.tryParse(entry.key);
+        if (slot == null) continue;
+        final list = (entry.value as List)
+            .map((j) => TxRecord.fromJson(j as Map<String, dynamic>))
+            .toList();
+        await DbService.insertTxBatch(list, slot);
+      }
+      // Remove legacy key after successful migration
+      await _storage.delete(key: _keyTxHistory);
+    } catch (_) {
+      // Migration failed — keep legacy data, will retry next time
+      _txMigrated = false;
+    }
   }
 
   /// Scan recent blocks for incoming/outgoing transactions via RPC
@@ -597,14 +600,13 @@ class WalletService {
 
       for (int i = latestBlock; i >= startBlock; i--) {
         try {
-          // Use raw RPC to get block with full transactions
           final response = await client.post(
             Uri.parse(TpixChain.rpcUrl),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'jsonrpc': '2.0',
               'method': 'eth_getBlockByNumber',
-              'params': ['0x${i.toRadixString(16)}', true], // true = include full txs
+              'params': ['0x${i.toRadixString(16)}', true],
               'id': i,
             }),
           );
@@ -623,12 +625,16 @@ class WalletService {
             final to = (txData['to'] as String? ?? '').toLowerCase();
 
             if (from == addr || to == addr) {
+              final txHash = txData['hash'] as String;
+              // Skip if already in SQLite
+              if (await DbService.txExists(txHash)) continue;
+
               final valueHex = txData['value'] as String? ?? '0x0';
               final valueWei = BigInt.parse(valueHex.replaceFirst('0x', ''), radix: 16);
               final direction = from == addr ? 'sent' : 'received';
 
               final tx = TxRecord(
-                txHash: txData['hash'] as String,
+                txHash: txHash,
                 fromAddress: txData['from'] as String? ?? '',
                 toAddress: txData['to'] as String? ?? '',
                 value: valueWei.toString(),
@@ -638,12 +644,16 @@ class WalletService {
                 timestamp: blockTimestamp,
               );
               found.add(tx);
-              await saveTxRecord(tx);
             }
           }
         } catch (_) {
           // Skip problematic blocks
         }
+      }
+
+      // Bulk insert all found transactions
+      if (found.isNotEmpty) {
+        await DbService.insertTxBatch(found, _activeSlot);
       }
     } catch (_) {
       // Network error
@@ -756,30 +766,9 @@ class WalletService {
     }
   }
 
-  /// Update a TX record status in local storage
-  /// [slot] allows updating TX for a specific wallet (not just active)
+  /// Update a TX record status in SQLite
   Future<void> updateTxStatus(String txHash, String newStatus, {int? slot}) async {
-    final history = await getTxHistory();
-    final key = (slot ?? _activeSlot).toString();
-    final txList = history[key];
-    if (txList == null) return;
-
-    final idx = txList.indexWhere((t) => t.txHash == txHash);
-    if (idx == -1) return;
-
-    final old = txList[idx];
-    txList[idx] = TxRecord(
-      txHash: old.txHash,
-      fromAddress: old.fromAddress,
-      toAddress: old.toAddress,
-      value: old.value,
-      direction: old.direction,
-      status: newStatus,
-      blockNumber: old.blockNumber,
-      timestamp: old.timestamp,
-      createdAt: old.createdAt,
-    );
-    await _saveTxHistory(history);
+    await DbService.updateTxStatus(txHash, newStatus);
   }
 
   // ================================================================

@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
-import '../services/biometric_service.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import 'send_screen.dart';
@@ -14,6 +13,7 @@ import 'receive_screen.dart';
 import 'tx_history_screen.dart';
 import 'wallet_list_sheet.dart';
 import 'identity_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -183,6 +183,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(width: 8),
+        // Settings gear
+        GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.06),
+            ),
+            child: const Icon(Icons.settings_rounded, color: AppTheme.textSecondary, size: 18),
+          ),
+        ),
+        const SizedBox(width: 8),
         // Network badge
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -255,9 +269,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w800, color: Colors.white, height: 1),
                     ),
                     const SizedBox(width: 8),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: Text('TPIX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ClipOval(child: Image.asset('assets/images/logowallet.png', width: 22, height: 22, fit: BoxFit.cover)),
+                          const SizedBox(width: 4),
+                          const Text('TPIX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -415,14 +436,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Row(
                 children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: color.withValues(alpha: 0.12),
+                  // TPIX logo with direction badge
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: Stack(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: color.withValues(alpha: 0.08),
+                          ),
+                          child: ClipOval(
+                            child: Image.asset('assets/images/logowallet.png', width: 32, height: 32, fit: BoxFit.cover),
+                          ),
+                        ),
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: color,
+                              border: Border.all(color: AppTheme.bgDark, width: 1.5),
+                            ),
+                            child: Icon(icon, color: Colors.white, size: 10),
+                          ),
+                        ),
+                      ],
                     ),
-                    child: Icon(icon, color: color, size: 16),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -453,75 +499,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         const SizedBox(height: 10),
         _buildInfoRow(Icons.shield, l.t('home.consensus'), 'IBFT 2.0', AppTheme.accent),
         const SizedBox(height: 10),
-        _buildBiometricToggle(l),
+        // Settings shortcut
+        GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: glassCard(borderRadius: 16),
+            child: Row(
+              children: [
+                const Icon(Icons.settings_rounded, color: AppTheme.primary, size: 22),
+                const SizedBox(width: 12),
+                Text(l.t('settings.title'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+                const Spacer(),
+                const Icon(Icons.arrow_forward_ios, color: AppTheme.textMuted, size: 14),
+              ],
+            ),
+          ),
+        ),
       ],
-    );
-  }
-
-  Widget _buildBiometricToggle(LocaleProvider l) {
-    final bioService = BiometricService();
-    return FutureBuilder<bool>(
-      future: bioService.isDeviceSupported(),
-      builder: (context, snapshot) {
-        if (snapshot.data != true) return const SizedBox.shrink();
-        return FutureBuilder<bool>(
-          future: bioService.isEnabled(),
-          builder: (context, enabledSnap) {
-            final enabled = enabledSnap.data ?? false;
-            return GestureDetector(
-              onTap: () async {
-                final newVal = !enabled;
-                await bioService.setEnabled(newVal);
-                final wallet = context.read<WalletProvider>();
-                if (newVal) {
-                  // Verify biometric works before enabling
-                  final authed = await bioService.authenticate(l.t('home.biometricSetup'));
-                  if (!authed) {
-                    await bioService.setEnabled(false);
-                    return;
-                  }
-                } else {
-                  await wallet.clearBiometricToken();
-                }
-                if (mounted) setState(() {});
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: glassCard(borderRadius: 16),
-                child: Row(
-                  children: [
-                    Icon(Icons.fingerprint, color: enabled ? AppTheme.primary : AppTheme.textMuted, size: 22),
-                    const SizedBox(width: 12),
-                    Text(l.t('home.biometric'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
-                    const Spacer(),
-                    Container(
-                      width: 44,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: enabled ? AppTheme.primary.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.1),
-                      ),
-                      child: AnimatedAlign(
-                        duration: const Duration(milliseconds: 200),
-                        alignment: enabled ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: enabled ? AppTheme.primary : AppTheme.textMuted,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 

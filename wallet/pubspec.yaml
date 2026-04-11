@@ -35,6 +35,10 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.0.2
 
+  # Database
+  sqflite: ^2.4.2
+  path: ^1.9.1
+
   # Utils
   shared_preferences: ^2.5.3
   url_launcher: ^6.3.1
