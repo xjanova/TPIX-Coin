@@ -89,9 +89,10 @@ jobs:
             echo "[7/8] Starting services..."
             docker volume rm $(docker volume ls -q | grep blockscout-db) 2>/dev/null || true
             docker compose up -d tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4 blockscout-db
-            echo "Wait 25s..."; sleep 25
+            echo "Wait 70s for validators to pass healthcheck..."
+            sleep 70
             docker compose up -d blockscout-backend
-            echo "Wait 15s..."; sleep 15
+            echo "Wait 20s..."; sleep 20
             docker compose up -d blockscout-frontend
 
             echo "[8/8] Verify..."
