@@ -37,7 +37,7 @@ jobs:
             cp "$CHAIN/genesis.json" "$BACKUP/" 2>/dev/null || true
 
             echo "[3/8] Wipe data..."
-            rm -rf "$CHAIN/data" "$CHAIN/genesis.json"
+            sudo rm -rf "$CHAIN/data" "$CHAIN/genesis.json"
             mkdir -p "$CHAIN"
 
             echo "[4/8] Generate 4 validator keys..."
