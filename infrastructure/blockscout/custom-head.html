@@ -189,7 +189,6 @@
   /* ══════════════════════════════════════════════════════
      All Addresses Page — replaces /accounts with full list
      ══════════════════════════════════════════════════════ */
-  var accountsInjected = false;
 
   function isAccountsPage(){
     return window.location.pathname === "/accounts" || window.location.pathname === "/accounts/";
@@ -211,17 +210,15 @@
   }
 
   function injectAccountsPage(){
-    if(accountsInjected || !isAccountsPage()) return;
+    if(!isAccountsPage()) return;
+    if(document.getElementById("tpix-accounts")) return;
 
     // Find a suitable container: <main>, or the content area inside #__next (Next.js)
     var main = document.querySelector("main");
     if(!main){
       // Blockscout 500 error page renders inside #__next without <main>.
-      // Find the error heading and replace its nearest content wrapper.
       var errHeading = document.querySelector("#__next h1, #__next h2");
       if(!errHeading) return;
-
-      // Walk up to find the content wrapper (skip the layout root #__next itself)
       main = errHeading.parentElement;
       while(main && main.parentElement && main.parentElement.id !== "__next"){
         main = main.parentElement;
@@ -229,10 +226,10 @@
       if(!main || main.id === "__next") return;
     }
 
-    accountsInjected = true;
-
-    // Replace content — wrap in tpix-accounts container
-    main.innerHTML = '<div class="tpix-accounts-wrapper" id="tpix-accounts"></div>';
+    // Replace with a new <main> to disconnect React's virtual DOM
+    var newMain = document.createElement("main");
+    newMain.innerHTML = '<div class="tpix-accounts-wrapper" id="tpix-accounts"></div>';
+    main.replaceWith(newMain);
 
     var container = document.getElementById("tpix-accounts");
     container.innerHTML = '<div class="tpix-loading"><div class="spinner"></div>Loading all addresses...</div>';
@@ -515,7 +512,6 @@
     // Reset accounts injection on page change
     if(window.location.pathname !== prevPath){
       prevPath = window.location.pathname;
-      accountsInjected = false;
     }
     runAll();
   });
