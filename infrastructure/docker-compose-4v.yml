@@ -1,0 +1,199 @@
+services:
+  tpix-validator-1:
+    image: 0xpolygon/polygon-edge:0.9.0
+    container_name: tpix-validator-1
+    restart: always
+    ports:
+      - "127.0.0.1:8545:8545"
+      - "127.0.0.1:10000:10000"
+      - "10001:10001"
+    volumes:
+      - ./tpix-chain/data/validator-1:/data
+      - ./tpix-chain/genesis.json:/genesis.json:ro
+    command: server --data-dir /data --chain /genesis.json --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545 --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0 --log-level INFO
+    healthcheck:
+      test: ["CMD-SHELL", "polygon-edge status --grpc-address 127.0.0.1:10000 > /dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - tpix
+
+  tpix-validator-2:
+    image: 0xpolygon/polygon-edge:0.9.0
+    container_name: tpix-validator-2
+    restart: always
+    ports:
+      - "127.0.0.1:8546:8545"
+      - "10002:10001"
+    volumes:
+      - ./tpix-chain/data/validator-2:/data
+      - ./tpix-chain/genesis.json:/genesis.json:ro
+    command: server --data-dir /data --chain /genesis.json --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545 --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0 --log-level INFO
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - tpix
+
+  tpix-validator-3:
+    image: 0xpolygon/polygon-edge:0.9.0
+    container_name: tpix-validator-3
+    restart: always
+    ports:
+      - "127.0.0.1:8547:8545"
+      - "10003:10001"
+    volumes:
+      - ./tpix-chain/data/validator-3:/data
+      - ./tpix-chain/genesis.json:/genesis.json:ro
+    command: server --data-dir /data --chain /genesis.json --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545 --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0 --log-level INFO
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - tpix
+
+  tpix-validator-4:
+    image: 0xpolygon/polygon-edge:0.9.0
+    container_name: tpix-validator-4
+    restart: always
+    ports:
+      - "127.0.0.1:8548:8545"
+      - "10004:10001"
+    volumes:
+      - ./tpix-chain/data/validator-4:/data
+      - ./tpix-chain/genesis.json:/genesis.json:ro
+    command: server --data-dir /data --chain /genesis.json --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545 --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0 --log-level INFO
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - tpix
+
+  blockscout-db:
+    image: postgres:16-alpine
+    container_name: blockscout-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: blockscout
+      POSTGRES_USER: blockscout
+      POSTGRES_PASSWORD: tpix_explorer_db_2026
+    volumes:
+      - blockscout-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blockscout"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tpix
+
+  blockscout-backend:
+    image: blockscout/blockscout:6.10.1
+    container_name: blockscout-backend
+    restart: unless-stopped
+    depends_on:
+      blockscout-db:
+        condition: service_healthy
+      tpix-validator-1:
+        condition: service_healthy
+    command: sh -c "bin/blockscout eval 'Elixir.Explorer.ReleaseTasks.create_and_migrate()' && bin/blockscout start"
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    environment:
+      MIX_ENV: prod
+      DATABASE_URL: postgresql://blockscout:tpix_explorer_db_2026@blockscout-db:5432/blockscout
+      ETHEREUM_JSONRPC_VARIANT: geth
+      ETHEREUM_JSONRPC_HTTP_URL: http://tpix-validator-1:8545
+      ETHEREUM_JSONRPC_WS_URL: ws://tpix-validator-1:8545/ws
+      ETHEREUM_JSONRPC_TRACE_URL: http://tpix-validator-1:8545
+      ETHEREUM_JSONRPC_HTTP_TIMEOUT: "30"
+      CHAIN_ID: "4289"
+      NETWORK: "TPIX Chain"
+      SUBNETWORK: "Mainnet"
+      COIN: "TPIX"
+      COIN_NAME: "Thaiprompt Index"
+      BLOCK_TRANSFORMER: base
+      SECRET_KEY_BASE: "56OgMJny00smDFHkKNv27A7eBZmqaJPkWTp9HOYcR6M/Rij24bLey3qrB3PJFH3N"
+      PORT: "4000"
+      ECTO_USE_SSL: "false"
+      API_V2_ENABLED: "true"
+      POOL_SIZE: "20"
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+      INDEXER_DISABLE_BLOCK_REWARD_FETCHER: "true"
+      INDEXER_DISABLE_WITHDRAWALS_FETCHER: "true"
+      INDEXER_COIN_BALANCES_BATCH_SIZE: "50"
+      COIN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
+      TOKEN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
+      TXS_STATS_ENABLED: "true"
+      SHOW_TXS_CHART: "true"
+      SHOW_PRICE_CHART: "false"
+      DISABLE_EXCHANGE_RATES: "true"
+    ports:
+      - "127.0.0.1:4000:4000"
+    networks:
+      - tpix
+
+  blockscout-frontend:
+    image: ghcr.io/blockscout/frontend:v1.38.0
+    container_name: blockscout-frontend
+    restart: unless-stopped
+    depends_on:
+      - blockscout-backend
+    environment:
+      NEXT_PUBLIC_API_HOST: explorer.tpix.online
+      NEXT_PUBLIC_API_PORT: "443"
+      NEXT_PUBLIC_API_PROTOCOL: https
+      NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL: wss
+      NEXT_PUBLIC_APP_HOST: explorer.tpix.online
+      NEXT_PUBLIC_APP_PROTOCOL: https
+      NEXT_PUBLIC_APP_PORT: "443"
+      NEXT_PUBLIC_NETWORK_NAME: "TPIX Chain"
+      NEXT_PUBLIC_NETWORK_SHORT_NAME: "TPIX"
+      NEXT_PUBLIC_NETWORK_ID: "4289"
+      NEXT_PUBLIC_NETWORK_RPC_URL: "https://rpc.tpix.online"
+      NEXT_PUBLIC_NETWORK_CURRENCY_NAME: "TPIX"
+      NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: "TPIX"
+      NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: "18"
+      NEXT_PUBLIC_IS_TESTNET: "false"
+      NEXT_PUBLIC_NETWORK_LOGO: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_LOGO_DARK: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_ICON: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_ICON_DARK: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_COLOR_THEME_DEFAULT: "dark"
+      NEXT_PUBLIC_HOMEPAGE_CHARTS: "['daily_txs']"
+      NEXT_PUBLIC_WEB3_WALLETS: "['metamask']"
+      NEXT_PUBLIC_PROMOTE_BLOCKSCOUT_IN_TITLE: "false"
+      NEXT_PUBLIC_AD_BANNER_PROVIDER: "none"
+      NEXT_PUBLIC_AD_TEXT_PROVIDER: "none"
+    ports:
+      - "127.0.0.1:3100:3000"
+    networks:
+      - tpix
+
+volumes:
+  blockscout-db-data:
+
+networks:
+  tpix:
+    driver: bridge
