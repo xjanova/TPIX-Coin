@@ -234,21 +234,9 @@
     var container = document.getElementById("tpix-accounts");
     container.innerHTML = '<div class="tpix-loading"><div class="spinner"></div>Loading all addresses...</div>';
 
-    // Fetch all addresses
-    fetch("/api?module=account&action=listaccounts&page=1&offset=500")
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var addresses = (data.result || []).map(function(a, i){
-        return {
-          address: a.address,
-          balance: a.balance || "0",
-          balanceBig: BigInt(a.balance || "0"),
-          txCount: null,
-          isContract: null,
-          loaded: false,
-        };
-      });
-
+    // Fetch all addresses using v2 API with pagination
+    fetchAllAddressesV2()
+    .then(function(addresses){
       // Sort by balance descending (top accounts)
       addresses.sort(function(a, b){
         if(a.balanceBig > b.balanceBig) return -1;
@@ -269,45 +257,53 @@
         sortBy: "balance",    // balance | txcount
         sortDir: "desc",
         maxBalance: maxBalance,
-        enriched: false,
+        enriched: true,
       };
 
       renderPage(container, state);
-      enrichAddresses(state, container);
     })
     .catch(function(err){
       container.innerHTML = '<div class="tpix-empty">Failed to load addresses: ' + err.message + '</div>';
     });
   }
 
-  function enrichAddresses(state, container){
-    // Fetch v2 details for each address (batched 5 at a time)
-    var queue = state.addresses.slice();
-    var batchSize = 5;
+  function fetchAllAddressesV2(){
+    var allAddresses = [];
 
-    function nextBatch(){
-      if(queue.length === 0){
-        state.enriched = true;
-        renderTable(container, state);
-        return;
+    function fetchPage(pageParams){
+      var url = "/api/v2/addresses";
+      if(pageParams){
+        var qs = Object.keys(pageParams).map(function(k){
+          return encodeURIComponent(k) + "=" + encodeURIComponent(pageParams[k]);
+        }).join("&");
+        url += "?" + qs;
       }
-      var batch = queue.splice(0, batchSize);
-      Promise.all(batch.map(function(a){
-        return fetch("/api/v2/addresses/" + a.address)
-          .then(function(r){ return r.json(); })
-          .then(function(d){
-            a.txCount = d.transactions_count || 0;
-            a.isContract = d.is_contract || false;
-            a.name = d.name || null;
-            a.loaded = true;
-          })
-          .catch(function(){ a.loaded = true; a.txCount = 0; a.isContract = false; });
-      })).then(function(){
-        renderTable(container, state);
-        nextBatch();
-      });
+
+      return fetch(url)
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          var items = data.items || [];
+          items.forEach(function(item){
+            allAddresses.push({
+              address: item.hash,
+              balance: item.coin_balance || "0",
+              balanceBig: BigInt(item.coin_balance || "0"),
+              txCount: item.transactions_count || 0,
+              isContract: item.is_contract || false,
+              name: item.name || null,
+              loaded: true,
+            });
+          });
+
+          // Continue to next page if available (max 20 pages safety limit)
+          if(data.next_page_params && allAddresses.length < 10000){
+            return fetchPage(data.next_page_params);
+          }
+          return allAddresses;
+        });
     }
-    nextBatch();
+
+    return fetchPage(null);
   }
 
   function getFiltered(state){
