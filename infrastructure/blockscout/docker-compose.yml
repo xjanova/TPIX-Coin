@@ -1,91 +1,173 @@
-# TPIX Chain Block Explorer — Blockscout
-# docker-compose up -d เพื่อเริ่ม explorer
+# TPIX Chain + Blockscout Explorer — Production Docker Compose
+# Deployed via .github/workflows/deploy-explorer.yml
 # Developed by Xman Studio
 
-version: '3.8'
-
 services:
-  # PostgreSQL Database สำหรับ Blockscout
-  db:
+  # TPIX Chain Node (Polygon Edge 0.9.0, IBFT PoA)
+  tpix-node:
+    image: 0xpolygon/polygon-edge:0.9.0
+    container_name: tpix-chain-node
+    restart: always
+    ports:
+      - "127.0.0.1:8545:8545"
+      - "127.0.0.1:10000:10000"
+      - "127.0.0.1:10001:10001"
+    volumes:
+      - ./tpix-chain/data:/data
+      - ./tpix-chain/genesis.json:/genesis.json:ro
+    command: >
+      server --data-dir /data --chain /genesis.json
+      --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001
+      --jsonrpc 0.0.0.0:8545 --seal --max-slots 4096
+      --block-gas-target 20000000 --price-limit 0 --log-level INFO
+    healthcheck:
+      test: ["CMD-SHELL", "polygon-edge status --grpc-address 127.0.0.1:10000 > /dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    mem_limit: 2g
+    memswap_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - tpix
+
+  # PostgreSQL for Blockscout
+  blockscout-db:
     image: postgres:16-alpine
-    container_name: tpix-explorer-db
+    container_name: blockscout-db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: blockscout
       POSTGRES_USER: blockscout
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGE_ME_GENERATE_STRONG_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-tpix_explorer_db_2026}
     volumes:
-      - explorer-db-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - blockscout-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blockscout"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
-      - explorer-net
+      - tpix
+
+  # Blockscout Frontend (Next.js)
+  blockscout-frontend:
+    image: ghcr.io/blockscout/frontend:v1.38.0
+    container_name: blockscout-frontend
     restart: unless-stopped
-
-  # Blockscout Backend
-  backend:
-    image: blockscout/blockscout:latest
-    container_name: tpix-explorer-backend
-    command: sh -c "bin/blockscout eval 'Elixir.Explorer.ReleaseTasks.create_and_migrate()' && bin/blockscout start"
+    depends_on:
+      - blockscout-backend
     environment:
-      # Database
-      DATABASE_URL: postgresql://blockscout:${DB_PASSWORD:-CHANGE_ME_GENERATE_STRONG_PASSWORD}@db:5432/blockscout
+      NEXT_PUBLIC_API_HOST: explorer.tpix.online
+      NEXT_PUBLIC_API_PORT: "443"
+      NEXT_PUBLIC_API_PROTOCOL: https
+      NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL: wss
+      NEXT_PUBLIC_API_BASE_PATH: /
+      NEXT_PUBLIC_NETWORK_NAME: "TPIX Chain"
+      NEXT_PUBLIC_NETWORK_SHORT_NAME: "TPIX"
+      NEXT_PUBLIC_NETWORK_ID: "4289"
+      NEXT_PUBLIC_NETWORK_CURRENCY_NAME: "TPIX"
+      NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: "TPIX"
+      NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: "18"
+      NEXT_PUBLIC_HOMEPAGE_CHARTS: "['daily_txs']"
+      NEXT_PUBLIC_IS_TESTNET: "false"
+      NEXT_PUBLIC_NETWORK_LOGO: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_LOGO_DARK: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_ICON: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_ICON_DARK: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_APP_HOST: explorer.tpix.online
+      NEXT_PUBLIC_APP_PROTOCOL: https
+      NEXT_PUBLIC_APP_PORT: "443"
+      NEXT_PUBLIC_AD_BANNER_PROVIDER: "none"
+      NEXT_PUBLIC_AD_TEXT_PROVIDER: "none"
+      NEXT_PUBLIC_PROMOTE_BLOCKSCOUT_IN_TITLE: "false"
+      NEXT_PUBLIC_HAS_BEACON_CHAIN: "false"
+      NEXT_PUBLIC_VIEWS_ADDRESS_HIDDEN_VIEWS: "[]"
+      NEXT_PUBLIC_HOMEPAGE_STATS: "['total_blocks','average_block_time','total_txs','wallet_addresses','gas_tracker']"
+      NEXT_PUBLIC_NETWORK_VERIFICATION_TYPE: "validation"
+    ports:
+      - "127.0.0.1:3100:3000"
+    networks:
+      - tpix
 
-      # Chain RPC — เชื่อมต่อกับ TPIX Chain validator node
+  # Blockscout Backend (Elixir indexer + API)
+  blockscout-backend:
+    image: blockscout/blockscout:6.10.1
+    container_name: blockscout-backend
+    restart: unless-stopped
+    depends_on:
+      blockscout-db:
+        condition: service_healthy
+      tpix-node:
+        condition: service_healthy
+    command: sh -c "bin/blockscout eval 'Elixir.Explorer.ReleaseTasks.create_and_migrate()' && bin/blockscout start"
+    mem_limit: 2g
+    memswap_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    environment:
+      MIX_ENV: prod
+      DATABASE_URL: postgresql://blockscout:${DB_PASSWORD:-tpix_explorer_db_2026}@blockscout-db:5432/blockscout
+      # RPC — connects to TPIX chain node in same network
       ETHEREUM_JSONRPC_VARIANT: geth
-      ETHEREUM_JSONRPC_HTTP_URL: ${RPC_URL:-http://host.docker.internal:8545}
-      ETHEREUM_JSONRPC_WS_URL: ${WS_URL:-ws://host.docker.internal:8545}
-      ETHEREUM_JSONRPC_TRACE_URL: ${RPC_URL:-http://host.docker.internal:8545}
-
-      # Chain Config
+      ETHEREUM_JSONRPC_HTTP_URL: http://tpix-node:8545
+      ETHEREUM_JSONRPC_WS_URL: ws://tpix-node:8545/ws
+      ETHEREUM_JSONRPC_TRACE_URL: http://tpix-node:8545
+      ETHEREUM_JSONRPC_HTTP_TIMEOUT: "30"
+      ETHEREUM_JSONRPC_FALLBACK_HTTP_URL: http://tpix-node:8545
+      ETHEREUM_JSONRPC_FALLBACK_TRACE_URL: http://tpix-node:8545
+      # Chain
       CHAIN_ID: "4289"
       NETWORK: "TPIX Chain"
       SUBNETWORK: "Mainnet"
       COIN: "TPIX"
-      COIN_NAME: "TPIX"
-
-      # Branding
-      LOGO: /images/logotpixexplorer.webp
-      LOGO_FOOTER: /images/logotpixexplorer.webp
-      SUPPORTED_CHAINS: '[]'
-      SHOW_PRICE_CHART: "false"
-
-      # Features
-      DISABLE_EXCHANGE_RATES: "true"
-      DISABLE_KNOWN_TOKENS: "true"
-      ENABLE_TXS_STATS: "true"
-      SHOW_TXS_CHART: "true"
-      HISTORY_FETCH_INTERVAL: "10"
-      BLOCK_TRANSFORMER: "base"
-
+      COIN_NAME: "Thaiprompt Index"
+      BLOCK_TRANSFORMER: base
+      # Indexer — tuned for Polygon Edge
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+      INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
+      INDEXER_COIN_BALANCES_BATCH_SIZE: "50"
+      COIN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
+      TOKEN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
+      INDEXER_MEMORY_LIMIT: "1g"
+      FETCH_REWARDS_WAY: "manual"
+      INDEXER_CATCHUP_BLOCKS_BATCH_SIZE: "20"
+      INDEXER_CATCHUP_BLOCKS_CONCURRENCY: "2"
+      INDEXER_EMPTY_BLOCKS_SANITIZER_BATCH_SIZE: "20"
+      INDEXER_REALTIME_FETCHER_MAX_GAP: "500"
+      INDEXER_BLOCK_INTERVAL: "2"
       # API
       API_V2_ENABLED: "true"
-      API_RATE_LIMIT: "50"
-
+      PORT: "4000"
+      # Performance
+      ECTO_USE_SSL: "false"
+      POOL_SIZE: "20"
+      POOL_SIZE_API: "5"
+      ACCOUNT_ENABLED: "true"
+      DISABLE_EXCHANGE_RATES: "true"
+      # Microservices (disabled)
+      MICROSERVICE_SC_VERIFIER_ENABLED: "false"
+      MICROSERVICE_SC_VERIFIER_URL: ""
+      MICROSERVICE_VISUALIZE_SOL2UML_ENABLED: "false"
+      MICROSERVICE_SIG_PROVIDER_ENABLED: "false"
       # Security
-      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-CHANGE_ME_TO_A_RANDOM_64_CHAR_STRING_FOR_PRODUCTION_USE}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-CHANGE_ME_TO_A_RANDOM_64_CHAR_STRING}
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     networks:
-      - explorer-net
-    depends_on:
-      - db
-    restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  # Smart Contract Verification Service
-  smart-contract-verifier:
-    image: ghcr.io/blockscout/smart-contract-verifier:latest
-    container_name: tpix-verifier
-    ports:
-      - "8050:8050"
-    networks:
-      - explorer-net
-    restart: unless-stopped
+      - tpix
 
 volumes:
-  explorer-db-data:
+  blockscout-db-data:
 
 networks:
-  explorer-net:
+  tpix:
     driver: bridge

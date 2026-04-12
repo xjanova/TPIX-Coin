@@ -1,0 +1,243 @@
+# TPIX Chain + Explorer — Deploy Workflow
+# Deploys Polygon Edge chain node + Blockscout explorer to production server.
+# Branding injected from infrastructure/blockscout/custom-head.html (file-based, not inline).
+# Developed by Xman Studio
+
+name: Deploy TPIX Explorer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/blockscout/**'
+      - '.github/workflows/deploy-explorer.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Upload branding + docker-compose to server
+      - name: Upload infrastructure files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "infrastructure/blockscout/custom-head.html,infrastructure/blockscout/docker-compose.yml"
+          target: "~/tpix-deploy-tmp"
+
+      - name: Deploy TPIX Chain & Blockscout
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 15m
+          script: |
+            echo "=== TPIX Chain + Explorer Deploy ==="
+
+            INFRA="$HOME/tpix-infrastructure"
+            CHAIN="$INFRA/tpix-chain"
+            EXPLORER="$HOME/domains/explorer.tpix.online"
+            RPC_DIR="$HOME/domains/rpc.tpix.online"
+            DEPLOY_TMP="$HOME/tpix-deploy-tmp/infrastructure/blockscout"
+            IMG="0xpolygon/polygon-edge:0.9.0"
+
+            mkdir -p "$CHAIN" "$INFRA"
+
+            # === Step 1: Copy uploaded files ===
+            echo "[1] Copying infrastructure files..."
+            cp "$DEPLOY_TMP/docker-compose.yml" "$INFRA/docker-compose.yml"
+            mkdir -p "$EXPLORER/public_html"
+            cp "$DEPLOY_TMP/custom-head.html" "$EXPLORER/public_html/tpix-brand.html"
+            rm -rf "$HOME/tpix-deploy-tmp"
+
+            # === Step 2: Generate keys + genesis (first time only) ===
+            if [ ! -f "$CHAIN/data/consensus/validator.key" ]; then
+              echo "[2] First time: Generating validator secrets..."
+              docker run --rm -v "$CHAIN:/chain" alpine sh -c "rm -rf /chain/data /chain/genesis.json" 2>/dev/null || true
+              docker run --rm -v "$CHAIN/data:/data" $IMG secrets init --data-dir /data --insecure
+            else
+              echo "[2] Validator keys exist, keeping..."
+            fi
+
+            # Get validator info
+            SECRETS_OUT=$(docker run --rm -v "$CHAIN/data:/data" $IMG secrets output --data-dir /data 2>&1)
+            NODE_ID=$(echo "$SECRETS_OUT" | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            VALIDATOR_ADDR=$(echo "$SECRETS_OUT" | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+            echo "Validator: $VALIDATOR_ADDR"
+
+            if [ -z "$VALIDATOR_ADDR" ]; then
+              echo "ERROR: Cannot get validator address!"
+              exit 1
+            fi
+
+            # === Step 3: Generate genesis (first time only) ===
+            if [ ! -f "$CHAIN/genesis.json" ]; then
+              echo "[3] Generating genesis.json..."
+              BOOTNODE_FLAG=""
+              if [ -n "$NODE_ID" ]; then
+                BOOTNODE_FLAG="--bootnode /ip4/127.0.0.1/tcp/10001/p2p/$NODE_ID"
+              fi
+              BLS_KEY=$(echo "$SECRETS_OUT" | grep "BLS Public key" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
+              if [ -n "$BLS_KEY" ]; then
+                VALIDATOR_STR="${VALIDATOR_ADDR}:${BLS_KEY}"
+              else
+                VALIDATOR_STR="${VALIDATOR_ADDR}"
+              fi
+              docker run --rm -v "$CHAIN:/chain" $IMG genesis \
+                --consensus ibft \
+                --ibft-validator "$VALIDATOR_STR" \
+                $BOOTNODE_FLAG \
+                --chain-id 4289 \
+                --block-gas-limit 20000000 \
+                --epoch-size 100000 \
+                --premine "${VALIDATOR_ADDR}:7000000000000000000000000000" \
+                --dir /chain/genesis.json
+              echo "Genesis created! Validator $VALIDATOR_ADDR premined with 7B TPIX"
+            else
+              echo "[3] Genesis exists, keeping..."
+            fi
+
+            # === Step 4: Start containers ===
+            echo "[4] Starting TPIX Chain + Blockscout..."
+            cd "$INFRA"
+            docker compose up -d tpix-node blockscout-db blockscout-backend
+            docker compose up -d --force-recreate blockscout-frontend
+            echo "Waiting 20s for chain to start sealing..."
+            sleep 20
+
+            # Check blocks
+            for i in 1 2 3 4 5; do
+              BLOCK=$(curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null \
+                | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
+              echo "Block check $i: $BLOCK"
+              if [ "$BLOCK" != "0x0" ] && [ -n "$BLOCK" ]; then
+                echo "Chain is producing blocks!"
+                break
+              fi
+              sleep 5
+            done
+
+            echo "Waiting 30s for Blockscout to index..."
+            sleep 30
+
+            # === Step 5: Setup PHP reverse proxy ===
+            echo "[5] Setting up PHP reverse proxy..."
+            rm -f "$EXPLORER/public_html/index.shtml"
+
+            cat > "$EXPLORER/public_html/.htaccess" << 'HA'
+            RewriteEngine On
+            RewriteCond %{REQUEST_FILENAME} !-f
+            RewriteCond %{REQUEST_FILENAME} !-d
+            RewriteRule ^(.*)$ index.php [L,QSA]
+            HA
+
+            cat > "$EXPLORER/public_html/index.php" << 'PROXY'
+            <?php
+            // TPIX Explorer PHP Proxy — routes to Blockscout backend + frontend
+            // Branding loaded from tpix-brand.html (managed in TPIX-Coin repo)
+            $path = $_SERVER['REQUEST_URI'] ?? '/';
+            $isApiDocs = (strpos($path, '/api-docs') === 0);
+            $isApi = (!$isApiDocs && strpos($path, '/api') === 0) || strpos($path, '/socket') === 0 || strpos($path, '/csv-export') === 0;
+            $isFrontendAsset = (strpos($path, '/_next') === 0);
+            $target = ($isApi) ? 'http://127.0.0.1:4000' : 'http://127.0.0.1:3100';
+            if ($isFrontendAsset) $target = 'http://127.0.0.1:3100';
+            $url = $target . $path;
+            $ch = curl_init($url);
+            $reqHeaders = ['Host: ' . ($isApi ? '127.0.0.1:4000' : '127.0.0.1:3100')];
+            foreach (getallheaders() as $k => $v) {
+                $l = strtolower($k);
+                if ($l !== 'host' && $l !== 'connection' && $l !== 'content-length') $reqHeaders[] = "$k: $v";
+            }
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HEADER => true,
+                CURLOPT_HTTPHEADER => $reqHeaders,
+                CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_ENCODING => '',
+            ]);
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, file_get_contents('php://input'));
+            } elseif ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $_SERVER['REQUEST_METHOD']);
+            }
+            $response = curl_exec($ch);
+            if ($response === false) {
+                http_response_code(502);
+                echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>TPIX Explorer</title><meta http-equiv="refresh" content="5">';
+                echo '<style>body{background:#0f1117;color:#e2e8f0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}';
+                echo '.box{text-align:center;padding:40px;border:1px solid rgba(255,255,255,0.1);border-radius:16px;background:rgba(255,255,255,0.05)}';
+                echo 'h1{color:#06b6d4}p{color:#94a3b8}</style></head>';
+                echo '<body><div class="box"><h1>TPIX Chain Explorer</h1><p>Starting up... auto-refresh in 5s</p></div></body></html>';
+                exit;
+            }
+            $hSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE) ?? '';
+            $head = substr($response, 0, $hSize);
+            $body = substr($response, $hSize);
+            curl_close($ch);
+            http_response_code($code);
+            foreach (explode("\r\n", $head) as $line) {
+                $l = strtolower($line);
+                if (strpos($l,'cache-control:')===0||strpos($l,'location:')===0||strpos($l,'set-cookie:')===0)
+                    header($line);
+            }
+            // Inject TPIX branding from file (managed in TPIX-Coin repo)
+            $brandFile = __DIR__ . '/tpix-brand.html';
+            if (strpos($contentType, 'text/html') !== false && strpos($body, '</head>') !== false && file_exists($brandFile)) {
+                $body = str_replace('</head>', file_get_contents($brandFile) . '</head>', $body);
+                header('Content-Type: text/html; charset=utf-8');
+            } else {
+                header('Content-Type: ' . $contentType);
+            }
+            echo $body;
+            PROXY
+
+            # === Step 6: RPC proxy ===
+            if [ -d "$RPC_DIR" ]; then
+              echo "[6] Setting up RPC proxy..."
+              mkdir -p "$RPC_DIR/public_html"
+              cat > "$RPC_DIR/public_html/.htaccess" << 'HA2'
+            RewriteEngine On
+            RewriteCond %{REQUEST_FILENAME} !-f
+            RewriteRule ^(.*)$ index.php [L,QSA]
+            HA2
+              cat > "$RPC_DIR/public_html/index.php" << 'RPC'
+            <?php
+            header('Access-Control-Allow-Origin: *');
+            header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
+            header('Access-Control-Allow-Headers: Content-Type');
+            if ($_SERVER['REQUEST_METHOD']==='OPTIONS'){http_response_code(204);exit;}
+            $ch = curl_init('http://127.0.0.1:8545');
+            curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>['Content-Type: application/json']]);
+            if ($_SERVER['REQUEST_METHOD']==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,file_get_contents('php://input'));}
+            $r=curl_exec($ch);$code=curl_getinfo($ch,CURLINFO_HTTP_CODE);curl_close($ch);
+            if($r===false){http_response_code(502);header('Content-Type: application/json');echo '{"jsonrpc":"2.0","error":{"code":-32000,"message":"RPC unavailable"},"id":null}';exit;}
+            http_response_code($code);header('Content-Type: application/json');echo $r;
+            RPC
+            fi
+
+            # === Status ===
+            echo ""
+            echo "=== STATUS ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo ""
+            FINAL_BLOCK=$(curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null)
+            echo "Block: $FINAL_BLOCK"
+            FINAL_BAL=$(curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
+              -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"${VALIDATOR_ADDR}\",\"latest\"],\"id\":1}" 2>/dev/null)
+            echo "Balance: $FINAL_BAL"
+            echo "=== Deploy complete! ==="
