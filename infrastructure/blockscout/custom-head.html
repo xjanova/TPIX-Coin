@@ -150,7 +150,7 @@
     while(walker.nextNode()){
       var node = walker.currentNode;
       if(/Blockscout\s+Limited/i.test(node.textContent)){
-        node.textContent = node.textContent.replace(/Blockscout\s+Limited/gi, "Xman Studio 2024-2026");
+        node.textContent = node.textContent.replace(/Blockscout\s+Limited\s*(\d{4}[-–]\d{4})?/gi, "Xman Studio 2024-2026");
       }
     }
     // Replace Blockscout footer links
