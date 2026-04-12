@@ -1,5 +1,5 @@
-# TPIX Chain + Explorer — Deploy Workflow
-# Deploys Polygon Edge chain node + Blockscout explorer to production server.
+# TPIX Explorer — Deploy Workflow
+# Deploys Blockscout explorer (connects to existing chain validators).
 # Branding injected from infrastructure/blockscout/custom-head.html (file-based, not inline).
 # Developed by Xman Studio
 
@@ -31,7 +31,7 @@ jobs:
           source: "infrastructure/blockscout/custom-head.html,infrastructure/blockscout/docker-compose.yml"
           target: "~/tpix-deploy-tmp"
 
-      - name: Deploy TPIX Chain & Blockscout
+      - name: Deploy Blockscout Explorer
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -40,97 +40,44 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 15m
           script: |
-            echo "=== TPIX Chain + Explorer Deploy ==="
+            echo "=== TPIX Explorer Deploy ==="
 
             INFRA="$HOME/tpix-infrastructure"
-            CHAIN="$INFRA/tpix-chain"
             EXPLORER="$HOME/domains/explorer.tpix.online"
             RPC_DIR="$HOME/domains/rpc.tpix.online"
             DEPLOY_TMP="$HOME/tpix-deploy-tmp/infrastructure/blockscout"
-            IMG="0xpolygon/polygon-edge:0.9.0"
 
-            mkdir -p "$CHAIN" "$INFRA"
+            mkdir -p "$INFRA"
 
             # === Step 1: Copy uploaded files ===
             echo "[1] Copying infrastructure files..."
-            cp "$DEPLOY_TMP/docker-compose.yml" "$INFRA/docker-compose.yml"
+            cp "$DEPLOY_TMP/docker-compose.yml" "$INFRA/docker-compose-explorer.yml"
             mkdir -p "$EXPLORER/public_html"
             cp "$DEPLOY_TMP/custom-head.html" "$EXPLORER/public_html/tpix-brand.html"
             rm -rf "$HOME/tpix-deploy-tmp"
 
-            # === Step 2: Generate keys + genesis (first time only) ===
-            if [ ! -f "$CHAIN/data/consensus/validator.key" ]; then
-              echo "[2] First time: Generating validator secrets..."
-              docker run --rm -v "$CHAIN:/chain" alpine sh -c "rm -rf /chain/data /chain/genesis.json" 2>/dev/null || true
-              docker run --rm -v "$CHAIN/data:/data" $IMG secrets init --data-dir /data --insecure
-            else
-              echo "[2] Validator keys exist, keeping..."
+            # === Step 2: Verify chain is running ===
+            echo "[2] Checking existing chain..."
+            BLOCK=$(curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null \
+              | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
+            echo "Current block: $BLOCK"
+            if [ -z "$BLOCK" ] || [ "$BLOCK" = "0x0" ]; then
+              echo "WARNING: Chain may not be running on port 8545!"
             fi
 
-            # Get validator info
-            SECRETS_OUT=$(docker run --rm -v "$CHAIN/data:/data" $IMG secrets output --data-dir /data 2>&1)
-            NODE_ID=$(echo "$SECRETS_OUT" | grep "Node ID" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            VALIDATOR_ADDR=$(echo "$SECRETS_OUT" | grep "Public key (address)" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-            echo "Validator: $VALIDATOR_ADDR"
-
-            if [ -z "$VALIDATOR_ADDR" ]; then
-              echo "ERROR: Cannot get validator address!"
-              exit 1
-            fi
-
-            # === Step 3: Generate genesis (first time only) ===
-            if [ ! -f "$CHAIN/genesis.json" ]; then
-              echo "[3] Generating genesis.json..."
-              BOOTNODE_FLAG=""
-              if [ -n "$NODE_ID" ]; then
-                BOOTNODE_FLAG="--bootnode /ip4/127.0.0.1/tcp/10001/p2p/$NODE_ID"
-              fi
-              BLS_KEY=$(echo "$SECRETS_OUT" | grep "BLS Public key" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-              if [ -n "$BLS_KEY" ]; then
-                VALIDATOR_STR="${VALIDATOR_ADDR}:${BLS_KEY}"
-              else
-                VALIDATOR_STR="${VALIDATOR_ADDR}"
-              fi
-              docker run --rm -v "$CHAIN:/chain" $IMG genesis \
-                --consensus ibft \
-                --ibft-validator "$VALIDATOR_STR" \
-                $BOOTNODE_FLAG \
-                --chain-id 4289 \
-                --block-gas-limit 20000000 \
-                --epoch-size 100000 \
-                --premine "${VALIDATOR_ADDR}:7000000000000000000000000000" \
-                --dir /chain/genesis.json
-              echo "Genesis created! Validator $VALIDATOR_ADDR premined with 7B TPIX"
-            else
-              echo "[3] Genesis exists, keeping..."
-            fi
-
-            # === Step 4: Start containers ===
-            echo "[4] Starting TPIX Chain + Blockscout..."
+            # === Step 3: Start Blockscout containers ===
+            echo "[3] Starting Blockscout..."
             cd "$INFRA"
-            docker compose up -d tpix-node blockscout-db blockscout-backend
-            docker compose up -d --force-recreate blockscout-frontend
-            echo "Waiting 20s for chain to start sealing..."
-            sleep 20
-
-            # Check blocks
-            for i in 1 2 3 4 5; do
-              BLOCK=$(curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
-                -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null \
-                | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
-              echo "Block check $i: $BLOCK"
-              if [ "$BLOCK" != "0x0" ] && [ -n "$BLOCK" ]; then
-                echo "Chain is producing blocks!"
-                break
-              fi
-              sleep 5
-            done
-
-            echo "Waiting 30s for Blockscout to index..."
+            docker compose -f docker-compose-explorer.yml up -d blockscout-db
+            sleep 5
+            docker compose -f docker-compose-explorer.yml up -d blockscout-backend
+            docker compose -f docker-compose-explorer.yml up -d --force-recreate blockscout-frontend
+            echo "Waiting 30s for Blockscout to start..."
             sleep 30
 
-            # === Step 5: Setup PHP reverse proxy ===
-            echo "[5] Setting up PHP reverse proxy..."
+            # === Step 4: Setup PHP reverse proxy ===
+            echo "[4] Setting up PHP reverse proxy..."
             rm -f "$EXPLORER/public_html/index.shtml"
 
             cat > "$EXPLORER/public_html/.htaccess" << 'HA'
@@ -232,12 +179,12 @@ jobs:
             # === Status ===
             echo ""
             echo "=== STATUS ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            docker ps --filter "name=blockscout" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             echo ""
-            FINAL_BLOCK=$(curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
+            BLOCK=$(curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null)
-            echo "Block: $FINAL_BLOCK"
-            FINAL_BAL=$(curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
-              -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"${VALIDATOR_ADDR}\",\"latest\"],\"id\":1}" 2>/dev/null)
-            echo "Balance: $FINAL_BAL"
+            echo "Chain block: $BLOCK"
+            # Test Blockscout API
+            BSCOUT=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/api/v2/stats 2>/dev/null)
+            echo "Blockscout API: HTTP $BSCOUT"
             echo "=== Deploy complete! ==="

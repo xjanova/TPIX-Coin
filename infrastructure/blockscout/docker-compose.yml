@@ -1,41 +1,9 @@
-# TPIX Chain + Blockscout Explorer — Production Docker Compose
+# TPIX Blockscout Explorer — Production Docker Compose
+# Connects to existing TPIX chain validators (managed separately).
 # Deployed via .github/workflows/deploy-explorer.yml
 # Developed by Xman Studio
 
 services:
-  # TPIX Chain Node (Polygon Edge 0.9.0, IBFT PoA)
-  tpix-node:
-    image: 0xpolygon/polygon-edge:0.9.0
-    container_name: tpix-chain-node
-    restart: always
-    ports:
-      - "127.0.0.1:8545:8545"
-      - "127.0.0.1:10000:10000"
-      - "127.0.0.1:10001:10001"
-    volumes:
-      - ./tpix-chain/data:/data
-      - ./tpix-chain/genesis.json:/genesis.json:ro
-    command: >
-      server --data-dir /data --chain /genesis.json
-      --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001
-      --jsonrpc 0.0.0.0:8545 --seal --max-slots 4096
-      --block-gas-target 20000000 --price-limit 0 --log-level INFO
-    healthcheck:
-      test: ["CMD-SHELL", "polygon-edge status --grpc-address 127.0.0.1:10000 > /dev/null 2>&1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    mem_limit: 2g
-    memswap_limit: 2g
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
-    networks:
-      - tpix
-
   # PostgreSQL for Blockscout
   blockscout-db:
     image: postgres:16-alpine
@@ -103,8 +71,6 @@ services:
     depends_on:
       blockscout-db:
         condition: service_healthy
-      tpix-node:
-        condition: service_healthy
     command: sh -c "bin/blockscout eval 'Elixir.Explorer.ReleaseTasks.create_and_migrate()' && bin/blockscout start"
     mem_limit: 2g
     memswap_limit: 2g
@@ -116,14 +82,14 @@ services:
     environment:
       MIX_ENV: prod
       DATABASE_URL: postgresql://blockscout:${DB_PASSWORD:-tpix_explorer_db_2026}@blockscout-db:5432/blockscout
-      # RPC — connects to TPIX chain node in same network
+      # RPC — connects to existing TPIX chain validators on host
       ETHEREUM_JSONRPC_VARIANT: geth
-      ETHEREUM_JSONRPC_HTTP_URL: http://tpix-node:8545
-      ETHEREUM_JSONRPC_WS_URL: ws://tpix-node:8545/ws
-      ETHEREUM_JSONRPC_TRACE_URL: http://tpix-node:8545
+      ETHEREUM_JSONRPC_HTTP_URL: http://host.docker.internal:8545
+      ETHEREUM_JSONRPC_WS_URL: ws://host.docker.internal:8545/ws
+      ETHEREUM_JSONRPC_TRACE_URL: http://host.docker.internal:8545
       ETHEREUM_JSONRPC_HTTP_TIMEOUT: "30"
-      ETHEREUM_JSONRPC_FALLBACK_HTTP_URL: http://tpix-node:8545
-      ETHEREUM_JSONRPC_FALLBACK_TRACE_URL: http://tpix-node:8545
+      ETHEREUM_JSONRPC_FALLBACK_HTTP_URL: http://host.docker.internal:8545
+      ETHEREUM_JSONRPC_FALLBACK_TRACE_URL: http://host.docker.internal:8545
       # Chain
       CHAIN_ID: "4289"
       NETWORK: "TPIX Chain"
@@ -162,6 +128,8 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-CHANGE_ME_TO_A_RANDOM_64_CHAR_STRING}
     ports:
       - "127.0.0.1:4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - tpix
 
