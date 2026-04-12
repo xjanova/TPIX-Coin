@@ -303,12 +303,24 @@
       });
     }
 
-    // Source 2: discover IBFT validators from genesis block extraData
-    // Polygon Edge IBFT encodes validator addresses in block 0's extraData.
-    // Format: 32-byte vanity + RLP([validators, seal, committedSeals])
-    // Addresses appear as RLP 20-byte strings (prefix 0x94).
-    function discoverValidators(){
-      return fetch("https://rpc.tpix.online", {
+    // Source 2: discover genesis addresses via RPC
+    // Blockscout returns 404 for addresses it has never indexed (no transactions),
+    // so we query balances directly from the RPC node instead.
+    function discoverGenesisAddresses(){
+      var rpcUrl = "https://rpc.tpix.online";
+
+      // Genesis allocation addresses (immutable — from genesis.json)
+      var genesisAlloc = [
+        "0x2112b98e3ec5A252b7b2A8f02d498B64a2186A7f",
+        "0x3F8EB4046F5C79fd0D67C7547B5830cB2Cfb401A",
+        "0x3da3776e0AB0F442c181aa031f47FA83696859AF",
+        "0xA945d1bE9c1DDeaE75BBb9B39981D1CE6Ed7d9d5",
+        "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+        "0xf46131C82819d7621163F482b3fe88a228A7807c"
+      ];
+
+      // Step 1: parse IBFT validators from genesis extraData
+      return fetch(rpcUrl, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({jsonrpc:"2.0",method:"eth_getBlockByNumber",params:["0x0",false],id:1})
@@ -316,49 +328,48 @@
       .then(function(r){ return r.json(); })
       .then(function(data){
         var extra = (data.result && data.result.extraData) || "";
-        // Skip 0x prefix + 64 hex chars (32-byte vanity)
-        var hex = extra.slice(66);
-        var validators = [];
+        var hex = extra.slice(66); // skip 0x + 32-byte vanity
         var re = /94([0-9a-f]{40})/gi;
         var m;
+        var addrs = genesisAlloc.slice(); // start with allocation addresses
         while((m = re.exec(hex)) !== null){
           var addr = "0x" + m[1];
-          if(addr !== "0x0000000000000000000000000000000000000000") validators.push(addr);
+          if(addr !== "0x0000000000000000000000000000000000000000") addrs.push(addr);
         }
-        // Trigger on-demand balance fetch for each validator
-        return Promise.all(validators.map(function(addr){
-          if(seen[addr.toLowerCase()]) return Promise.resolve();
-          return fetch("/api/v2/addresses/" + addr)
-            .then(function(r){ return r.json(); })
-            .then(addAddr)
-            .catch(function(){});
+        // Deduplicate
+        var unique = [];
+        var check = {};
+        addrs.forEach(function(a){
+          var low = a.toLowerCase();
+          if(!check[low] && !seen[low]){ check[low] = true; unique.push(a); }
+        });
+        // Step 2: batch fetch balances via RPC
+        return Promise.all(unique.map(function(addr){
+          return fetch(rpcUrl, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({jsonrpc:"2.0",method:"eth_getBalance",params:[addr,"latest"],id:1})
+          })
+          .then(function(r){ return r.json(); })
+          .then(function(balData){
+            var hexBal = balData.result || "0x0";
+            var bal = BigInt(hexBal);
+            addAddr({
+              hash: addr.toLowerCase(),
+              coin_balance: bal.toString(),
+              transactions_count: 0,
+              is_contract: false,
+              name: null
+            });
+          })
+          .catch(function(){});
         }));
       })
       .catch(function(){});
     }
 
-    // Source 3: legacy API fallback (may find genesis pre-mine addresses)
-    function fetchLegacy(){
-      return fetch("/api?module=account&action=listaccounts&page=1&offset=500")
-        .then(function(r){ return r.json(); })
-        .then(function(data){
-          var newAddrs = [];
-          (data.result || []).forEach(function(a){
-            if(a.address && !seen[a.address.toLowerCase()]) newAddrs.push(a.address);
-          });
-          return Promise.all(newAddrs.map(function(addr){
-            return fetch("/api/v2/addresses/" + addr)
-              .then(function(r){ return r.json(); })
-              .then(addAddr)
-              .catch(function(){});
-          }));
-        })
-        .catch(function(){});
-    }
-
     return fetchV2Page(null)
-      .then(discoverValidators)
-      .then(fetchLegacy)
+      .then(discoverGenesisAddresses)
       .then(function(){ return allAddresses; });
   }
 
