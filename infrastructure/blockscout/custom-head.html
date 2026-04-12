@@ -269,8 +269,25 @@
 
   function fetchAllAddressesV2(){
     var allAddresses = [];
+    var seen = {};
 
-    function fetchPage(pageParams){
+    function addAddr(d){
+      var addr = (d.hash || d.address || "").toLowerCase();
+      if(!addr || seen[addr]) return;
+      seen[addr] = true;
+      allAddresses.push({
+        address: addr,
+        balance: d.coin_balance || d.balance || "0",
+        balanceBig: BigInt(d.coin_balance || d.balance || "0"),
+        txCount: d.transactions_count || 0,
+        isContract: d.is_contract || false,
+        name: d.name || null,
+        loaded: true,
+      });
+    }
+
+    // Source 1: v2 API with pagination
+    function fetchV2Page(pageParams){
       var url = "/api/v2/addresses";
       if(pageParams){
         var qs = Object.keys(pageParams).map(function(k){
@@ -278,32 +295,58 @@
         }).join("&");
         url += "?" + qs;
       }
-
-      return fetch(url)
-        .then(function(r){ return r.json(); })
-        .then(function(data){
-          var items = data.items || [];
-          items.forEach(function(item){
-            allAddresses.push({
-              address: item.hash,
-              balance: item.coin_balance || "0",
-              balanceBig: BigInt(item.coin_balance || "0"),
-              txCount: item.transactions_count || 0,
-              isContract: item.is_contract || false,
-              name: item.name || null,
-              loaded: true,
-            });
-          });
-
-          // Continue to next page if available (max 20 pages safety limit)
-          if(data.next_page_params && allAddresses.length < 10000){
-            return fetchPage(data.next_page_params);
-          }
-          return allAddresses;
-        });
+      return fetch(url).then(function(r){ return r.json(); }).then(function(data){
+        (data.items || []).forEach(addAddr);
+        if(data.next_page_params && allAddresses.length < 10000){
+          return fetchV2Page(data.next_page_params);
+        }
+      });
     }
 
-    return fetchPage(null);
+    // Source 2: discover validators from recent block miners
+    function discoverMiners(){
+      return fetch("/api/v2/blocks?type=block")
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          var newMiners = [];
+          (data.items || []).forEach(function(block){
+            var miner = block.miner && block.miner.hash;
+            if(miner && !seen[miner.toLowerCase()]) newMiners.push(miner);
+          });
+          // Trigger on-demand balance fetch for each new miner
+          return Promise.all(newMiners.map(function(addr){
+            return fetch("/api/v2/addresses/" + addr)
+              .then(function(r){ return r.json(); })
+              .then(addAddr)
+              .catch(function(){});
+          }));
+        })
+        .catch(function(){});
+    }
+
+    // Source 3: legacy API fallback (may find genesis pre-mine addresses)
+    function fetchLegacy(){
+      return fetch("/api?module=account&action=listaccounts&page=1&offset=500")
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          var newAddrs = [];
+          (data.result || []).forEach(function(a){
+            if(a.address && !seen[a.address.toLowerCase()]) newAddrs.push(a.address);
+          });
+          return Promise.all(newAddrs.map(function(addr){
+            return fetch("/api/v2/addresses/" + addr)
+              .then(function(r){ return r.json(); })
+              .then(addAddr)
+              .catch(function(){});
+          }));
+        })
+        .catch(function(){});
+    }
+
+    return fetchV2Page(null)
+      .then(discoverMiners)
+      .then(fetchLegacy)
+      .then(function(){ return allAddresses; });
   }
 
   function getFiltered(state){
