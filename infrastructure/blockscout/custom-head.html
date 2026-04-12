@@ -303,25 +303,27 @@
       });
     }
 
-    // Source 2: discover validators from recent block miners
-    function discoverMiners(){
-      return fetch("/api/v2/blocks?type=block")
-        .then(function(r){ return r.json(); })
-        .then(function(data){
-          var newMiners = [];
-          (data.items || []).forEach(function(block){
-            var miner = block.miner && block.miner.hash;
-            if(miner && !seen[miner.toLowerCase()]) newMiners.push(miner);
-          });
-          // Trigger on-demand balance fetch for each new miner
-          return Promise.all(newMiners.map(function(addr){
-            return fetch("/api/v2/addresses/" + addr)
-              .then(function(r){ return r.json(); })
-              .then(addAddr)
-              .catch(function(){});
-          }));
-        })
-        .catch(function(){});
+    // Source 2: discover IBFT validators via Polygon Edge RPC
+    // IBFT PoA sets block miner to 0x0, so we query validators directly
+    function discoverValidators(){
+      return fetch("https://rpc.tpix.online", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({jsonrpc:"2.0",method:"ibft_getValidatorsByBlockNumber",params:["latest"],id:1})
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        var validators = data.result || [];
+        // Trigger on-demand balance fetch for each validator
+        return Promise.all(validators.map(function(addr){
+          if(seen[addr.toLowerCase()]) return Promise.resolve();
+          return fetch("/api/v2/addresses/" + addr)
+            .then(function(r){ return r.json(); })
+            .then(addAddr)
+            .catch(function(){});
+        }));
+      })
+      .catch(function(){});
     }
 
     // Source 3: legacy API fallback (may find genesis pre-mine addresses)
@@ -344,7 +346,7 @@
     }
 
     return fetchV2Page(null)
-      .then(discoverMiners)
+      .then(discoverValidators)
       .then(fetchLegacy)
       .then(function(){ return allAddresses; });
   }
