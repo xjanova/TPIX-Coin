@@ -82,14 +82,14 @@ services:
     environment:
       MIX_ENV: prod
       DATABASE_URL: postgresql://blockscout:${DB_PASSWORD:-tpix_explorer_db_2026}@blockscout-db:5432/blockscout
-      # RPC — connects to existing TPIX chain validators on host
+      # RPC — connects to validator-1 via shared docker network
       ETHEREUM_JSONRPC_VARIANT: geth
-      ETHEREUM_JSONRPC_HTTP_URL: http://host.docker.internal:8545
-      ETHEREUM_JSONRPC_WS_URL: ws://host.docker.internal:8545/ws
-      ETHEREUM_JSONRPC_TRACE_URL: http://host.docker.internal:8545
+      ETHEREUM_JSONRPC_HTTP_URL: http://tpix-validator-1:8545
+      ETHEREUM_JSONRPC_WS_URL: ws://tpix-validator-1:8545/ws
+      ETHEREUM_JSONRPC_TRACE_URL: http://tpix-validator-1:8545
       ETHEREUM_JSONRPC_HTTP_TIMEOUT: "30"
-      ETHEREUM_JSONRPC_FALLBACK_HTTP_URL: http://host.docker.internal:8545
-      ETHEREUM_JSONRPC_FALLBACK_TRACE_URL: http://host.docker.internal:8545
+      ETHEREUM_JSONRPC_FALLBACK_HTTP_URL: http://tpix-validator-1:8545
+      ETHEREUM_JSONRPC_FALLBACK_TRACE_URL: http://tpix-validator-1:8545
       # Chain
       CHAIN_ID: "4289"
       NETWORK: "TPIX Chain"
@@ -100,7 +100,7 @@ services:
       # Indexer — tuned for Polygon Edge
       INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
       INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
-      INDEXER_COIN_BALANCES_BATCH_SIZE: "50"
+      INDEXER_COIN_BALANCES_BATCH_SIZE: "10"
       COIN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
       TOKEN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
       INDEXER_MEMORY_LIMIT: "1g"
@@ -117,7 +117,7 @@ services:
       ECTO_USE_SSL: "false"
       POOL_SIZE: "20"
       POOL_SIZE_API: "5"
-      ACCOUNT_ENABLED: "true"
+      ACCOUNT_ENABLED: "false"
       DISABLE_EXCHANGE_RATES: "true"
       # Microservices (disabled)
       MICROSERVICE_SC_VERIFIER_ENABLED: "false"
@@ -128,8 +128,6 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-CHANGE_ME_TO_A_RANDOM_64_CHAR_STRING}
     ports:
       - "127.0.0.1:4000:4000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - tpix
 

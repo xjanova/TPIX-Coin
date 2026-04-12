@@ -153,10 +153,35 @@
         node.textContent = node.textContent.replace(/Blockscout\s+Limited/gi, "Xman Studio 2024-2026");
       }
     }
-    document.querySelectorAll("footer a[href*='blockscout.com'], a[href*='blockscout.com']").forEach(function(a){
-      if(a.closest("footer") || a.closest("[class*='footer']")){
+    // Replace Blockscout footer links
+    document.querySelectorAll("footer a, [class*='footer'] a").forEach(function(a){
+      var href = a.href || "";
+      var text = a.textContent.trim().toLowerCase();
+      // Hide external Blockscout links (Discord, Donate, Submit issue, Contribute, All chains)
+      if(href.indexOf("discord.gg") !== -1 || href.indexOf("sponsors") !== -1 ||
+         href.indexOf("blockscout/blockscout") !== -1 || text === "all chains" ||
+         text === "submit an issue" || text === "contribute" || text === "donate") {
+        a.style.display = "none";
+      }
+      // Rebrand remaining blockscout.com links
+      if(href.indexOf("blockscout.com") !== -1){
         a.href = "https://xman4289.com";
-        if(a.textContent.trim().toLowerCase().includes("blockscout")) a.textContent = "Xman Studio";
+        if(text.indexOf("blockscout") !== -1) a.textContent = "Xman Studio";
+      }
+    });
+    // Hide "Blockscout is a tool..." description
+    document.querySelectorAll("footer div, footer span, footer p, [class*='footer'] div").forEach(function(el){
+      if(el.children.length === 0 && /Blockscout is a tool/i.test(el.textContent)){
+        el.style.display = "none";
+      }
+    });
+  }
+
+  /* ── Hide "Connection is lost" alert (WebSocket not proxied) ── */
+  function hideConnectionAlert(){
+    document.querySelectorAll("[role='alert'], .chakra-alert").forEach(function(el){
+      if(/Connection is lost/i.test(el.textContent)){
+        el.style.display = "none";
       }
     });
   }
@@ -558,6 +583,7 @@
   function runAll(){
     replaceLogo();
     replaceFooter();
+    hideConnectionAlert();
     linkStatCards();
     injectAccountsPage();
   }
