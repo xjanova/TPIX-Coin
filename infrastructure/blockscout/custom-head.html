@@ -157,10 +157,15 @@
     document.querySelectorAll("footer a, [class*='footer'] a").forEach(function(a){
       var href = a.href || "";
       var text = a.textContent.trim().toLowerCase();
-      // Hide external Blockscout links (Discord, Donate, Submit issue, Contribute, All chains)
+      // Hide external Blockscout links
       if(href.indexOf("discord.gg") !== -1 || href.indexOf("sponsors") !== -1 ||
-         href.indexOf("blockscout/blockscout") !== -1 || text === "all chains" ||
+         href.indexOf("blockscout/blockscout") !== -1 || href.indexOf("twitter.com") !== -1 ||
+         href.indexOf("x.com") !== -1 || text === "all chains" || text === "x (ex-twitter)" ||
          text === "submit an issue" || text === "contribute" || text === "donate") {
+        a.style.display = "none";
+      }
+      // Hide version links (v1.38.0 etc)
+      if(href.indexOf("blockscout/frontend") !== -1){
         a.style.display = "none";
       }
       // Rebrand remaining blockscout.com links
@@ -169,12 +174,17 @@
         if(text.indexOf("blockscout") !== -1) a.textContent = "Xman Studio";
       }
     });
-    // Hide "Blockscout is a tool..." description
-    document.querySelectorAll("footer div, footer span, footer p, [class*='footer'] div").forEach(function(el){
-      if(el.children.length === 0 && /Blockscout is a tool/i.test(el.textContent)){
-        el.style.display = "none";
-      }
-    });
+    // Hide Blockscout description and "Made with" / version info
+    var footer = document.querySelector("footer") || document.querySelector("[class*='footer']");
+    if(footer){
+      footer.querySelectorAll("div, span, p").forEach(function(el){
+        var t = el.textContent.trim();
+        if(el.children.length === 0 && (/Blockscout is a tool/i.test(t) || /^Made with$/i.test(t) ||
+           /^Frontend:$/i.test(t) || /^Backend:$/i.test(t))) {
+          el.style.display = "none";
+        }
+      });
+    }
   }
 
   /* ── Hide "Connection is lost" alert (WebSocket not proxied) ── */
