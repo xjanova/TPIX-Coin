@@ -138,4 +138,5 @@ volumes:
 
 networks:
   tpix:
-    driver: bridge
+    external: true
+    name: tpix-infrastructure_tpix

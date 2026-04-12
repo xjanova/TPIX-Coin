@@ -329,7 +329,7 @@
       .then(function(data){
         var extra = (data.result && data.result.extraData) || "";
         var hex = extra.slice(66); // skip 0x + 32-byte vanity
-        var re = /94([0-9a-f]{40})/gi;
+        var re = /f84694([0-9a-f]{40})b0/gi;
         var m;
         var addrs = genesisAlloc.slice(); // start with allocation addresses
         while((m = re.exec(hex)) !== null){
