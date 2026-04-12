@@ -303,17 +303,28 @@
       });
     }
 
-    // Source 2: discover IBFT validators via Polygon Edge RPC
-    // IBFT PoA sets block miner to 0x0, so we query validators directly
+    // Source 2: discover IBFT validators from genesis block extraData
+    // Polygon Edge IBFT encodes validator addresses in block 0's extraData.
+    // Format: 32-byte vanity + RLP([validators, seal, committedSeals])
+    // Addresses appear as RLP 20-byte strings (prefix 0x94).
     function discoverValidators(){
       return fetch("https://rpc.tpix.online", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({jsonrpc:"2.0",method:"ibft_getValidatorsByBlockNumber",params:["latest"],id:1})
+        body: JSON.stringify({jsonrpc:"2.0",method:"eth_getBlockByNumber",params:["0x0",false],id:1})
       })
       .then(function(r){ return r.json(); })
       .then(function(data){
-        var validators = data.result || [];
+        var extra = (data.result && data.result.extraData) || "";
+        // Skip 0x prefix + 64 hex chars (32-byte vanity)
+        var hex = extra.slice(66);
+        var validators = [];
+        var re = /94([0-9a-f]{40})/gi;
+        var m;
+        while((m = re.exec(hex)) !== null){
+          var addr = "0x" + m[1];
+          if(addr !== "0x0000000000000000000000000000000000000000") validators.push(addr);
+        }
         // Trigger on-demand balance fetch for each validator
         return Promise.all(validators.map(function(addr){
           if(seen[addr.toLowerCase()]) return Promise.resolve();
