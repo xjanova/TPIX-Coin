@@ -1,0 +1,51 @@
+name: Restart TPIX Chain Validators
+
+on:
+  workflow_dispatch:
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restart validators via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 5m
+          script: |
+            echo "=== TPIX Chain Restart — $(date) ==="
+
+            INFRA="$HOME/tpix-infrastructure"
+            cd "$INFRA"
+
+            echo "[1/3] Checking current status..."
+            docker ps --format 'table {{.Names}}\t{{.Status}}' | grep tpix || echo "No containers running"
+
+            echo "[2/3] Restarting all validators..."
+            docker compose restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4 2>/dev/null || \
+            docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4 2>/dev/null || \
+            { echo "Restart failed, trying compose up..."; docker compose up -d; }
+
+            echo "[3/3] Waiting 15s and checking blocks..."
+            sleep 15
+
+            # Check if blocks are advancing
+            B1=$(curl -s -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+            sleep 5
+            B2=$(curl -s -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+
+            echo "Block: $B1 → $B2 (diff: $((B2 - B1)))"
+
+            if [ "$B1" -eq "$B2" ]; then
+              echo "⚠️ Chain still not producing blocks!"
+              echo "Checking logs..."
+              docker logs --tail 20 tpix-validator-1 2>&1 | tail -10
+            else
+              echo "✅ Chain is producing blocks again!"
+            fi
+
+            docker ps --format 'table {{.Names}}\t{{.Status}}' | grep tpix
+            echo "=== Done ==="
