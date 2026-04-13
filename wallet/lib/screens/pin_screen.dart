@@ -82,7 +82,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
   }
 
   void _onNumberTap(String num) {
-    if (_pin.length >= 6) return;
+    if (_pin.length >= 6 || _biometricInProgress) return;
     HapticFeedback.lightImpact();
     setState(() {
       _pin += num;

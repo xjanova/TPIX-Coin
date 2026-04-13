@@ -15,6 +15,12 @@ import '../services/wallet_service.dart';
 
 class WalletProvider extends ChangeNotifier {
   final WalletService _walletService = WalletService();
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
 
   /// Sanitize error messages to prevent leaking RPC URLs, file paths, or stack traces
   static String _sanitizeError(Object e) {
@@ -190,6 +196,7 @@ class WalletProvider extends ChangeNotifier {
 
   /// Unlock wallet with PIN
   Future<bool> unlock(String pin) async {
+    if (_isLoading) return false; // double-tap guard
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -200,8 +207,6 @@ class WalletProvider extends ChangeNotifier {
         _isUnlocked = true;
         _address = _walletService.address;
         _mnemonic = _walletService.mnemonic;
-        _isLoading = false;
-        notifyListeners();
         // Load data in background — don't block navigation
         _loadDataInBackground(pin: pin);
       } else {
@@ -216,6 +221,7 @@ class WalletProvider extends ChangeNotifier {
 
   /// Unlock wallet using biometric token
   Future<bool> unlockWithBiometric() async {
+    if (_isLoading) return false; // double-tap guard
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -226,8 +232,6 @@ class WalletProvider extends ChangeNotifier {
         _isUnlocked = true;
         _address = _walletService.address;
         _mnemonic = _walletService.mnemonic;
-        _isLoading = false;
-        notifyListeners();
         // Load data in background — don't block navigation
         _loadDataInBackground();
       }
@@ -240,19 +244,23 @@ class WalletProvider extends ChangeNotifier {
 
   /// Load balance, TX history, tokens in background after unlock
   void _loadDataInBackground({String? pin}) async {
+    final slot = _walletService.activeSlot; // capture current slot
     // Save biometric token if PIN was provided
     if (pin != null) {
       final bioService = BiometricService();
       if (await bioService.isEnabled()) {
-        _walletService.saveBiometricToken(pin);
+        await _walletService.saveBiometricToken(pin);
       }
     }
+    // Abort if wallet was switched during biometric save
+    if (_walletService.activeSlot != slot || _disposed) return;
     // Load data concurrently — each notifies listeners when done
     await Future.wait([
       refreshBalance(),
       loadTxHistory(),
       loadTokens(),
     ]);
+    if (_walletService.activeSlot != slot || _disposed) return;
     loadChainBalances();
     _startBalanceRefresh();
   }
@@ -584,6 +592,7 @@ class WalletProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _balanceTimer?.cancel();
     _txPollTimer?.cancel();
     _mnemonicClearTimer?.cancel();

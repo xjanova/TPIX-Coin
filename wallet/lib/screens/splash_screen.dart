@@ -72,22 +72,33 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _startAnimation() async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    _logoController.forward();
+    try {
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+      _logoController.forward();
 
-    // Play synthesized melody when logo appears
-    SynthService.playSplashMelody();
+      // Play synthesized melody when logo appears
+      SynthService.playSplashMelody();
 
-    await Future.delayed(const Duration(milliseconds: 800));
-    _fadeController.forward();
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      _fadeController.forward();
 
-    await Future.delayed(const Duration(milliseconds: 2500));
-    _navigateNext();
+      await Future.delayed(const Duration(milliseconds: 1800));
+      if (!mounted) return;
+      _navigateNext();
+    } catch (_) {
+      // Ensure we still navigate on error
+      if (mounted) _navigateNext();
+    }
   }
 
   void _navigateNext() async {
     final provider = context.read<WalletProvider>();
-    await provider.init();
+    await provider.init().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {}, // proceed anyway
+    );
 
     if (!mounted) return;
 

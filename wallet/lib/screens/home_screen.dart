@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _orbController;
   late Animation<double> _balanceScale;
   String _appVersion = '';
+  StreamSubscription? _deepLinkSub;
 
   @override
   void initState() {
@@ -96,12 +98,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     // Handle link that opened the app
     appLinks.getInitialLink().then((uri) {
-      if (uri != null) _handleDeepLink(uri);
+      if (uri != null && mounted) _handleDeepLink(uri);
     });
 
-    // Handle links while app is running
-    appLinks.uriLinkStream.listen((uri) {
-      _handleDeepLink(uri);
+    // Handle links while app is running — store subscription for cleanup
+    _deepLinkSub = appLinks.uriLinkStream.listen((uri) {
+      if (mounted) _handleDeepLink(uri);
     });
   }
 
@@ -139,6 +141,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _deepLinkSub?.cancel();
     _balanceController.dispose();
     _orbController.dispose();
     super.dispose();
@@ -820,8 +823,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               final isActive = chain.chainId == wallet.activeChainId;
               return GestureDetector(
                 onTap: () {
+                  Navigator.pop(sheetCtx); // pop first to prevent double-tap
                   wallet.switchChain(chain.chainId);
-                  Navigator.pop(sheetCtx);
                 },
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 4),
