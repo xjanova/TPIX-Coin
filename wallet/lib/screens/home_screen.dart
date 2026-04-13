@@ -22,6 +22,7 @@ import 'swap_screen.dart';
 import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
 import '../services/walletconnect_service.dart';
+import '../services/update_service.dart';
 import 'package:app_links/app_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -58,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _loadVersion();
     _initWalletConnect();
     _initDeepLinks();
+    _checkForUpdate();
   }
 
   /// Initialize WalletConnect service after wallet is ready.
@@ -112,6 +114,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         builder: (_) => DAppConnectScreen(initialUri: uriStr),
       ));
     }
+  }
+
+  /// Check for app updates — runs once after HomeScreen is fully built
+  void _checkForUpdate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final service = UpdateService();
+        final result = await service.checkForUpdate();
+        if (result.available && mounted) {
+          UpdateService.showUpdateDialog(context, result, service);
+        }
+      } catch (_) {
+        // Silent — don't block the app
+      }
+    });
   }
 
   Future<void> _loadVersion() async {
@@ -779,9 +796,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              'Multi-Chain Balances',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: sc.text),
+            Row(
+              children: [
+                Text(
+                  'Multi-Chain',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: sc.text),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '(tap to switch)',
+                  style: TextStyle(fontSize: 12, color: sc.textMuted),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             ...ChainConfig.all.map((chain) {
@@ -791,26 +817,45 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               } else {
                 bal = wallet.getChainBalance(chain.chainId);
               }
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    ChainLogo(chain: chain, size: 32),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(chain.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: sc.text)),
-                          Text('Chain ID: ${chain.chainId}', style: TextStyle(fontSize: 11, color: sc.textMuted)),
-                        ],
+              final isActive = chain.chainId == wallet.activeChainId;
+              return GestureDetector(
+                onTap: () {
+                  wallet.switchChain(chain.chainId);
+                  Navigator.pop(sheetCtx);
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    color: isActive ? chain.color.withValues(alpha: 0.10) : Colors.transparent,
+                    border: Border.all(
+                      color: isActive ? chain.color.withValues(alpha: 0.30) : Colors.transparent,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      ChainLogo(chain: chain, size: 32),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(chain.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: sc.text)),
+                            Text('Chain ID: ${chain.chainId}', style: TextStyle(fontSize: 11, color: sc.textMuted)),
+                          ],
+                        ),
                       ),
-                    ),
-                    Text(
-                      '${bal.toStringAsFixed(4)} ${chain.symbol}',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: chain.color),
-                    ),
-                  ],
+                      Text(
+                        '${bal.toStringAsFixed(4)} ${chain.symbol}',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: chain.color),
+                      ),
+                      if (isActive) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.check_circle, color: chain.color, size: 18),
+                      ],
+                    ],
+                  ),
                 ),
               );
             }),

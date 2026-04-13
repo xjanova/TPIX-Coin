@@ -200,16 +200,10 @@ class WalletProvider extends ChangeNotifier {
         _isUnlocked = true;
         _address = _walletService.address;
         _mnemonic = _walletService.mnemonic;
-        // Update biometric token if biometric is enabled
-        final bioService = BiometricService();
-        if (await bioService.isEnabled()) {
-          await _walletService.saveBiometricToken(pin);
-        }
-        await refreshBalance();
-        await loadTxHistory();
-        await loadTokens();
-        loadChainBalances(); // Load multi-chain balances in background
-        _startBalanceRefresh();
+        _isLoading = false;
+        notifyListeners();
+        // Load data in background — don't block navigation
+        _loadDataInBackground(pin: pin);
       } else {
         _error = 'Invalid PIN';
       }
@@ -232,17 +226,35 @@ class WalletProvider extends ChangeNotifier {
         _isUnlocked = true;
         _address = _walletService.address;
         _mnemonic = _walletService.mnemonic;
-        await refreshBalance();
-        await loadTxHistory();
-        await loadTokens();
-        loadChainBalances(); // Load multi-chain balances in background
-        _startBalanceRefresh();
+        _isLoading = false;
+        notifyListeners();
+        // Load data in background — don't block navigation
+        _loadDataInBackground();
       }
       return success;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Load balance, TX history, tokens in background after unlock
+  void _loadDataInBackground({String? pin}) async {
+    // Save biometric token if PIN was provided
+    if (pin != null) {
+      final bioService = BiometricService();
+      if (await bioService.isEnabled()) {
+        _walletService.saveBiometricToken(pin);
+      }
+    }
+    // Load data concurrently — each notifies listeners when done
+    await Future.wait([
+      refreshBalance(),
+      loadTxHistory(),
+      loadTokens(),
+    ]);
+    loadChainBalances();
+    _startBalanceRefresh();
   }
 
   /// Save biometric token after successful PIN unlock

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
-import '../services/update_service.dart';
 import 'onboarding_screen.dart';
 import 'pin_screen.dart';
 
@@ -92,9 +91,6 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
 
-    // Check for updates (non-blocking)
-    _checkUpdate();
-
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
@@ -106,24 +102,6 @@ class _SplashScreenState extends State<SplashScreen>
         },
       ),
     );
-  }
-
-  void _checkUpdate() async {
-    try {
-      final service = UpdateService();
-      final result = await service.checkForUpdate();
-      if (result.available && mounted) {
-        // Show update dialog after navigation completes
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final navContext = Navigator.of(context).context;
-          if (navContext.mounted) {
-            UpdateService.showUpdateDialog(navContext, result, service);
-          }
-        });
-      }
-    } catch (_) {
-      // Silent fail — don't block app startup
-    }
   }
 
   @override
