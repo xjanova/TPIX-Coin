@@ -1,0 +1,102 @@
+name: TPIX Chain Health Check
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check chain health and auto-restart if stalled
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 3m
+          script: |
+            echo "=== TPIX Health Check — $(date) ==="
+
+            # Get current block
+            B1=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
+              -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+              | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+
+            if [ "$B1" = "0" ]; then
+              echo "⚠️ RPC unavailable — checking containers..."
+              RUNNING=$(docker ps --filter "name=tpix-validator" --format '{{.Names}}' | wc -l)
+              if [ "$RUNNING" -lt 4 ]; then
+                echo "🔴 Only $RUNNING/4 validators running — starting all..."
+                cd "$HOME/tpix-infrastructure"
+                docker compose up -d 2>/dev/null || docker compose -f docker-compose.yml up -d 2>/dev/null
+                sleep 15
+              else
+                echo "Containers running but RPC down — restarting..."
+                docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4
+                sleep 15
+              fi
+              B1=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+                | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+              echo "After recovery attempt: Block=$B1"
+              exit 0
+            fi
+
+            # Wait and check if blocks are advancing
+            sleep 10
+
+            B2=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
+              -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+              | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+
+            DIFF=$((B2 - B1))
+            echo "Block: $B1 → $B2 (diff: $DIFF in 10s)"
+
+            if [ "$DIFF" -le 0 ]; then
+              echo "🔴 CHAIN STALLED — blocks not advancing!"
+              echo ""
+
+              # Check for round escalation (consensus stall indicator)
+              echo "--- Consensus state ---"
+              docker logs --tail 50 tpix-validator-1 2>&1 | grep -iE "round started: round=[^0]|round change" | tail -5
+
+              echo ""
+              echo "🔄 Auto-restarting all validators..."
+              docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4
+
+              echo "Waiting 20s for consensus..."
+              sleep 20
+
+              B3=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+                | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+
+              sleep 6
+
+              B4=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
+                -H "Content-Type: application/json" \
+                -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+                | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+
+              DIFF2=$((B4 - B3))
+              if [ "$DIFF2" -gt 0 ]; then
+                echo "✅ Chain recovered! Block: $B3 → $B4 (diff: $DIFF2)"
+              else
+                echo "❌ Chain still not producing blocks after restart!"
+                echo "Manual intervention required."
+                docker logs --tail 20 tpix-validator-1 2>&1 | tail -10
+                exit 1
+              fi
+            else
+              echo "✅ Chain healthy — producing ~$((DIFF * 6)) blocks/min"
+            fi
+
+            echo "=== Done ==="
