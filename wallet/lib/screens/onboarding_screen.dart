@@ -61,32 +61,33 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   Future<String?> _askWalletName(LocaleProvider l) async {
+    final c = AppColors.of(context);
     final controller = TextEditingController(text: '');
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+        backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(l.t('wallets.nameTitle'), style: const TextStyle(color: Colors.white, fontSize: 18)),
+        title: Text(l.t('wallets.nameTitle'), style: TextStyle(color: c.text, fontSize: 18)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(l.t('wallets.nameHint'), style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+            Text(l.t('wallets.nameHint'), style: TextStyle(color: c.textMuted, fontSize: 13)),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               autofocus: true,
               maxLength: 24,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: c.text),
               decoration: InputDecoration(
                 hintText: l.t('wallets.namePlaceholder'),
-                hintStyle: const TextStyle(color: AppTheme.textMuted),
+                hintStyle: TextStyle(color: c.textMuted),
                 filled: true,
-                fillColor: AppTheme.bgSurface,
-                counterStyle: const TextStyle(color: AppTheme.textMuted),
+                fillColor: c.surface,
+                counterStyle: TextStyle(color: c.textMuted),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppTheme.borderDim),
+                  borderSide: BorderSide(color: c.border),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -100,7 +101,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, null),
-            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('wallets.cancel'), style: TextStyle(color: c.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
@@ -122,15 +123,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0, -0.3),
-            radius: 1.5,
-            colors: [Color(0xFF0F2027), AppTheme.bgDark],
-          ),
-        ),
+        decoration: c.screenBg,
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -194,7 +190,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                           Text(
                             l.t('onboarding.subtitle'),
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 15, color: AppTheme.textSecondary.withValues(alpha: 0.8), height: 1.5),
+                            style: TextStyle(fontSize: 15, color: c.textSec, height: 1.5),
                           ),
                         ],
                       );
@@ -240,6 +236,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                               subtitle: l.t('onboarding.importWalletSub'),
                               icon: Icons.download_outlined,
                               onTap: _importWallet,
+                              c: c,
                             ),
                           ],
                         );
@@ -252,7 +249,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
                 Text(
                   'by Xman Studio',
-                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted.withValues(alpha: 0.5)),
+                  style: TextStyle(fontSize: 11, color: c.textMuted),
                 ),
                 const SizedBox(height: 20),
               ],
@@ -314,6 +311,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     required String subtitle,
     required IconData icon,
     required VoidCallback onTap,
+    required AppColors c,
   }) {
     return Material(
       color: Colors.transparent,
@@ -325,22 +323,22 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1.5),
-            color: Colors.white.withValues(alpha: 0.03),
+            border: Border.all(color: c.glassBorder, width: 1.5),
+            color: c.glassColor,
           ),
           child: Row(
             children: [
-              Icon(icon, color: AppTheme.textSecondary, size: 28),
+              Icon(icon, color: c.textSec, size: 28),
               const SizedBox(width: 16),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-                  Text(subtitle, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  Text(label, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: c.text)),
+                  Text(subtitle, style: TextStyle(fontSize: 12, color: c.textMuted)),
                 ],
               ),
               const Spacer(),
-              const Icon(Icons.arrow_forward_ios, color: AppTheme.textMuted, size: 18),
+              Icon(Icons.arrow_forward_ios, color: c.textMuted, size: 18),
             ],
           ),
         ),

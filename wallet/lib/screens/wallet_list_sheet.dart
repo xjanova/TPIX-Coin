@@ -106,6 +106,7 @@ class WalletListSheet extends StatelessWidget {
   }
 
   Widget _buildWalletItem(BuildContext context, WalletInfo info, WalletProvider wallet, LocaleProvider l) {
+    final c = AppColors.of(context);
     final isActive = info.slot == wallet.activeSlot;
     final shortAddr = '${info.address.substring(0, 6)}...${info.address.substring(info.address.length - 4)}';
 
@@ -136,7 +137,7 @@ class WalletListSheet extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: isActive ? Colors.white : AppTheme.textMuted,
+              color: isActive ? Colors.white : c.textMuted,
             ),
           ),
         ),
@@ -148,7 +149,7 @@ class WalletListSheet extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: isActive ? Colors.white : AppTheme.textSecondary,
+                  color: isActive ? Colors.white : c.textSec,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -182,8 +183,8 @@ class WalletListSheet extends StatelessWidget {
           style: const TextStyle(fontSize: 12, color: AppTheme.textMuted, fontFamily: 'monospace'),
         ),
         trailing: PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert, color: AppTheme.textMuted, size: 20),
-          color: AppTheme.bgSurface,
+          icon: Icon(Icons.more_vert, color: AppColors.of(context).textMuted, size: 20),
+          color: AppColors.of(context).surface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           onSelected: (action) => _handleAction(context, action, info, wallet, l),
           itemBuilder: (_) => [
@@ -193,7 +194,7 @@ class WalletListSheet extends StatelessWidget {
                 children: [
                   const Icon(Icons.edit, size: 18, color: AppTheme.primary),
                   const SizedBox(width: 8),
-                  Text(l.t('wallets.rename'), style: const TextStyle(color: Colors.white)),
+                  Text(l.t('wallets.rename'), style: TextStyle(color: AppColors.of(context).text)),
                 ],
               ),
             ),
@@ -204,7 +205,7 @@ class WalletListSheet extends StatelessWidget {
                   children: [
                     const Icon(Icons.swap_horiz, size: 18, color: AppTheme.accent),
                     const SizedBox(width: 8),
-                    Text(l.t('wallets.switch'), style: const TextStyle(color: Colors.white)),
+                    Text(l.t('wallets.switch'), style: TextStyle(color: AppColors.of(context).text)),
                   ],
                 ),
               ),
@@ -249,29 +250,31 @@ class WalletListSheet extends StatelessWidget {
     final controller = TextEditingController(text: info.name);
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+      builder: (ctx) {
+        final dc = AppColors.of(ctx);
+        return AlertDialog(
+        backgroundColor: dc.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(l.t('wallets.rename'), style: const TextStyle(color: Colors.white)),
+        title: Text(l.t('wallets.rename'), style: TextStyle(color: dc.text)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: dc.text),
           decoration: InputDecoration(
             hintText: l.t('wallets.newName'),
-            hintStyle: const TextStyle(color: AppTheme.textMuted),
+            hintStyle: TextStyle(color: dc.textMuted),
             filled: true,
-            fillColor: AppTheme.bgSurface,
+            fillColor: dc.surface,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppTheme.borderDim),
+              borderSide: BorderSide(color: dc.border),
             ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('wallets.cancel'), style: TextStyle(color: dc.textMuted)),
           ),
           TextButton(
             onPressed: () {
@@ -284,25 +287,28 @@ class WalletListSheet extends StatelessWidget {
             child: Text(l.t('wallets.save'), style: const TextStyle(color: AppTheme.primary)),
           ),
         ],
-      ),
+      );
+      },
     );
   }
 
   void _showDeleteDialog(BuildContext context, WalletInfo info, WalletProvider wallet, LocaleProvider l) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+      builder: (ctx) {
+        final dc = AppColors.of(ctx);
+        return AlertDialog(
+        backgroundColor: dc.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(l.t('wallets.deleteConfirm'), style: const TextStyle(color: AppTheme.danger)),
         content: Text(
           '${l.t('wallets.deleteMsg')}\n\n${info.name}\n${info.address.substring(0, 10)}...',
-          style: const TextStyle(color: AppTheme.textSecondary),
+          style: TextStyle(color: dc.textSec),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('wallets.cancel'), style: TextStyle(color: dc.textMuted)),
           ),
           TextButton(
             onPressed: () async {
@@ -315,7 +321,8 @@ class WalletListSheet extends StatelessWidget {
             child: Text(l.t('wallets.delete'), style: const TextStyle(color: AppTheme.danger)),
           ),
         ],
-      ),
+      );
+      },
     );
   }
 
@@ -327,29 +334,31 @@ class WalletListSheet extends StatelessWidget {
     final nameController = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+      builder: (ctx) {
+        final dc = AppColors.of(ctx);
+        return AlertDialog(
+        backgroundColor: dc.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(l.t('wallets.nameTitle'), style: const TextStyle(color: Colors.white, fontSize: 18)),
+        title: Text(l.t('wallets.nameTitle'), style: TextStyle(color: dc.text, fontSize: 18)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(l.t('wallets.nameHint'), style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+            Text(l.t('wallets.nameHint'), style: TextStyle(color: dc.textMuted, fontSize: 13)),
             const SizedBox(height: 16),
             TextField(
               controller: nameController,
               autofocus: true,
               maxLength: 24,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: dc.text),
               decoration: InputDecoration(
                 hintText: l.t('wallets.namePlaceholder'),
-                hintStyle: const TextStyle(color: AppTheme.textMuted),
+                hintStyle: TextStyle(color: dc.textMuted),
                 filled: true,
-                fillColor: AppTheme.bgSurface,
-                counterStyle: const TextStyle(color: AppTheme.textMuted),
+                fillColor: dc.surface,
+                counterStyle: TextStyle(color: dc.textMuted),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppTheme.borderDim),
+                  borderSide: BorderSide(color: dc.border),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -363,14 +372,15 @@ class WalletListSheet extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, null),
-            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('wallets.cancel'), style: TextStyle(color: dc.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
             child: Text(l.t('wallets.save'), style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700)),
           ),
         ],
-      ),
+      );
+      },
     );
     nameController.dispose();
     if (name == null || !context.mounted) return;

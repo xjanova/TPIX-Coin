@@ -228,12 +228,12 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
                             ? AppTheme.danger
                             : filled
                                 ? AppTheme.primary
-                                : Colors.white.withValues(alpha: 0.1),
+                                : AppColors.of(context).textMuted.withValues(alpha: 0.15),
                         boxShadow: filled
                             ? [BoxShadow(color: AppTheme.primary.withValues(alpha: 0.4), blurRadius: 10)]
                             : null,
                         border: !filled
-                            ? Border.all(color: Colors.white.withValues(alpha: 0.15))
+                            ? Border.all(color: AppColors.of(context).textMuted.withValues(alpha: 0.25))
                             : null,
                       ),
                     );
@@ -289,7 +289,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
                 );
               }
               return _buildKeyButton(
-                child: Text(key, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: Colors.white)),
+                child: Text(key, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: AppColors.of(context).text)),
                 onTap: () => _onNumberTap(key),
               );
             }).toList(),
@@ -312,8 +312,8 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
             height: 72,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.04),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              color: AppColors.of(context).textMuted.withValues(alpha: 0.08),
+              border: Border.all(color: AppColors.of(context).textMuted.withValues(alpha: 0.12)),
             ),
             alignment: Alignment.center,
             child: child,

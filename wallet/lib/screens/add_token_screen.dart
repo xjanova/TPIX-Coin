@@ -142,6 +142,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final c = AppColors.of(context);
     return Scaffold(
       body: Container(
         decoration: AppColors.of(context).screenBg,
@@ -155,14 +156,14 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                   children: [
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                      icon: Icon(Icons.arrow_back_ios, color: c.text),
                     ),
                     const SizedBox(width: 8),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(l.t('token.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                        Text(l.t('token.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                        Text(l.t('token.title'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
+                        Text(l.t('token.subtitle'), style: TextStyle(fontSize: 12, color: c.textMuted)),
                       ],
                     ),
                   ],
@@ -178,26 +179,26 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                       const SizedBox(height: 8),
 
                       // Contract address input
-                      Text(l.t('token.contractAddress'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+                      Text(l.t('token.contractAddress'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textSec)),
                       const SizedBox(height: 8),
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
                               controller: _controller,
-                              style: const TextStyle(color: Colors.white, fontSize: 14, fontFamily: 'monospace'),
+                              style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'monospace'),
                               decoration: InputDecoration(
                                 hintText: '0x...',
-                                hintStyle: const TextStyle(color: AppTheme.textMuted),
+                                hintStyle: TextStyle(color: c.textMuted),
                                 filled: true,
-                                fillColor: Colors.white.withValues(alpha: 0.04),
+                                fillColor: c.glassColor,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
-                                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                                  borderSide: BorderSide(color: c.glassBorder),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
-                                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                                  borderSide: BorderSide(color: c.glassBorder),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
@@ -212,7 +213,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                                       _search();
                                     }
                                   },
-                                  icon: const Icon(Icons.paste, color: AppTheme.textMuted, size: 20),
+                                  icon: Icon(Icons.paste, color: c.textMuted, size: 20),
                                 ),
                               ),
                               onSubmitted: (_) => _search(),
@@ -280,13 +281,13 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                         ),
 
                       // Found token preview
-                      if (_foundToken != null) _buildTokenPreview(l),
+                      if (_foundToken != null) _buildTokenPreview(l, c),
 
                       const SizedBox(height: 24),
 
                       // Known tokens section
                       if (_foundToken == null && _errorMsg == null && !_isLoading)
-                        _buildHintSection(l),
+                        _buildHintSection(l, c),
                     ],
                   ),
                 ),
@@ -298,7 +299,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     );
   }
 
-  Widget _buildTokenPreview(LocaleProvider l) {
+  Widget _buildTokenPreview(LocaleProvider l, AppColors c) {
     final token = _foundToken!;
     return Container(
       padding: const EdgeInsets.all(20),
@@ -327,14 +328,14 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Text(token.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+          Text(token.name, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
           Text(token.symbol, style: const TextStyle(fontSize: 14, color: AppTheme.primary, fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
           // Details
-          _detailRow(l.t('token.contractAddress'), token.shortAddress),
-          _detailRow(l.t('token.decimalsLabel'), '${token.decimals}'),
+          _detailRow(l.t('token.contractAddress'), token.shortAddress, c),
+          _detailRow(l.t('token.decimalsLabel'), '${token.decimals}', c),
           if (_balance != null)
-            _detailRow(l.t('home.balance'), '${_balance!.toStringAsFixed(4)} ${token.symbol}'),
+            _detailRow(l.t('home.balance'), '${_balance!.toStringAsFixed(4)} ${token.symbol}', c),
           const SizedBox(height: 16),
           // Add button
           SizedBox(
@@ -355,20 +356,20 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     );
   }
 
-  Widget _detailRow(String label, String value) {
+  Widget _detailRow(String label, String value, AppColors c) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+          Text(label, style: TextStyle(fontSize: 12, color: c.textMuted)),
           const Spacer(),
-          Text(value, style: const TextStyle(fontSize: 12, color: Colors.white, fontFamily: 'monospace')),
+          Text(value, style: TextStyle(fontSize: 12, color: c.text, fontFamily: 'monospace')),
         ],
       ),
     );
   }
 
-  Widget _buildHintSection(LocaleProvider l) {
+  Widget _buildHintSection(LocaleProvider l, AppColors c) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: glassCard(borderRadius: 16),
@@ -383,7 +384,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Text(l.t('token.howToDesc'), style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.5)),
+          Text(l.t('token.howToDesc'), style: TextStyle(fontSize: 12, color: c.textSec, height: 1.5)),
         ],
       ),
     );

@@ -125,14 +125,15 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   }
 
   Future<bool?> _showConfirmation(String address, double amount, LocaleProvider l) {
+    final c = AppColors.of(context);
     return showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => Container(
         padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-          color: AppTheme.bgCard,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: c.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -143,12 +144,12 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                 width: 40, height: 4,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
-                  color: AppTheme.textMuted.withValues(alpha: 0.3),
+                  color: c.textMuted.withValues(alpha: 0.3),
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            Text(l.t('send.confirmTitle'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+            Text(l.t('send.confirmTitle'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
             const SizedBox(height: 20),
             // Recipient
             _confirmRow(l.t('send.confirmTo'), '${address.substring(0, 8)}...${address.substring(address.length - 6)}'),
@@ -165,10 +166,10 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                     onPressed: () => Navigator.pop(context, false),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                      side: BorderSide(color: c.glassBorder),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text(l.t('send.cancel'), style: const TextStyle(color: Colors.white70)),
+                    child: Text(l.t('send.cancel'), style: TextStyle(color: c.textSec)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -194,26 +195,27 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   }
 
   Future<bool?> _showPinVerification(LocaleProvider l) {
+    final c = AppColors.of(context);
     final pinController = TextEditingController();
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+        backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(l.t('pin.unlock'), style: const TextStyle(color: Colors.white, fontSize: 16)),
+        title: Text(l.t('pin.unlock'), style: TextStyle(color: c.text, fontSize: 16)),
         content: TextField(
           controller: pinController,
           obscureText: true,
           keyboardType: TextInputType.number,
           maxLength: 6,
           autofocus: true,
-          style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
+          style: TextStyle(color: c.text, fontSize: 24, letterSpacing: 8),
           textAlign: TextAlign.center,
           decoration: InputDecoration(
             counterText: '',
             hintText: '••••••',
-            hintStyle: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.3)),
+            hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.3)),
             enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3))),
             focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary)),
           ),
@@ -250,13 +252,14 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   }
 
   Widget _confirmRow(String label, String value, {Color? valueColor}) {
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Text(label, style: const TextStyle(fontSize: 14, color: AppTheme.textMuted)),
+          Text(label, style: TextStyle(fontSize: 14, color: c.textMuted)),
           const Spacer(),
-          Text(value, style: TextStyle(fontSize: 14, color: valueColor ?? Colors.white, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+          Text(value, style: TextStyle(fontSize: 14, color: valueColor ?? c.text, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -286,6 +289,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildForm(LocaleProvider l) {
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -296,14 +300,14 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
             children: [
               IconButton(
                 onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                icon: Icon(Icons.arrow_back_ios, color: c.text),
               ),
               const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(l.t('send.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                  Text(l.t('send.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  Text(l.t('send.title'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
+                  Text(l.t('send.subtitle'), style: TextStyle(fontSize: 12, color: c.textMuted)),
                 ],
               ),
             ],
@@ -312,23 +316,23 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           const SizedBox(height: 32),
 
           // To Address
-          Text(l.t('send.toAddress'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+          Text(l.t('send.toAddress'), style: TextStyle(fontSize: 14, color: c.textSec)),
           const SizedBox(height: 8),
           TextField(
             controller: _addressController,
-            style: const TextStyle(color: Colors.white, fontSize: 14, fontFamily: 'monospace'),
+            style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'monospace'),
             decoration: InputDecoration(
               hintText: '0x...',
-              hintStyle: const TextStyle(color: AppTheme.textMuted),
+              hintStyle: TextStyle(color: c.textMuted),
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.04),
+              fillColor: c.glassColor,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                borderSide: BorderSide(color: c.glassBorder),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                borderSide: BorderSide(color: c.glassBorder),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -344,24 +348,24 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           const SizedBox(height: 24),
 
           // Amount
-          Text(l.t('send.amount'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+          Text(l.t('send.amount'), style: TextStyle(fontSize: 14, color: c.textSec)),
           const SizedBox(height: 8),
           TextField(
             controller: _amountController,
             keyboardType: TextInputType.number,
-            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+            style: TextStyle(color: c.text, fontSize: 24, fontWeight: FontWeight.w700),
             decoration: InputDecoration(
               hintText: '0.00',
-              hintStyle: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.5)),
+              hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.5)),
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.04),
+              fillColor: c.glassColor,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                borderSide: BorderSide(color: c.glassBorder),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                borderSide: BorderSide(color: c.glassBorder),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -380,7 +384,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               onTap: () => _amountController.text = wallet.balance.toStringAsFixed(4),
               child: Row(
                 children: [
-                  Text(l.t('send.balance'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  Text(l.t('send.balance'), style: TextStyle(fontSize: 12, color: c.textMuted)),
                   Text('${wallet.formattedBalance} TPIX', style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                   const SizedBox(width: 4),
                   Container(
@@ -410,7 +414,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               children: [
                 const Icon(Icons.local_gas_station, color: AppTheme.success, size: 18),
                 const SizedBox(width: 8),
-                Text(l.t('send.gasFee'), style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                Text(l.t('send.gasFee'), style: TextStyle(fontSize: 13, color: c.textSec)),
                 Text(l.t('send.gasFreeVal'), style: const TextStyle(fontSize: 13, color: AppTheme.success, fontWeight: FontWeight.w700)),
               ],
             ),
@@ -446,6 +450,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildSuccess(LocaleProvider l) {
+    final c = AppColors.of(context);
     return Center(
       child: AnimatedBuilder(
         animation: _successController,
@@ -481,7 +486,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
                   const SizedBox(height: 32),
 
-                  Text(l.t('send.success'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
+                  Text(l.t('send.success'), style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: c.text)),
                   const SizedBox(height: 8),
                   Text(l.t('send.confirmed'), style: const TextStyle(fontSize: 16, color: AppTheme.success)),
 
@@ -494,7 +499,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.tag, size: 14, color: AppTheme.textMuted),
+                          Icon(Icons.tag, size: 14, color: c.textMuted),
                           const SizedBox(width: 6),
                           Text(
                             '${_txHash!.substring(0, 10)}...${_txHash!.substring(_txHash!.length - 8)}',

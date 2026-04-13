@@ -57,15 +57,10 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final c = AppColors.of(context);
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0, -0.3),
-            radius: 1.8,
-            colors: [Color(0xFF0F1B2D), Color(0xFF070B14)],
-          ),
-        ),
+        decoration: c.screenBg,
         child: SafeArea(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
@@ -76,9 +71,9 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                       const SizedBox(height: 12),
                       _buildHeader(l),
                       const SizedBox(height: 28),
-                      _buildShieldHero(l),
+                      _buildShieldHero(l, c),
                       const SizedBox(height: 28),
-                      _buildStepCards(l),
+                      _buildStepCards(l, c),
                       const SizedBox(height: 24),
                       if ((_status['level'] as int? ?? 0) >= 2)
                         _buildRecoveryTestButton(l),
@@ -126,7 +121,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
                 ),
               ),
-              Text(l.t('identity.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+              Text(l.t('identity.subtitle'), style: TextStyle(fontSize: 12, color: AppColors.of(context).textMuted)),
             ],
           ),
         ),
@@ -138,7 +133,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   // Shield Hero — animated level indicator
   // ================================================================
 
-  Widget _buildShieldHero(LocaleProvider l) {
+  Widget _buildShieldHero(LocaleProvider l, AppColors c) {
     final level = _status['level'] as int? ?? 0;
     final colors = [
       [const Color(0xFFFF4444), const Color(0xFFFF1744)],
@@ -220,7 +215,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 const SizedBox(height: 16),
                 Text(
                   l.t('identity.securityLevel'),
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textMuted, letterSpacing: 1.5),
+                  style: TextStyle(fontSize: 12, color: c.textMuted, letterSpacing: 1.5),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -234,11 +229,11 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   builder: (_, __) => Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildStepDot(0, level, levelColors[0]),
-                      _buildStepLine(0, level, levelColors[0]),
-                      _buildStepDot(1, level, levelColors[0]),
-                      _buildStepLine(1, level, levelColors[0]),
-                      _buildStepDot(2, level, levelColors[0]),
+                      _buildStepDot(0, level, levelColors[0], c),
+                      _buildStepLine(0, level, levelColors[0], c),
+                      _buildStepDot(1, level, levelColors[0], c),
+                      _buildStepLine(1, level, levelColors[0], c),
+                      _buildStepDot(2, level, levelColors[0], c),
                     ],
                   ),
                 ),
@@ -250,7 +245,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     );
   }
 
-  Widget _buildStepDot(int step, int level, Color color) {
+  Widget _buildStepDot(int step, int level, Color color, AppColors c) {
     final active = step < level;
     final animValue = _progressController.value;
     final dotScale = active ? (animValue > (step * 0.3) ? 1.0 : 0.5) : 0.5;
@@ -260,9 +255,9 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
       width: 12, height: 12,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: active ? color : Colors.white.withValues(alpha: 0.15),
+        color: active ? color : c.textMuted.withValues(alpha: 0.15),
         border: Border.all(
-          color: active ? color.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.1),
+          color: active ? color.withValues(alpha: 0.6) : c.textMuted.withValues(alpha: 0.1),
           width: 2,
         ),
         boxShadow: active ? [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8)] : [],
@@ -271,14 +266,14 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     );
   }
 
-  Widget _buildStepLine(int step, int level, Color color) {
+  Widget _buildStepLine(int step, int level, Color color, AppColors c) {
     final active = step < level;
     return Container(
       width: 40, height: 2,
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(1),
-        color: active ? color.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.08),
+        color: active ? color.withValues(alpha: 0.5) : c.textMuted.withValues(alpha: 0.08),
       ),
     );
   }
@@ -287,7 +282,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   // Step Cards — 3 setup items with beautiful styling
   // ================================================================
 
-  Widget _buildStepCards(LocaleProvider l) {
+  Widget _buildStepCards(LocaleProvider l, AppColors c) {
     final hasQ = _status['hasQuestions'] as bool? ?? false;
     final hasL = _status['hasLocations'] as bool? ?? false;
     final hasP = _status['hasRecoveryPin'] as bool? ?? false;
@@ -302,6 +297,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           isComplete: hasQ,
           gradientColors: const [Color(0xFF06B6D4), Color(0xFF0891B2)],
           onTap: () => _showSecurityQuestionsDialog(l),
+          c: c,
         ),
         const SizedBox(height: 14),
         _buildStepCard(
@@ -313,6 +309,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           gradientColors: const [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
           onTap: () => _showLocationDialog(l),
           extraContent: _locationLabels.isNotEmpty ? _buildLocationChips() : null,
+          c: c,
         ),
         const SizedBox(height: 14),
         _buildStepCard(
@@ -323,6 +320,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           isComplete: hasP,
           gradientColors: const [Color(0xFFF59E0B), Color(0xFFD97706)],
           onTap: () => _showRecoveryPinDialog(l),
+          c: c,
         ),
       ],
     );
@@ -336,6 +334,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     required bool isComplete,
     required List<Color> gradientColors,
     required VoidCallback onTap,
+    required AppColors c,
     Widget? extraContent,
   }) {
     return GestureDetector(
@@ -355,7 +354,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           border: Border.all(
             color: isComplete
                 ? gradientColors[0].withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.06),
+                : c.glassBorder,
           ),
         ),
         child: Column(
@@ -370,14 +369,15 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     gradient: isComplete
                         ? LinearGradient(colors: gradientColors)
                         : null,
-                    color: isComplete ? null : Colors.white.withValues(alpha: 0.06),
+                    color: isComplete ? null : c.textMuted.withValues(alpha: 0.06),
                     boxShadow: isComplete
                         ? [BoxShadow(color: gradientColors[0].withValues(alpha: 0.3), blurRadius: 12)]
                         : [],
                   ),
                   child: Icon(
                     icon,
-                    color: isComplete ? Colors.white : AppTheme.textMuted,
+                    // KEEP white on gradient circle when complete
+                    color: isComplete ? Colors.white : c.textMuted,
                     size: 24,
                   ),
                 ),
@@ -413,17 +413,17 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                         title,
                         style: TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w700,
-                          color: isComplete ? gradientColors[0] : Colors.white,
+                          color: isComplete ? gradientColors[0] : c.text,
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(description, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                      Text(description, style: TextStyle(fontSize: 12, color: c.textMuted)),
                     ],
                   ),
                 ),
                 Icon(
                   isComplete ? Icons.settings_rounded : Icons.arrow_forward_ios_rounded,
-                  color: isComplete ? gradientColors[0].withValues(alpha: 0.5) : AppTheme.textMuted.withValues(alpha: 0.5),
+                  color: isComplete ? gradientColors[0].withValues(alpha: 0.5) : c.textMuted.withValues(alpha: 0.5),
                   size: isComplete ? 20 : 14,
                 ),
               ],
@@ -461,15 +461,16 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               const SizedBox(width: 6),
               GestureDetector(
                 onTap: () async {
+                  final dc = AppColors.of(context);
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      backgroundColor: const Color(0xFF0D1321),
+                      backgroundColor: dc.card,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      title: const Text('Remove Location?', style: TextStyle(color: Colors.white, fontSize: 16)),
-                      content: Text('Remove "${loc['label']}"?', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
+                      title: Text('Remove Location?', style: TextStyle(color: dc.text, fontSize: 16)),
+                      content: Text('Remove "${loc['label']}"?', style: TextStyle(color: dc.textSec, fontSize: 14)),
                       actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted))),
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel', style: TextStyle(color: dc.textMuted))),
                         TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: AppTheme.danger))),
                       ],
                     ),
@@ -494,6 +495,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   // ================================================================
 
   Widget _buildRecoveryTestButton(LocaleProvider l) {
+    final c = AppColors.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(2),
@@ -504,7 +506,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          color: AppTheme.bgDark,
+          color: c.bg,
         ),
         child: Material(
           color: Colors.transparent,
@@ -541,38 +543,45 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   // Dialogs — same logic, better bottom sheet styling
   // ================================================================
 
-  Widget _sheetHandle() => Center(
-    child: Container(
-      width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(2),
+  Widget _sheetHandle() {
+    final c = AppColors.of(context);
+    return Center(
+      child: Container(
+        width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20),
+        decoration: BoxDecoration(
+          color: c.textMuted.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(2),
+        ),
       ),
-    ),
-  );
+    );
+  }
 
-  InputDecoration _inputDeco({required String hint, IconData? prefix}) => InputDecoration(
-    hintText: hint,
-    hintStyle: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.5), fontSize: 14),
-    prefixIcon: prefix != null ? Icon(prefix, color: AppTheme.textMuted, size: 20) : null,
-    filled: true,
-    fillColor: Colors.white.withValues(alpha: 0.04),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
-    ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-  );
+  InputDecoration _inputDeco({required String hint, IconData? prefix}) {
+    final c = AppColors.of(context);
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.5), fontSize: 14),
+      prefixIcon: prefix != null ? Icon(prefix, color: c.textMuted, size: 20) : null,
+      filled: true,
+      fillColor: c.glassColor,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c.glassBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c.glassBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    );
+  }
 
   void _showSecurityQuestionsDialog(LocaleProvider l) async {
+    final c = AppColors.of(context);
     final hasExisting = _status['hasQuestions'] as bool? ?? false;
     final controllers = List.generate(3, (_) => [TextEditingController(), TextEditingController()]);
 
@@ -595,8 +604,8 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           top: 16, left: 20, right: 20,
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
         ),
-        decoration: const BoxDecoration(
-          color: Color(0xFF0D1321),
+        decoration: BoxDecoration(
+          color: c.card,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SingleChildScrollView(
@@ -619,8 +628,8 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(l.t('identity.questions'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
-                      Text(l.t('identity.questionsHint'), style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      Text(l.t('identity.questions'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
+                      Text(l.t('identity.questionsHint'), style: TextStyle(fontSize: 11, color: c.textMuted)),
                     ],
                   ),
                 ],
@@ -661,13 +670,13 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     const SizedBox(height: 6),
                     TextField(
                       controller: controllers[i][0],
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      style: TextStyle(color: c.text, fontSize: 14),
                       decoration: _inputDeco(hint: l.t('identity.questionPlaceholder'), prefix: Icons.help_outline_rounded),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: controllers[i][1],
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      style: TextStyle(color: c.text, fontSize: 14),
                       decoration: _inputDeco(hint: l.t('identity.answerPlaceholder'), prefix: Icons.key_rounded),
                     ),
                   ],
@@ -708,6 +717,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   }
 
   void _showLocationDialog(LocaleProvider l) {
+    final c = AppColors.of(context);
     final labelController = TextEditingController();
 
     showModalBottomSheet(
@@ -719,9 +729,9 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           top: 16, left: 20, right: 20,
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
         ),
-        decoration: const BoxDecoration(
-          color: Color(0xFF0D1321),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: c.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -736,6 +746,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     shape: BoxShape.circle,
                     gradient: LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFF7C3AED)]),
                   ),
+                  // KEEP white on gradient circle
                   child: const Icon(Icons.share_location_rounded, color: Colors.white, size: 18),
                 ),
                 const SizedBox(width: 12),
@@ -743,8 +754,8 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(l.t('identity.location'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
-                      Text(l.t('identity.locationHint'), style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      Text(l.t('identity.location'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
+                      Text(l.t('identity.locationHint'), style: TextStyle(fontSize: 11, color: c.textMuted)),
                     ],
                   ),
                 ),
@@ -775,7 +786,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
             const SizedBox(height: 16),
             TextField(
               controller: labelController,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: c.text, fontSize: 14),
               decoration: _inputDeco(hint: l.t('identity.locationLabel'), prefix: Icons.label_outline_rounded),
             ),
             const SizedBox(height: 16),
@@ -800,6 +811,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   }
 
   void _showRecoveryPinDialog(LocaleProvider l) {
+    final c = AppColors.of(context);
     final pinController = TextEditingController();
     final confirmController = TextEditingController();
 
@@ -812,9 +824,9 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           top: 16, left: 20, right: 20,
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
         ),
-        decoration: const BoxDecoration(
-          color: Color(0xFF0D1321),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: c.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -829,14 +841,15 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     shape: BoxShape.circle,
                     gradient: LinearGradient(colors: [Color(0xFFF59E0B), Color(0xFFD97706)]),
                   ),
+                  // KEEP white on gradient circle
                   child: const Icon(Icons.fiber_pin_rounded, color: Colors.white, size: 18),
                 ),
                 const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(l.t('identity.recoveryPin'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
-                    Text(l.t('identity.recoveryPinHint'), style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                    Text(l.t('identity.recoveryPin'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
+                    Text(l.t('identity.recoveryPinHint'), style: TextStyle(fontSize: 11, color: c.textMuted)),
                   ],
                 ),
               ],
@@ -848,15 +861,15 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               obscureText: true,
               maxLength: 8,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: const TextStyle(color: Colors.white, fontSize: 22, letterSpacing: 10, fontWeight: FontWeight.w700),
+              style: TextStyle(color: c.text, fontSize: 22, letterSpacing: 10, fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
               decoration: InputDecoration(
                 hintText: '------',
-                hintStyle: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.3), letterSpacing: 10),
+                hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.3), letterSpacing: 10),
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.04),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                fillColor: c.glassColor,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
                 counterText: '',
               ),
@@ -868,15 +881,15 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               obscureText: true,
               maxLength: 8,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: const TextStyle(color: Colors.white, fontSize: 22, letterSpacing: 10, fontWeight: FontWeight.w700),
+              style: TextStyle(color: c.text, fontSize: 22, letterSpacing: 10, fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
               decoration: InputDecoration(
                 hintText: l.t('identity.confirmPin'),
-                hintStyle: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.3), letterSpacing: 1),
+                hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.3), letterSpacing: 1),
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.04),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                fillColor: c.glassColor,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
                 counterText: '',
               ),
@@ -917,26 +930,28 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   }
 
   void _showRecoveryTestDialog(LocaleProvider l) {
+    final c = AppColors.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1321),
+        backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Row(
           children: [
             ShaderMask(
               shaderCallback: (bounds) => AppTheme.brandGradient.createShader(bounds),
+              // KEEP white — ShaderMask requires white base to show gradient
               child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 24),
             ),
             const SizedBox(width: 10),
-            Text(l.t('identity.testRecovery'), style: const TextStyle(color: Colors.white, fontSize: 18)),
+            Text(l.t('identity.testRecovery'), style: TextStyle(color: c.text, fontSize: 18)),
           ],
         ),
-        content: Text(l.t('identity.testRecoveryDesc'), style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
+        content: Text(l.t('identity.testRecoveryDesc'), style: TextStyle(color: c.textSec, fontSize: 14)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('wallets.cancel'), style: TextStyle(color: c.textMuted)),
           ),
           Container(
             decoration: BoxDecoration(
@@ -959,6 +974,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   }
 
   void _runRecoveryTest(LocaleProvider l) async {
+    final c = AppColors.of(context);
     final questions = await _identityService.getQuestions();
     if (questions.isEmpty || !mounted) return;
 
@@ -975,9 +991,9 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
         ),
         constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
-        decoration: const BoxDecoration(
-          color: Color(0xFF0D1321),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: c.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SingleChildScrollView(
           child: Column(
@@ -989,10 +1005,11 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 children: [
                   ShaderMask(
                     shaderCallback: (bounds) => AppTheme.brandGradient.createShader(bounds),
+                    // KEEP white — ShaderMask requires white base
                     child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 24),
                   ),
                   const SizedBox(width: 10),
-                  Text(l.t('identity.testRecovery'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+                  Text(l.t('identity.testRecovery'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
                 ],
               ),
               const SizedBox(height: 20),
@@ -1002,18 +1019,18 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(questions[i], style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, fontWeight: FontWeight.w500)),
+                    Text(questions[i], style: TextStyle(fontSize: 13, color: c.textSec, fontWeight: FontWeight.w500)),
                     const SizedBox(height: 6),
                     TextField(
                       controller: answerControllers[i],
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      style: TextStyle(color: c.text, fontSize: 14),
                       decoration: _inputDeco(hint: l.t('identity.answerPlaceholder'), prefix: Icons.key_rounded),
                     ),
                   ],
                 ),
               )),
 
-              Text(l.t('identity.recoveryPinOptional'), style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+              Text(l.t('identity.recoveryPinOptional'), style: TextStyle(fontSize: 11, color: c.textMuted)),
               const SizedBox(height: 6),
               TextField(
                 controller: pinController,
@@ -1021,14 +1038,14 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 obscureText: true,
                 maxLength: 8,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: TextStyle(color: c.text, fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'Recovery PIN',
-                  hintStyle: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.5)),
+                  hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.5)),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.04),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                  fillColor: c.glassColor,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
                   focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
                   counterText: '',
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

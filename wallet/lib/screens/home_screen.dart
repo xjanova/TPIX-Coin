@@ -294,6 +294,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               borderRadius: BorderRadius.circular(20),
               color: wallet.activeChain.color.withValues(alpha: 0.1),
               border: Border.all(color: wallet.activeChain.color.withValues(alpha: 0.3)),
+              boxShadow: [
+                BoxShadow(
+                  color: wallet.activeChain.color.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  spreadRadius: -2,
+                ),
+              ],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -428,11 +435,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
           gradient: c.balanceGradient,
-          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
           boxShadow: c.elevatedShadow,
         ),
         child: Stack(
           children: [
+            // Inner top-left glow for 3D depth
+            Positioned(
+              left: -30,
+              top: -30,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      AppTheme.primary.withValues(alpha: 0.15),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
             // Orbiting decoration
             Positioned(
               right: -10,
@@ -445,6 +470,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     width: 100,
                     height: 100,
                     child: CustomPaint(painter: _OrbPainter()),
+                  ),
+                ),
+              ),
+            ),
+            // Bottom-right ambient glow
+            Positioned(
+              right: -20,
+              bottom: -20,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      AppTheme.accent.withValues(alpha: 0.08),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
               ),
@@ -570,7 +613,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           padding: const EdgeInsets.symmetric(vertical: 20),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            color: c.actionBtnBg(color),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                c.actionBtnBg(color),
+                color.withValues(alpha: c.isDark ? 0.03 : 0.02),
+              ],
+            ),
             border: Border.all(color: c.actionBtnBorder(color)),
             boxShadow: c.cardShadow,
           ),
@@ -582,6 +632,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: c.actionBtnIcon(color),
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.25),
+                      blurRadius: 12,
+                      spreadRadius: -2,
+                    ),
+                  ],
                 ),
                 child: Icon(icon, color: color, size: 24),
               ),
@@ -700,11 +757,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      builder: (sheetCtx) {
+        final sc = AppColors.of(sheetCtx);
+        return Container(
         padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-          color: AppTheme.bgCard,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: sc.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -714,15 +773,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Container(
                 width: 40, height: 4,
                 decoration: BoxDecoration(
-                  color: AppTheme.textMuted.withValues(alpha: 0.3),
+                  color: sc.textMuted.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Multi-Chain Balances',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: sc.text),
             ),
             const SizedBox(height: 16),
             ...ChainConfig.all.map((chain) {
@@ -742,8 +801,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(chain.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-                          Text('Chain ID: ${chain.chainId}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                          Text(chain.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: sc.text)),
+                          Text('Chain ID: ${chain.chainId}', style: TextStyle(fontSize: 11, color: sc.textMuted)),
                         ],
                       ),
                     ),
@@ -758,22 +817,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(height: 16),
           ],
         ),
-      ),
+      );
+      },
     );
   }
 
   void _confirmRemoveToken(dynamic token, WalletProvider wallet, LocaleProvider l) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+      builder: (ctx) {
+        final dc = AppColors.of(ctx);
+        return AlertDialog(
+        backgroundColor: dc.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(l.t('token.removeConfirm'), style: const TextStyle(color: AppTheme.danger)),
-        content: Text('${token.name} (${token.symbol})', style: const TextStyle(color: AppTheme.textSecondary)),
+        content: Text('${token.name} (${token.symbol})', style: TextStyle(color: dc.textSec)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(l.t('wallets.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('wallets.cancel'), style: TextStyle(color: dc.textMuted)),
           ),
           TextButton(
             onPressed: () {
@@ -783,7 +845,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: Text(l.t('wallets.delete'), style: const TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w700)),
           ),
         ],
-      ),
+      );
+      },
     );
   }
 
@@ -792,13 +855,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IdentityScreen())),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: [AppTheme.accent.withValues(alpha: 0.1), AppTheme.primary.withValues(alpha: 0.05)],
-          ),
-          border: Border.all(color: AppTheme.accent.withValues(alpha: 0.2)),
-        ),
+        decoration: accentGlassCard(context, borderRadius: 16, accent: AppTheme.accent),
         child: Row(
           children: [
             Container(
@@ -806,6 +863,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppTheme.accent.withValues(alpha: 0.15),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.accent.withValues(alpha: 0.20),
+                    blurRadius: 14,
+                    spreadRadius: -2,
+                  ),
+                ],
               ),
               child: const Icon(Icons.shield_rounded, color: AppTheme.accent, size: 22),
             ),
@@ -943,9 +1007,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildInfoRow(IconData icon, String title, String value, Color color) {
+    final c = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: adaptiveGlassCard(context, borderRadius: 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: c.isDark
+              ? [color.withValues(alpha: 0.06), Colors.white.withValues(alpha: 0.04)]
+              : [color.withValues(alpha: 0.04), Colors.white.withValues(alpha: 0.90)],
+        ),
+        border: Border.all(color: c.isDark ? color.withValues(alpha: 0.12) : c.glassBorder),
+        boxShadow: c.cardShadow,
+      ),
       child: Row(
         children: [
           Icon(icon, color: color, size: 22),
@@ -980,8 +1056,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final c = AppColors.of(context);
     return GestureDetector(
       onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: c.isDark ? Colors.white.withValues(alpha: 0.03) : Colors.black.withValues(alpha: 0.02),
+        ),
         child: Row(
           children: [
             Text(emoji, style: const TextStyle(fontSize: 18)),

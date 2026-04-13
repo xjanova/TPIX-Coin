@@ -128,11 +128,15 @@ class AppColors {
 
   // Glass card colors
   Color get glassColor => isDark
-      ? Colors.white.withValues(alpha: 0.06)
-      : Colors.white.withValues(alpha: 0.85);
+      ? Colors.white.withValues(alpha: 0.07)
+      : Colors.white.withValues(alpha: 0.92);
   Color get glassBorder => isDark
-      ? Colors.white.withValues(alpha: 0.08)
-      : Colors.black.withValues(alpha: 0.06);
+      ? Colors.white.withValues(alpha: 0.10)
+      : Colors.black.withValues(alpha: 0.08);
+  // Top-edge highlight for light-catch effect
+  Color get glassHighlight => isDark
+      ? Colors.white.withValues(alpha: 0.12)
+      : Colors.white;
 
   // Screen background gradient
   BoxDecoration get screenBg => BoxDecoration(
@@ -168,25 +172,27 @@ class AppColors {
   List<BoxShadow> get cardShadow => isDark
       ? [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+            spreadRadius: 1,
           ),
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.03),
-            blurRadius: 20,
+            color: AppTheme.primary.withValues(alpha: 0.05),
+            blurRadius: 24,
             offset: const Offset(0, -2),
           ),
         ]
       : [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+            spreadRadius: 1,
           ),
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.04),
-            blurRadius: 20,
+            color: AppTheme.primary.withValues(alpha: 0.06),
+            blurRadius: 24,
             offset: const Offset(0, 2),
           ),
         ];
@@ -195,42 +201,71 @@ class AppColors {
   List<BoxShadow> get elevatedShadow => isDark
       ? [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-            spreadRadius: 2,
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+            spreadRadius: 4,
           ),
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.08),
+            color: AppTheme.primary.withValues(alpha: 0.12),
             blurRadius: 40,
             offset: const Offset(0, -4),
           ),
         ]
       : [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-            spreadRadius: 2,
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+            spreadRadius: 4,
           ),
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.06),
-            blurRadius: 30,
+            color: AppTheme.primary.withValues(alpha: 0.08),
+            blurRadius: 40,
             offset: const Offset(0, 4),
+          ),
+        ];
+
+  // Accent glow shadow for special cards (identity, promo)
+  List<BoxShadow> accentGlow(Color color) => isDark
+      ? [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: color.withValues(alpha: 0.15),
+            blurRadius: 30,
+            spreadRadius: -4,
+          ),
+        ]
+      : [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: color.withValues(alpha: 0.10),
+            blurRadius: 30,
+            spreadRadius: -4,
           ),
         ];
 
   // Balance card gradient
   LinearGradient get balanceGradient => isDark
       ? const LinearGradient(
-          colors: [Color(0xFF0E2A47), Color(0xFF0A1628)],
+          colors: [Color(0xFF122E4D), Color(0xFF0D1B33), Color(0xFF081222)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
+          stops: [0.0, 0.6, 1.0],
         )
       : const LinearGradient(
-          colors: [Color(0xFF0C7B93), Color(0xFF065A6E)],
+          colors: [Color(0xFF0E8EA1), Color(0xFF086B7D), Color(0xFF055062)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
+          stops: [0.0, 0.5, 1.0],
         );
 
   // Action button background
@@ -272,7 +307,7 @@ BoxDecoration glassCard({
   );
 }
 
-/// Adaptive glass card that respects current theme
+/// Adaptive glass card that respects current theme — with inner gradient for depth
 BoxDecoration adaptiveGlassCard(BuildContext context, {
   double borderRadius = 24,
   Color? borderColor,
@@ -280,11 +315,37 @@ BoxDecoration adaptiveGlassCard(BuildContext context, {
   final c = AppColors.of(context);
   return BoxDecoration(
     borderRadius: BorderRadius.circular(borderRadius),
-    color: c.glassColor,
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: c.isDark
+          ? [Colors.white.withValues(alpha: 0.09), Colors.white.withValues(alpha: 0.04)]
+          : [Colors.white.withValues(alpha: 0.95), Colors.white.withValues(alpha: 0.85)],
+    ),
     border: Border.all(
       color: borderColor ?? c.glassBorder,
       width: 1,
     ),
     boxShadow: c.cardShadow,
+  );
+}
+
+/// Glass card with colored accent glow
+BoxDecoration accentGlassCard(BuildContext context, {
+  double borderRadius = 20,
+  required Color accent,
+}) {
+  final c = AppColors.of(context);
+  return BoxDecoration(
+    borderRadius: BorderRadius.circular(borderRadius),
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: c.isDark
+          ? [accent.withValues(alpha: 0.12), accent.withValues(alpha: 0.04)]
+          : [accent.withValues(alpha: 0.08), accent.withValues(alpha: 0.03)],
+    ),
+    border: Border.all(color: accent.withValues(alpha: c.isDark ? 0.25 : 0.15)),
+    boxShadow: c.accentGlow(accent),
   );
 }

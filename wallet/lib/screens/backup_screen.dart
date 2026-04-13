@@ -56,6 +56,7 @@ class _BackupScreenState extends State<BackupScreen> {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final c = AppColors.of(context);
     final words = _mnemonic.isNotEmpty ? _mnemonic.split(' ') : <String>[];
 
     return Scaffold(
@@ -72,14 +73,14 @@ class _BackupScreenState extends State<BackupScreen> {
                   children: [
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                      icon: Icon(Icons.arrow_back_ios, color: c.text),
                     ),
                     const SizedBox(width: 8),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(l.t('backup.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                        Text(l.t('backup.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                        Text(l.t('backup.title'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
+                        Text(l.t('backup.subtitle'), style: TextStyle(fontSize: 12, color: c.textMuted)),
                       ],
                     ),
                     const Spacer(),
@@ -136,10 +137,10 @@ class _BackupScreenState extends State<BackupScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.timer_off, size: 48, color: AppTheme.textMuted.withValues(alpha: 0.4)),
+                              Icon(Icons.timer_off, size: 48, color: c.textMuted.withValues(alpha: 0.4)),
                               const SizedBox(height: 16),
                               Text(l.t('backup.autoCleared'),
-                                  style: const TextStyle(fontSize: 16, color: AppTheme.textMuted)),
+                                  style: TextStyle(fontSize: 16, color: c.textMuted)),
                             ],
                           ),
                         )
@@ -157,8 +158,8 @@ class _BackupScreenState extends State<BackupScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text('${i + 1}. ', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                                Text(words[i], style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                                Text('${i + 1}. ', style: TextStyle(fontSize: 12, color: c.textMuted)),
+                                Text(words[i], style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text)),
                               ],
                             ),
                           ),

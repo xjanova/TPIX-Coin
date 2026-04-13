@@ -81,6 +81,7 @@ class _ImportScreenState extends State<ImportScreen> {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final c = AppColors.of(context);
     return Scaffold(
       body: Container(
         decoration: AppColors.of(context).screenBg,
@@ -94,14 +95,14 @@ class _ImportScreenState extends State<ImportScreen> {
                   children: [
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+                      icon: Icon(Icons.arrow_back_ios, color: c.text),
                     ),
                     const SizedBox(width: 8),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(l.t('import.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                        Text(l.t('import.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                        Text(l.t('import.title'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
+                        Text(l.t('import.subtitle'), style: TextStyle(fontSize: 12, color: c.textMuted)),
                       ],
                     ),
                   ],
@@ -127,21 +128,21 @@ class _ImportScreenState extends State<ImportScreen> {
                 TextField(
                   controller: _nameController,
                   maxLength: 24,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  style: TextStyle(color: c.text, fontSize: 15),
                   decoration: InputDecoration(
                     hintText: l.t('wallets.namePlaceholder'),
-                    hintStyle: const TextStyle(color: AppTheme.textMuted),
-                    counterStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 10),
-                    prefixIcon: const Icon(Icons.label_outline, color: AppTheme.textMuted, size: 20),
+                    hintStyle: TextStyle(color: c.textMuted),
+                    counterStyle: TextStyle(color: c.textMuted, fontSize: 10),
+                    prefixIcon: Icon(Icons.label_outline, color: c.textMuted, size: 20),
                     filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.04),
+                    fillColor: c.glassColor,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                      borderSide: BorderSide(color: c.glassBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                      borderSide: BorderSide(color: c.glassBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -156,19 +157,19 @@ class _ImportScreenState extends State<ImportScreen> {
                 TextField(
                   controller: _controller,
                   maxLines: 4,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  style: TextStyle(color: c.text, fontSize: 15),
                   decoration: InputDecoration(
                     hintText: _isMnemonic ? l.t('import.hintMnemonic') : l.t('import.hintKey'),
-                    hintStyle: const TextStyle(color: AppTheme.textMuted),
+                    hintStyle: TextStyle(color: c.textMuted),
                     filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.04),
+                    fillColor: c.glassColor,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                      borderSide: BorderSide(color: c.glassBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                      borderSide: BorderSide(color: c.glassBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -221,6 +222,7 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   Widget _buildTab(String label, bool active, VoidCallback onTap) {
+    final c = AppColors.of(context);
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -236,7 +238,7 @@ class _ImportScreenState extends State<ImportScreen> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-            color: active ? AppTheme.primary : AppTheme.textMuted,
+            color: active ? AppTheme.primary : c.textMuted,
           ),
         ),
       ),

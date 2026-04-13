@@ -258,6 +258,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   void _showBridgeRegistrationFailedDialog(String sourceTxHash) {
     final l = context.read<LocaleProvider>();
+    final c = AppColors.of(context);
     final shortTx = sourceTxHash.length > 16
         ? '${sourceTxHash.substring(0, 10)}...${sourceTxHash.substring(sourceTxHash.length - 6)}'
         : sourceTxHash;
@@ -265,7 +266,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+        backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
@@ -285,18 +286,18 @@ class _BridgeScreenState extends State<BridgeScreen> {
           children: [
             Text(
               l.t('bridge.registrationFailedDesc'),
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: c.textSec, fontSize: 13),
             ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
-                color: Colors.white.withValues(alpha: 0.04),
+                color: c.glassColor,
               ),
               child: Row(
                 children: [
-                  const Text('TX: ', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  Text('TX: ', style: TextStyle(fontSize: 12, color: c.textMuted)),
                   Expanded(
                     child: Text(shortTx, style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontFamily: 'monospace')),
                   ),
@@ -307,7 +308,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                         SnackBar(content: Text(l.t('tx.hashCopied')), duration: const Duration(seconds: 1)),
                       );
                     },
-                    child: const Icon(Icons.copy_rounded, color: AppTheme.textMuted, size: 16),
+                    child: Icon(Icons.copy_rounded, color: c.textMuted, size: 16),
                   ),
                 ],
               ),
@@ -351,36 +352,37 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   Future<bool?> _showConfirmDialog(double amount) {
     final l = context.read<LocaleProvider>();
+    final c = AppColors.of(context);
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+        backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           l.t('bridge.confirmTitle'),
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          style: TextStyle(color: c.text, fontWeight: FontWeight.w700),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _confirmRow(l.t('bridge.fromChain'), _route!.sourceChain.name),
-            _confirmRow(l.t('bridge.toChain'), _route!.destChain.name),
-            _confirmRow(l.t('bridge.token'), _route!.tokenSymbol),
-            _confirmRow(l.t('bridge.amount'), '${amount.toStringAsFixed(2)} ${_route!.tokenSymbol}'),
+            _confirmRow(c, l.t('bridge.fromChain'), _route!.sourceChain.name),
+            _confirmRow(c, l.t('bridge.toChain'), _route!.destChain.name),
+            _confirmRow(c, l.t('bridge.token'), _route!.tokenSymbol),
+            _confirmRow(c, l.t('bridge.amount'), '${amount.toStringAsFixed(2)} ${_route!.tokenSymbol}'),
             if (_fee != null) ...[
-              const Divider(color: AppTheme.textMuted, height: 16),
-              _confirmRow(l.t('bridge.fee'), '${_fee!.feeAmount.toStringAsFixed(4)} ${_route!.tokenSymbol} (${_fee!.feePercent}%)'),
-              _confirmRow(l.t('bridge.receive'), '${_fee!.receiveAmount.toStringAsFixed(4)} ${_route!.tokenSymbol}'),
-              _confirmRow(l.t('bridge.estTime'), '~${_fee!.estimatedTime} min'),
+              Divider(color: c.textMuted, height: 16),
+              _confirmRow(c, l.t('bridge.fee'), '${_fee!.feeAmount.toStringAsFixed(4)} ${_route!.tokenSymbol} (${_fee!.feePercent}%)'),
+              _confirmRow(c, l.t('bridge.receive'), '${_fee!.receiveAmount.toStringAsFixed(4)} ${_route!.tokenSymbol}'),
+              _confirmRow(c, l.t('bridge.estTime'), '~${_fee!.estimatedTime} min'),
               if (_fee!.feeWallet.isNotEmpty)
-                _confirmRow(l.t('bridge.sendTo'), FeeService.shortWallet(_fee!.feeWallet)),
+                _confirmRow(c, l.t('bridge.sendTo'), FeeService.shortWallet(_fee!.feeWallet)),
             ],
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l.t('send.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('send.cancel'), style: TextStyle(color: c.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -391,17 +393,17 @@ class _BridgeScreenState extends State<BridgeScreen> {
     );
   }
 
-  Widget _confirmRow(String label, String value) {
+  Widget _confirmRow(AppColors c, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+          Text(label, style: TextStyle(color: c.textMuted, fontSize: 13)),
           Flexible(
             child: Text(
               value,
-              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+              style: TextStyle(color: c.text, fontSize: 13, fontWeight: FontWeight.w600),
               textAlign: TextAlign.end,
             ),
           ),
@@ -413,10 +415,11 @@ class _BridgeScreenState extends State<BridgeScreen> {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final c = AppColors.of(context);
 
     return Scaffold(
       body: Container(
-        decoration: AppColors.of(context).screenBg,
+        decoration: c.screenBg,
         child: SafeArea(
           child: Column(
             children: [
@@ -428,7 +431,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                         ? Center(
                             child: Text(
                               l.t('bridge.unavailable'),
-                              style: const TextStyle(color: AppTheme.textMuted),
+                              style: TextStyle(color: c.textMuted),
                             ),
                           )
                         : SingleChildScrollView(
@@ -465,6 +468,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
   }
 
   Widget _buildAppBar(LocaleProvider l) {
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -476,15 +480,15 @@ class _BridgeScreenState extends State<BridgeScreen> {
               height: 36,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
+                color: c.glassColor,
               ),
-              child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+              child: Icon(Icons.arrow_back_rounded, color: c.text, size: 20),
             ),
           ),
           const SizedBox(width: 12),
           Text(
             l.t('bridge.title'),
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text),
           ),
         ],
       ),
@@ -493,6 +497,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   Widget _buildRouteCard() {
     if (_route == null) return const SizedBox.shrink();
+    final c = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -503,7 +508,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
             _route!.destChain.color.withValues(alpha: 0.08),
           ],
         ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: c.glassBorder),
       ),
       child: Row(
         children: [
@@ -523,7 +528,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                 ),
                 Text(
                   _route!.sourceChain.name,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  style: TextStyle(fontSize: 11, color: c.textMuted),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -538,7 +543,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               height: 48,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppTheme.bgSurface,
+                color: c.surface,
                 border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3), width: 2),
                 boxShadow: [
                   BoxShadow(color: AppTheme.primary.withValues(alpha: 0.1), blurRadius: 12),
@@ -564,7 +569,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                 ),
                 Text(
                   _route!.destChain.name,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  style: TextStyle(fontSize: 11, color: c.textMuted),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -577,19 +582,20 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   Widget _buildAmountCard(LocaleProvider l) {
     if (_route == null) return const SizedBox.shrink();
+    final c = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        color: Colors.white.withValues(alpha: 0.04),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        color: c.glassColor,
+        border: Border.all(color: c.glassBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text(l.t('bridge.amount'), style: const TextStyle(fontSize: 13, color: AppTheme.textMuted)),
+              Text(l.t('bridge.amount'), style: TextStyle(fontSize: 13, color: c.textMuted)),
               const Spacer(),
               Text(
                 '${_route!.tokenSymbol} (${_route!.sourceChain.shortName})',
@@ -602,11 +608,11 @@ class _BridgeScreenState extends State<BridgeScreen> {
             controller: _amountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))],
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Colors.white),
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: c.text),
             decoration: InputDecoration(
               hintText: '0.0',
               hintStyle: TextStyle(
-                color: AppTheme.textMuted.withValues(alpha: 0.3),
+                color: c.textMuted.withValues(alpha: 0.3),
                 fontSize: 28,
                 fontWeight: FontWeight.w700,
               ),
@@ -620,12 +626,12 @@ class _BridgeScreenState extends State<BridgeScreen> {
             children: [
               Text(
                 'Min: ${_route!.minAmount.toInt()} ${_route!.tokenSymbol}',
-                style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                style: TextStyle(fontSize: 11, color: c.textMuted),
               ),
               const SizedBox(width: 12),
               Text(
                 'Max: ${_route!.maxAmount.toInt()} ${_route!.tokenSymbol}',
-                style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                style: TextStyle(fontSize: 11, color: c.textMuted),
               ),
             ],
           ),
@@ -636,38 +642,39 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   Widget _buildFeeCard(LocaleProvider l) {
     if (_fee == null || _route == null) return const SizedBox.shrink();
+    final c = AppColors.of(context);
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        color: Colors.white.withValues(alpha: 0.03),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        color: c.glassColor,
+        border: Border.all(color: c.glassBorder),
       ),
       child: Column(
         children: [
-          _feeRow(l.t('bridge.fee'), '${_fee!.feeAmount.toStringAsFixed(4)} ${_route!.tokenSymbol}'),
-          _feeRow(l.t('bridge.feePercent'), '${_fee!.feePercent}%'),
-          _feeRow(l.t('bridge.receive'), '${_fee!.receiveAmount.toStringAsFixed(4)} ${_route!.tokenSymbol}'),
-          _feeRow(l.t('bridge.estTime'), '~${_fee!.estimatedTime} min'),
+          _feeRow(c, l.t('bridge.fee'), '${_fee!.feeAmount.toStringAsFixed(4)} ${_route!.tokenSymbol}'),
+          _feeRow(c, l.t('bridge.feePercent'), '${_fee!.feePercent}%'),
+          _feeRow(c, l.t('bridge.receive'), '${_fee!.receiveAmount.toStringAsFixed(4)} ${_route!.tokenSymbol}'),
+          _feeRow(c, l.t('bridge.estTime'), '~${_fee!.estimatedTime} min'),
           if (_fee!.feeWallet.isNotEmpty)
-            _feeRow(l.t('bridge.sendTo'), FeeService.shortWallet(_fee!.feeWallet)),
+            _feeRow(c, l.t('bridge.sendTo'), FeeService.shortWallet(_fee!.feeWallet)),
         ],
       ),
     );
   }
 
-  Widget _feeRow(String label, String value) {
+  Widget _feeRow(AppColors c, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+          Text(label, style: TextStyle(fontSize: 12, color: c.textMuted)),
           Flexible(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 12, color: c.textSec, fontWeight: FontWeight.w600),
               textAlign: TextAlign.end,
             ),
           ),
@@ -678,6 +685,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   Widget _buildStatusCard(LocaleProvider l) {
     if (_bridgeStatus == null) return const SizedBox.shrink();
+    final c = AppColors.of(context);
 
     final status = _bridgeStatus!;
     Color statusColor;
@@ -716,7 +724,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               const SizedBox(width: 10),
               Text(
                 l.t('bridge.status'),
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text),
               ),
               const Spacer(),
               Container(
@@ -733,14 +741,14 @@ class _BridgeScreenState extends State<BridgeScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          _feeRow(l.t('bridge.bridgeId'), status.bridgeId.length > 20
+          _feeRow(c, l.t('bridge.bridgeId'), status.bridgeId.length > 20
               ? '${status.bridgeId.substring(0, 10)}...${status.bridgeId.substring(status.bridgeId.length - 8)}'
               : status.bridgeId),
-          _feeRow(l.t('bridge.amount'), '${status.amount} ${status.tokenSymbol}'),
+          _feeRow(c, l.t('bridge.amount'), '${status.amount} ${status.tokenSymbol}'),
           if (status.sourceTxHash != null)
-            _feeRow(l.t('bridge.sourceTx'), '${status.sourceTxHash!.substring(0, 10)}...'),
+            _feeRow(c, l.t('bridge.sourceTx'), '${status.sourceTxHash!.substring(0, 10)}...'),
           if (status.destTxHash != null)
-            _feeRow(l.t('bridge.destTx'), '${status.destTxHash!.substring(0, 10)}...'),
+            _feeRow(c, l.t('bridge.destTx'), '${status.destTxHash!.substring(0, 10)}...'),
 
           if (status.status != 'completed' && status.status != 'failed') ...[
             const SizedBox(height: 12),
@@ -767,6 +775,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
   Widget _buildBridgeButton(LocaleProvider l) {
     if (_route == null) return const SizedBox.shrink();
+    final c = AppColors.of(context);
     final amountStr = _amountController.text.trim();
     final amount = double.tryParse(amountStr);
     final isValid = amount != null && amount >= _route!.minAmount && amount <= _route!.maxAmount;
@@ -783,7 +792,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
           gradient: canBridge
               ? const LinearGradient(colors: [AppTheme.primary, AppTheme.accent])
               : null,
-          color: canBridge ? null : AppTheme.textMuted.withValues(alpha: 0.15),
+          color: canBridge ? null : c.textMuted.withValues(alpha: 0.15),
           boxShadow: canBridge
               ? [BoxShadow(color: AppTheme.primary.withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 6))]
               : null,
@@ -808,7 +817,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: canBridge ? Colors.white : AppTheme.textMuted.withValues(alpha: 0.5),
+                      color: canBridge ? Colors.white : c.textMuted.withValues(alpha: 0.5),
                     ),
                   ),
                 ],
@@ -818,6 +827,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
   }
 
   Widget _buildInfoSection(LocaleProvider l) {
+    final c = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -847,7 +857,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
             l.t('bridge.howItWorksDesc'),
             style: TextStyle(
               fontSize: 12,
-              color: AppTheme.textMuted.withValues(alpha: 0.7),
+              color: c.textMuted.withValues(alpha: 0.7),
               height: 1.5,
             ),
           ),

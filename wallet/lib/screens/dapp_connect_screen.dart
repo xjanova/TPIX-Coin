@@ -79,19 +79,20 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
     final wc = context.watch<WalletConnectService>();
+    final c = AppColors.of(context);
     final activeSessions = wc.sessions;
 
     return Scaffold(
-      backgroundColor: AppTheme.bgDark,
+      backgroundColor: c.bg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
           l.t('wc.title'),
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(color: c.text, fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: c.text),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -154,21 +155,21 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
 
               // Pending Proposal
               if (wc.hasPendingProposal) ...[
-                _buildProposalCard(l, wc),
+                _buildProposalCard(l, wc, c),
                 const SizedBox(height: 16),
               ],
 
               // Pending Request
               if (wc.hasPendingRequest) ...[
-                _buildRequestCard(l, wc),
+                _buildRequestCard(l, wc, c),
                 const SizedBox(height: 16),
               ],
 
               // Active Sessions
               Text(
                 l.t('wc.activeSessions'),
-                style: const TextStyle(
-                  color: AppTheme.textSecondary,
+                style: TextStyle(
+                  color: c.textSec,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 1,
@@ -182,7 +183,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                         itemCount: activeSessions.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (_, i) =>
-                            _buildSessionCard(activeSessions[i], wc, l),
+                            _buildSessionCard(activeSessions[i], wc, l, c),
                       ),
               ),
             ],
@@ -231,14 +232,14 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
     );
   }
 
-  Widget _buildProposalCard(LocaleProvider l, WalletConnectService wc) {
+  Widget _buildProposalCard(LocaleProvider l, WalletConnectService wc, AppColors c) {
     final proposal = wc.pendingProposal!;
     final peer = proposal.params.proposer.metadata;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.bgCard,
+        color: c.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
         boxShadow: [
@@ -272,8 +273,8 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
           const SizedBox(height: 12),
           Text(
             peer.name,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: c.text,
               fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
@@ -282,13 +283,13 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
           const SizedBox(height: 4),
           Text(
             peer.url,
-            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            style: TextStyle(color: c.textSec, fontSize: 13),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
           Text(
             l.t('wc.wantsToConnect'),
-            style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
+            style: TextStyle(color: c.textMuted, fontSize: 13),
           ),
           const SizedBox(height: 16),
           // Approve / Reject buttons
@@ -317,13 +318,13 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
     );
   }
 
-  Widget _buildRequestCard(LocaleProvider l, WalletConnectService wc) {
+  Widget _buildRequestCard(LocaleProvider l, WalletConnectService wc, AppColors c) {
     final info = wc.getRequestDisplayInfo();
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.bgCard,
+        color: c.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppTheme.warm.withOpacity(0.3)),
       ),
@@ -336,8 +337,8 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
               const SizedBox(width: 8),
               Text(
                 info['title'] ?? 'Request',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: c.text,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -349,13 +350,13 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppTheme.bgDark,
+              color: c.surface,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
               info['description'] ?? '',
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
+              style: TextStyle(
+                color: c.textSec,
                 fontSize: 12,
                 fontFamily: 'monospace',
               ),
@@ -389,15 +390,15 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
     );
   }
 
-  Widget _buildSessionCard(dynamic session, WalletConnectService wc, LocaleProvider l) {
+  Widget _buildSessionCard(dynamic session, WalletConnectService wc, LocaleProvider l, AppColors c) {
     final peer = wc.getPeerInfo(session);
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.bgCard,
+        color: c.card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.borderDim),
+        border: Border.all(color: c.border),
       ),
       child: Row(
         children: [
@@ -420,8 +421,8 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
               children: [
                 Text(
                   peer['name'] ?? 'Unknown dApp',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: c.text,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
@@ -429,7 +430,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                 const SizedBox(height: 2),
                 Text(
                   peer['url'] ?? '',
-                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  style: TextStyle(color: c.textMuted, fontSize: 12),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -446,20 +447,21 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
   }
 
   Widget _buildEmptyState(LocaleProvider l) {
+    final c = AppColors.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.link_off_rounded, size: 48, color: AppTheme.textMuted.withOpacity(0.4)),
+          Icon(Icons.link_off_rounded, size: 48, color: c.textMuted.withOpacity(0.4)),
           const SizedBox(height: 12),
           Text(
             l.t('wc.noSessions'),
-            style: const TextStyle(color: AppTheme.textMuted, fontSize: 14),
+            style: TextStyle(color: c.textMuted, fontSize: 14),
           ),
           const SizedBox(height: 4),
           Text(
             l.t('wc.noSessionsDesc'),
-            style: TextStyle(color: AppTheme.textMuted.withOpacity(0.6), fontSize: 12),
+            style: TextStyle(color: c.textMuted.withOpacity(0.6), fontSize: 12),
             textAlign: TextAlign.center,
           ),
         ],
@@ -508,20 +510,21 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
   }
 
   void _confirmDisconnect(String topic, String name, LocaleProvider l, WalletConnectService wc) {
+    final c = AppColors.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bgCard,
+        backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(l.t('wc.disconnectTitle'), style: const TextStyle(color: Colors.white)),
+        title: Text(l.t('wc.disconnectTitle'), style: TextStyle(color: c.text)),
         content: Text(
           '${l.t('wc.disconnectMsg')} $name?',
-          style: const TextStyle(color: AppTheme.textSecondary),
+          style: TextStyle(color: c.textSec),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(l.t('common.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+            child: Text(l.t('common.cancel'), style: TextStyle(color: c.textMuted)),
           ),
           TextButton(
             onPressed: () {
