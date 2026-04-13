@@ -1,0 +1,74 @@
+name: Diagnose TPIX Chain
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect diagnostics via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 5m
+          script: |
+            echo "=============================="
+            echo "TPIX Chain Diagnostics — $(date)"
+            echo "=============================="
+
+            echo ""
+            echo "=== 1. SYSTEM RESOURCES ==="
+            echo "--- Disk ---"
+            df -h / | tail -1
+            echo "--- Memory ---"
+            free -h | head -2
+            echo "--- Uptime / Load ---"
+            uptime
+            echo "--- Docker disk ---"
+            docker system df 2>/dev/null || echo "N/A"
+
+            echo ""
+            echo "=== 2. CONTAINER STATUS ==="
+            docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.RestartCount}}' | grep -E "tpix|NAMES"
+
+            echo ""
+            echo "=== 3. VALIDATOR-1 LAST 100 LOGS ==="
+            docker logs --tail 100 tpix-validator-1 2>&1 | tail -100
+
+            echo ""
+            echo "=== 4. VALIDATOR-2 LAST 30 LOGS ==="
+            docker logs --tail 30 tpix-validator-2 2>&1 | tail -30
+
+            echo ""
+            echo "=== 5. VALIDATOR-3 LAST 30 LOGS ==="
+            docker logs --tail 30 tpix-validator-3 2>&1 | tail -30
+
+            echo ""
+            echo "=== 6. VALIDATOR-4 LAST 30 LOGS ==="
+            docker logs --tail 30 tpix-validator-4 2>&1 | tail -30
+
+            echo ""
+            echo "=== 7. ERROR/PANIC SCAN (all validators, last 500 lines) ==="
+            for v in 1 2 3 4; do
+              echo "--- validator-$v ---"
+              docker logs --tail 500 tpix-validator-$v 2>&1 | grep -iE "error|panic|fatal|killed|oom|timeout|failed|disconnect|round change" | tail -20
+            done
+
+            echo ""
+            echo "=== 8. DOCKER EVENTS (last 24h) ==="
+            docker events --since "24h" --until "now" --format '{{.Time}} {{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null | grep tpix | tail -30
+
+            echo ""
+            echo "=== 9. SYSTEM LOGS (OOM killer) ==="
+            dmesg 2>/dev/null | grep -iE "oom|killed|out of memory" | tail -10 || journalctl -k --since "24 hours ago" 2>/dev/null | grep -iE "oom|killed" | tail -10 || echo "Cannot read system logs"
+
+            echo ""
+            echo "=== 10. CURRENT BLOCK ==="
+            curl -s -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | python3 -c "import sys,json;print(f'Block: {int(json.load(sys.stdin)[\"result\"],16)}')" 2>/dev/null || echo "RPC unavailable"
+
+            echo ""
+            echo "=== DONE ==="
