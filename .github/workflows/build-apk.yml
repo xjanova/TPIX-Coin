@@ -35,20 +35,25 @@ jobs:
           flutter-version: '3.38.5'
           channel: 'stable'
 
-      - name: Auto-bump build number
+      - name: Auto-bump version
         working-directory: .
         run: |
           FILE="wallet/pubspec.yaml"
           CURRENT=$(grep '^version:' "$FILE" | awk '{print $2}')
           SEMVER="${CURRENT%%+*}"
           BUILD="${CURRENT##*+}"
+          MAJOR=$(echo "$SEMVER" | cut -d. -f1)
+          MINOR=$(echo "$SEMVER" | cut -d. -f2)
+          PATCH=$(echo "$SEMVER" | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
           NEW_BUILD=$((BUILD + 1))
-          NEW_VERSION="${SEMVER}+${NEW_BUILD}"
-          sed -i "s/^version: .*/version: ${NEW_VERSION}/" "$FILE"
+          NEW_SEMVER="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          NEW_FULL="${NEW_SEMVER}+${NEW_BUILD}"
+          sed -i "s/^version: .*/version: ${NEW_FULL}/" "$FILE"
           echo "OLD_VERSION=${CURRENT}" >> $GITHUB_ENV
-          echo "NEW_VERSION=${NEW_VERSION}" >> $GITHUB_ENV
-          echo "SEMVER=${SEMVER}" >> $GITHUB_ENV
-          echo "📦 Version: ${CURRENT} → ${NEW_VERSION}"
+          echo "NEW_VERSION=${NEW_FULL}" >> $GITHUB_ENV
+          echo "SEMVER=${NEW_SEMVER}" >> $GITHUB_ENV
+          echo "📦 Version: ${CURRENT} → ${NEW_FULL}"
 
       - name: Commit version bump
         working-directory: .
@@ -56,7 +61,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add wallet/pubspec.yaml
-          git commit -m "chore(wallet): bump build ${OLD_VERSION} → ${NEW_VERSION} [skip ci]" || echo "No changes"
+          git commit -m "chore(wallet): v${SEMVER} [skip ci]" || echo "No changes"
           git push || echo "Push skipped"
 
       - name: Install dependencies
