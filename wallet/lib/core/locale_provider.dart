@@ -3,14 +3,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class LocaleProvider extends ChangeNotifier {
   static const String _key = 'app_locale';
+  static const String _themeKey = 'app_theme_mode';
   String _locale = 'th';
+  bool _isDark = true;
 
   String get locale => _locale;
   bool get isThai => _locale == 'th';
+  bool get isDark => _isDark;
+  ThemeMode get themeMode => _isDark ? ThemeMode.dark : ThemeMode.light;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _locale = prefs.getString(_key) ?? 'th';
+    _isDark = prefs.getBool(_themeKey) ?? true;
     notifyListeners();
   }
 
@@ -23,6 +28,13 @@ class LocaleProvider extends ChangeNotifier {
 
   Future<void> toggle() async {
     await setLocale(_locale == 'th' ? 'en' : 'th');
+  }
+
+  Future<void> toggleTheme() async {
+    _isDark = !_isDark;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_themeKey, _isDark);
+    notifyListeners();
   }
 
   String t(String key) => _translations[_locale]?[key] ?? _translations['en']?[key] ?? key;
@@ -210,6 +222,9 @@ class LocaleProvider extends ChangeNotifier {
       'settings.network': 'เครือข่าย',
       'settings.dangerZone': 'โซนอันตราย',
       'settings.language': 'ภาษา',
+      'settings.theme': 'ธีม',
+      'settings.themeLight': 'โหมดสว่าง',
+      'settings.themeDark': 'โหมดมืด',
       'settings.biometric': 'ปลดล็อกด้วยลายนิ้วมือ',
       'settings.biometricDesc': 'ใช้ลายนิ้วมือ/Face ID เข้ากระเป๋า',
       'settings.backup': 'สำรอง Seed Phrase',
@@ -517,6 +532,9 @@ class LocaleProvider extends ChangeNotifier {
       'settings.network': 'NETWORK',
       'settings.dangerZone': 'DANGER ZONE',
       'settings.language': 'Language',
+      'settings.theme': 'Theme',
+      'settings.themeLight': 'Light Mode',
+      'settings.themeDark': 'Dark Mode',
       'settings.biometric': 'Fingerprint Unlock',
       'settings.biometricDesc': 'Use fingerprint/Face ID to unlock wallet',
       'settings.backup': 'Backup Seed Phrase',

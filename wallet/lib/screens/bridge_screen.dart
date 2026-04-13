@@ -416,13 +416,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0, -0.5),
-            radius: 1.5,
-            colors: [Color(0xFF0C1929), AppTheme.bgDark],
-          ),
-        ),
+        decoration: AppColors.of(context).screenBg,
         child: SafeArea(
           child: Column(
             children: [

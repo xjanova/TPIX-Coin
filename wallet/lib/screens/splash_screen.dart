@@ -138,16 +138,7 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.2,
-            colors: [
-              Color(0xFF0F172A),
-              AppTheme.bgDark,
-            ],
-          ),
-        ),
+        decoration: AppColors.of(context).screenBg,
         child: Stack(
           children: [
             // Animated particles background

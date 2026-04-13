@@ -23,6 +23,7 @@ import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
 import '../services/walletconnect_service.dart';
 import 'package:app_links/app_links.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -129,16 +130,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final c = AppColors.of(context);
     return Scaffold(
       body: Consumer<WalletProvider>(
         builder: (context, wallet, _) => Container(
-          decoration: const BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(0, -0.5),
-              radius: 1.5,
-              colors: [Color(0xFF0C1929), AppTheme.bgDark],
-            ),
-          ),
+          decoration: c.screenBg,
           child: SafeArea(
             child: RefreshIndicator(
               onRefresh: wallet.refreshBalance,
@@ -185,6 +181,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildHeader(WalletProvider wallet, LocaleProvider l) {
+    final c = AppColors.of(context);
     return Row(
       children: [
         // Avatar with glow — tap to open wallet list
@@ -214,7 +211,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 children: [
                   Text(
                     wallet.activeWallet?.name ?? 'TPIX Wallet',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text),
                   ),
                   if (wallet.walletCount > 1) ...[
                     const SizedBox(width: 4),
@@ -282,9 +279,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             height: 32,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.06),
+              color: c.glassColor,
             ),
-            child: const Icon(Icons.settings_rounded, color: AppTheme.textSecondary, size: 18),
+            child: Icon(Icons.settings_rounded, color: c.textSec, size: 18),
           ),
         ),
         const SizedBox(width: 8),
@@ -421,6 +418,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildBalanceCard(WalletProvider wallet, LocaleProvider l) {
+    final c = AppColors.of(context);
     return AnimatedBuilder(
       animation: _balanceScale,
       builder: (_, child) => Transform.scale(scale: _balanceScale.value, child: child),
@@ -429,15 +427,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
-          gradient: const LinearGradient(
-            colors: [Color(0xFF0E2A47), Color(0xFF0A1628)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.15)),
-          boxShadow: [
-            BoxShadow(color: AppTheme.primary.withValues(alpha: 0.1), blurRadius: 40, spreadRadius: 5),
-          ],
+          gradient: c.balanceGradient,
+          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+          boxShadow: c.elevatedShadow,
         ),
         child: Stack(
           children: [
@@ -568,6 +560,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required Color color,
     required VoidCallback onTap,
   }) {
+    final c = AppColors.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -577,8 +570,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           padding: const EdgeInsets.symmetric(vertical: 20),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            color: color.withValues(alpha: 0.08),
-            border: Border.all(color: color.withValues(alpha: 0.15)),
+            color: c.actionBtnBg(color),
+            border: Border.all(color: c.actionBtnBorder(color)),
+            boxShadow: c.cardShadow,
           ),
           child: Column(
             children: [
@@ -587,13 +581,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 height: 48,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: color.withValues(alpha: 0.15),
+                  color: c.actionBtnIcon(color),
                 ),
                 child: Icon(icon, color: color, size: 24),
               ),
               const SizedBox(height: 10),
               Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
-              Text(sublabel, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+              Text(sublabel, style: TextStyle(fontSize: 11, color: c.textMuted)),
             ],
           ),
         ),
@@ -605,13 +599,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildTokenList(WalletProvider wallet, LocaleProvider l) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: glassCard(borderRadius: 20),
+      decoration: adaptiveGlassCard(context, borderRadius: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text(l.t('token.myTokens'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+              Text(l.t('token.myTokens'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
               const Spacer(),
               GestureDetector(
                 onTap: () async {
@@ -690,12 +684,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(symbol, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
-                  Text(name, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  Text(symbol, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
+                  Text(name, style: TextStyle(fontSize: 11, color: AppColors.of(context).textMuted)),
                 ],
               ),
             ),
-            Text(balance, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+            Text(balance, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.of(context).text)),
           ],
         ),
       ),
@@ -840,13 +834,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: glassCard(borderRadius: 20),
+      decoration: adaptiveGlassCard(context, borderRadius: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text(l.t('home.recentTx'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+              Text(l.t('home.recentTx'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
               const Spacer(),
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TxHistoryScreen())),
@@ -932,14 +926,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: glassCard(borderRadius: 16),
+            decoration: adaptiveGlassCard(context, borderRadius: 16),
             child: Row(
               children: [
                 const Icon(Icons.settings_rounded, color: AppTheme.primary, size: 22),
                 const SizedBox(width: 12),
-                Text(l.t('settings.title'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+                Text(l.t('settings.title'), style: TextStyle(fontSize: 14, color: AppColors.of(context).textSec)),
                 const Spacer(),
-                const Icon(Icons.arrow_forward_ios, color: AppTheme.textMuted, size: 14),
+                Icon(Icons.arrow_forward_ios, color: AppColors.of(context).textMuted, size: 14),
               ],
             ),
           ),
@@ -951,12 +945,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildInfoRow(IconData icon, String title, String value, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: glassCard(borderRadius: 16),
+      decoration: adaptiveGlassCard(context, borderRadius: 16),
       child: Row(
         children: [
           Icon(icon, color: color, size: 22),
           const SizedBox(width: 12),
-          Text(title, style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+          Text(title, style: TextStyle(fontSize: 14, color: AppColors.of(context).textSec)),
           const Spacer(),
           Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
         ],
@@ -967,11 +961,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildQuickLinks(LocaleProvider l) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: glassCard(borderRadius: 20),
+      decoration: adaptiveGlassCard(context, borderRadius: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(l.t('home.links'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+          Text(l.t('home.links'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
           const SizedBox(height: 12),
           _buildLink('🌐', 'TPIX TRADE', 'https://tpix.online'),
           _buildLink('🔍', 'Explorer', TpixChain.explorerUrl),
@@ -983,16 +977,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildLink(String emoji, String label, String url) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 18)),
-          const SizedBox(width: 10),
-          Text(label, style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
-          const Spacer(),
-          Icon(Icons.open_in_new, size: 16, color: AppTheme.textMuted.withValues(alpha: 0.5)),
-        ],
+    final c = AppColors.of(context);
+    return GestureDetector(
+      onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 10),
+            Text(label, style: TextStyle(fontSize: 14, color: c.textSec)),
+            const Spacer(),
+            Icon(Icons.open_in_new, size: 16, color: c.textMuted),
+          ],
+        ),
       ),
     );
   }

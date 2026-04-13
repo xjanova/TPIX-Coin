@@ -9,11 +9,6 @@ import 'screens/splash_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: AppTheme.bgDark,
-  ));
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   final localeProvider = LocaleProvider();
@@ -38,10 +33,22 @@ class TPIXWalletApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LocaleProvider>();
+
+    // Update system UI overlay based on theme
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: locale.isDark ? Brightness.light : Brightness.dark,
+      systemNavigationBarColor: locale.isDark ? AppTheme.bgDark : AppTheme.bgLight,
+      systemNavigationBarIconBrightness: locale.isDark ? Brightness.light : Brightness.dark,
+    ));
+
     return MaterialApp(
       title: 'TPIX Wallet',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: locale.themeMode,
       home: const SplashScreen(),
     );
   }

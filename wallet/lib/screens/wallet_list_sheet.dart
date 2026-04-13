@@ -22,14 +22,17 @@ class WalletListSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final c = AppColors.of(context);
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return Consumer<WalletProvider>(
       builder: (context, wallet, _) => Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.7,
         ),
-        decoration: const BoxDecoration(
-          color: AppTheme.bgCard,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        padding: EdgeInsets.only(bottom: bottomPad > 0 ? bottomPad : 16),
+        decoration: BoxDecoration(
+          color: c.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -41,7 +44,7 @@ class WalletListSheet extends StatelessWidget {
                 width: 40, height: 4,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
-                  color: AppTheme.textMuted.withValues(alpha: 0.3),
+                  color: c.textMuted.withValues(alpha: 0.3),
                 ),
               ),
             ),
@@ -50,7 +53,7 @@ class WalletListSheet extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Row(
                 children: [
-                  Text(l.t('wallets.title'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+                  Text(l.t('wallets.title'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

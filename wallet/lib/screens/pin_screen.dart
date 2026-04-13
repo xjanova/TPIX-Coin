@@ -179,13 +179,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0, -0.5),
-            radius: 1.5,
-            colors: [Color(0xFF0F172A), AppTheme.bgDark],
-          ),
-        ),
+        decoration: AppColors.of(context).screenBg,
         child: SafeArea(
           child: Column(
             children: [
@@ -206,9 +200,9 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
 
               const SizedBox(height: 32),
 
-              Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white)),
+              Text(title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
               const SizedBox(height: 8),
-              Text(subtitle, style: const TextStyle(fontSize: 14, color: AppTheme.textMuted)),
+              Text(subtitle, style: TextStyle(fontSize: 14, color: AppColors.of(context).textMuted)),
 
               const SizedBox(height: 40),
 

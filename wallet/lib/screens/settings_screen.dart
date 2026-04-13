@@ -39,15 +39,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final c = AppColors.of(context);
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0, -0.3),
-            radius: 1.5,
-            colors: [Color(0xFF0F172A), AppTheme.bgDark],
-          ),
-        ),
+        decoration: c.settingsBg,
         child: SafeArea(
           child: Column(
             children: [
@@ -62,6 +57,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _sectionTitle(l.t('settings.general')),
                       const SizedBox(height: 8),
                       _buildLanguageTile(l),
+                      const SizedBox(height: 8),
+                      _buildThemeTile(l),
                       const SizedBox(height: 8),
                       _buildBiometricTile(l),
 
@@ -134,7 +131,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           children: [
                             Image.asset('assets/images/logowallet.png', width: 48, height: 48),
                             const SizedBox(height: 8),
-                            const Text('TPIX Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                            Text('TPIX Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
                             if (_appVersion.isNotEmpty)
                               Text('v$_appVersion', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                             const SizedBox(height: 4),
@@ -158,20 +155,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildHeader(LocaleProvider l) {
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           IconButton(
             onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+            icon: Icon(Icons.arrow_back_ios, color: c.text),
           ),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(l.t('settings.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-              Text(l.t('settings.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+              Text(l.t('settings.title'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
+              Text(l.t('settings.subtitle'), style: TextStyle(fontSize: 12, color: c.textMuted)),
             ],
           ),
         ],
@@ -182,14 +180,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 4),
-      child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 1)),
+      child: Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.of(context).textMuted, letterSpacing: 1)),
     );
   }
 
   Widget _buildLanguageTile(LocaleProvider l) {
+    final c = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: glassCard(borderRadius: 16),
+      decoration: adaptiveGlassCard(context, borderRadius: 16),
       child: Row(
         children: [
           const Icon(Icons.language_rounded, color: AppTheme.primary, size: 22),
@@ -198,8 +197,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l.t('settings.language'), style: const TextStyle(fontSize: 14, color: Colors.white)),
-                Text(l.isThai ? 'Thai' : 'English', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                Text(l.t('settings.language'), style: TextStyle(fontSize: 14, color: c.text)),
+                Text(l.isThai ? 'Thai' : 'English', style: TextStyle(fontSize: 11, color: c.textMuted)),
               ],
             ),
           ),
@@ -216,6 +215,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildThemeTile(LocaleProvider l) {
+    final c = AppColors.of(context);
+    final isDark = l.isDark;
+    return GestureDetector(
+      onTap: () => l.toggleTheme(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: adaptiveGlassCard(context, borderRadius: 16),
+        child: Row(
+          children: [
+            Icon(isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                color: isDark ? AppTheme.accent : AppTheme.warm, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l.t('settings.theme'), style: TextStyle(fontSize: 14, color: c.text)),
+                  Text(isDark ? l.t('settings.themeDark') : l.t('settings.themeLight'),
+                      style: TextStyle(fontSize: 11, color: c.textMuted)),
+                ],
+              ),
+            ),
+            Container(
+              width: 44,
+              height: 24,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: isDark ? AppTheme.accent.withValues(alpha: 0.3) : AppTheme.warm.withValues(alpha: 0.3),
+              ),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 200),
+                alignment: isDark ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isDark ? AppTheme.accent : AppTheme.warm,
+                  ),
+                  child: Icon(isDark ? Icons.dark_mode : Icons.light_mode, size: 12, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -267,17 +317,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: glassCard(borderRadius: 16),
+                decoration: adaptiveGlassCard(context, borderRadius: 16),
                 child: Row(
                   children: [
-                    Icon(Icons.fingerprint, color: enabled ? AppTheme.primary : AppTheme.textMuted, size: 22),
+                    Icon(Icons.fingerprint, color: enabled ? AppTheme.primary : AppColors.of(context).textMuted, size: 22),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(l.t('settings.biometric'), style: const TextStyle(fontSize: 14, color: Colors.white)),
-                          Text(l.t('settings.biometricDesc'), style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                          Text(l.t('settings.biometric'), style: TextStyle(fontSize: 14, color: AppColors.of(context).text)),
+                          Text(l.t('settings.biometricDesc'), style: TextStyle(fontSize: 11, color: AppColors.of(context).textMuted)),
                         ],
                       ),
                     ),
@@ -319,11 +369,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
+    final c = AppColors.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: glassCard(borderRadius: 16),
+        decoration: adaptiveGlassCard(context, borderRadius: 16),
         child: Row(
           children: [
             Icon(icon, color: color, size: 22),
@@ -332,12 +383,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontSize: 14, color: Colors.white)),
-                  Text(subtitle, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  Text(title, style: TextStyle(fontSize: 14, color: c.text)),
+                  Text(subtitle, style: TextStyle(fontSize: 11, color: c.textMuted)),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, color: AppTheme.textMuted, size: 14),
+            Icon(Icons.arrow_forward_ios, color: c.textMuted, size: 14),
           ],
         ),
       ),
@@ -345,6 +396,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildInfoTile(IconData icon, String title, String value, Color color) {
+    final c = AppColors.of(context);
     return GestureDetector(
       onTap: () {
         Clipboard.setData(ClipboardData(text: value));
@@ -354,18 +406,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: glassCard(borderRadius: 16),
+        decoration: adaptiveGlassCard(context, borderRadius: 16),
         child: Row(
           children: [
             Icon(icon, color: color, size: 22),
             const SizedBox(width: 12),
-            Text(title, style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+            Text(title, style: TextStyle(fontSize: 14, color: c.textSec)),
             const Spacer(),
             Flexible(
               child: Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color), overflow: TextOverflow.ellipsis),
             ),
             const SizedBox(width: 4),
-            const Icon(Icons.copy, size: 12, color: AppTheme.textMuted),
+            Icon(Icons.copy, size: 12, color: c.textMuted),
           ],
         ),
       ),
