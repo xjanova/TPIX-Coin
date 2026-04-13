@@ -30,44 +30,88 @@ jobs:
             uptime
             echo "--- Docker disk ---"
             docker system df 2>/dev/null || echo "N/A"
+            echo "--- Docker version ---"
+            docker --version
 
             echo ""
-            echo "=== 2. CONTAINER STATUS ==="
-            docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.RestartCount}}' | grep -E "tpix|NAMES"
-
-            echo ""
-            echo "=== 3. VALIDATOR-1 LAST 100 LOGS ==="
-            docker logs --tail 100 tpix-validator-1 2>&1 | tail -100
-
-            echo ""
-            echo "=== 4. VALIDATOR-2 LAST 30 LOGS ==="
-            docker logs --tail 30 tpix-validator-2 2>&1 | tail -30
-
-            echo ""
-            echo "=== 5. VALIDATOR-3 LAST 30 LOGS ==="
-            docker logs --tail 30 tpix-validator-3 2>&1 | tail -30
-
-            echo ""
-            echo "=== 6. VALIDATOR-4 LAST 30 LOGS ==="
-            docker logs --tail 30 tpix-validator-4 2>&1 | tail -30
-
-            echo ""
-            echo "=== 7. ERROR/PANIC SCAN (all validators, last 500 lines) ==="
+            echo "=== 2. CONTAINER STATUS (docker inspect) ==="
             for v in 1 2 3 4; do
               echo "--- validator-$v ---"
-              docker logs --tail 500 tpix-validator-$v 2>&1 | grep -iE "error|panic|fatal|killed|oom|timeout|failed|disconnect|round change" | tail -20
+              docker inspect tpix-validator-$v 2>/dev/null | python3 -c "
+            import sys,json
+            d=json.load(sys.stdin)[0]
+            s=d['State']
+            rc=d.get('RestartCount',0)
+            print(f'  Status: {s[\"Status\"]}')
+            print(f'  Running: {s[\"Running\"]}')
+            print(f'  StartedAt: {s[\"StartedAt\"]}')
+            print(f'  FinishedAt: {s[\"FinishedAt\"]}')
+            print(f'  RestartCount: {rc}')
+            print(f'  OOMKilled: {s.get(\"OOMKilled\",False)}')
+            print(f'  ExitCode: {s.get(\"ExitCode\",\"N/A\")}')
+            hc=s.get('Health')
+            if hc: print(f'  Health: {hc[\"Status\"]}')
+            " 2>/dev/null || echo "  inspect failed"
             done
 
             echo ""
-            echo "=== 8. DOCKER EVENTS (last 24h) ==="
-            docker events --since "24h" --until "now" --format '{{.Time}} {{.Action}} {{.Actor.Attributes.name}}' 2>/dev/null | grep tpix | tail -30
+            echo "=== 3. CONTAINER UPTIME (docker ps) ==="
+            docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}' 2>/dev/null | grep -E "tpix|NAMES" || echo "N/A"
 
             echo ""
-            echo "=== 9. SYSTEM LOGS (OOM killer) ==="
-            dmesg 2>/dev/null | grep -iE "oom|killed|out of memory" | tail -10 || journalctl -k --since "24 hours ago" 2>/dev/null | grep -iE "oom|killed" | tail -10 || echo "Cannot read system logs"
+            echo "=== 4. VALIDATOR-1 LAST 60 LOGS ==="
+            docker logs --tail 60 tpix-validator-1 2>&1 | tail -60
 
             echo ""
-            echo "=== 10. CURRENT BLOCK ==="
+            echo "=== 5. VALIDATORS 2-4 LAST 15 LOGS ==="
+            for v in 2 3 4; do
+              echo "--- validator-$v ---"
+              docker logs --tail 15 tpix-validator-$v 2>&1 | tail -15
+            done
+
+            echo ""
+            echo "=== 6. ERROR/PANIC SCAN (all validators, last 2000 lines) ==="
+            for v in 1 2 3 4; do
+              echo "--- validator-$v ---"
+              docker logs --tail 2000 tpix-validator-$v 2>&1 | grep -iE "error|panic|fatal|killed|oom|timeout|disconnect|round change|WARN|ERR" | grep -viE "executed txs.*failed=0" | tail -30
+            done
+
+            echo ""
+            echo "=== 7. ROUND CHANGE DETECTION (consensus stall indicator) ==="
+            for v in 1 2 3 4; do
+              echo "--- validator-$v ---"
+              docker logs --tail 5000 tpix-validator-$v 2>&1 | grep -iE "round change|round started: round=[^0]|state change|timeout|new round" | tail -20
+            done
+
+            echo ""
+            echo "=== 8. BLOCK PRODUCTION GAP CHECK ==="
+            echo "Looking for gaps > 10s between blocks in validator-1..."
+            docker logs --tail 2000 tpix-validator-1 2>&1 | grep "new block:" | awk -F'Z ' '{print $1}' | tail -50
+
+            echo ""
+            echo "=== 9. DOCKER EVENTS (last 48h, raw) ==="
+            docker events --since "48h" --until "$(date -u +%Y-%m-%dT%H:%M:%S)" 2>/dev/null | grep -i tpix | tail -40 || echo "No docker events"
+
+            echo ""
+            echo "=== 10. SYSTEM LOGS (OOM + crashes) ==="
+            dmesg 2>/dev/null | grep -iE "oom|killed|out of memory|segfault|panic" | tail -15 || journalctl -k --since "48 hours ago" 2>/dev/null | grep -iE "oom|killed|segfault" | tail -15 || echo "Cannot read system logs"
+
+            echo ""
+            echo "=== 11. DATA DIRECTORY SIZES ==="
+            INFRA="$HOME/tpix-infrastructure"
+            du -sh "$INFRA"/data/validator-*/blockchain 2>/dev/null || du -sh "$INFRA"/validator-*/data 2>/dev/null || echo "Cannot find data dirs"
+            ls -la "$INFRA"/ 2>/dev/null | head -20 || echo "Cannot list infra dir"
+
+            echo ""
+            echo "=== 12. PEER CONNECTIVITY ==="
+            for v in 1 2 3 4; do
+              PORT=$((10000 + v))
+              echo "--- validator-$v (port $PORT) ---"
+              curl -s -X POST http://127.0.0.1:$PORT -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}' 2>/dev/null | python3 -c "import sys,json;r=json.load(sys.stdin);print(f'  Peers: {int(r[\"result\"],16)}')" 2>/dev/null || echo "  RPC N/A on port $PORT"
+            done
+
+            echo ""
+            echo "=== 13. CURRENT BLOCK ==="
             curl -s -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | python3 -c "import sys,json;print(f'Block: {int(json.load(sys.stdin)[\"result\"],16)}')" 2>/dev/null || echo "RPC unavailable"
 
             echo ""
