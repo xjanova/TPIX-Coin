@@ -1,0 +1,191 @@
+name: Tune TPIX Chain (Go Runtime + Memory)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "TUNE" to confirm rolling restart'
+        required: true
+        default: 'NO'
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    if: inputs.confirm == 'TUNE'
+    steps:
+      - name: Backup, patch compose, rolling restart
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 10m
+          script: |
+            set -e
+            INFRA="$HOME/tpix-infrastructure"
+            cd "$INFRA"
+
+            echo "=== 1. BACKUP ==="
+            TS=$(date +%Y%m%d-%H%M%S)
+            cp docker-compose.yml "docker-compose.yml.bak-$TS"
+            echo "Backup: docker-compose.yml.bak-$TS"
+
+            echo ""
+            echo "=== 2. PATCH COMPOSE (Python) ==="
+            python3 <<'PYEOF'
+            import re, sys
+            PATH = "docker-compose.yml"
+            with open(PATH) as f:
+                src = f.read()
+
+            # Patch 1: mem_limit 2g -> 8g
+            src = re.sub(r"mem_limit:\s*2g", "mem_limit: 8g", src)
+
+            # Patch 2: add mem_reservation after mem_limit if missing
+            def add_mem_reservation(m):
+                line = m.group(0)
+                if "mem_reservation" in line:
+                    return line
+                indent = m.group(1)
+                return f"{line}\n{indent}mem_reservation: 4g"
+            src = re.sub(r"^(\s*)mem_limit:\s*8g\s*$", add_mem_reservation, src, flags=re.MULTILINE)
+
+            # Patch 3: add environment block for Go runtime tuning after each container_name: tpix-validator-N line
+            # Only add if not already present
+            def add_env(m):
+                header = m.group(0)
+                name = m.group(1)
+                # Look ahead for existing "environment:" in the service block
+                return header
+            # Simpler: insert environment block right before command: line for each validator
+            def insert_env_before_command(src):
+                out = []
+                lines = src.split("\n")
+                i = 0
+                while i < len(lines):
+                    line = lines[i]
+                    stripped = line.lstrip()
+                    if stripped.startswith("command:") and "polygon-edge" not in stripped:
+                        indent = line[:len(line)-len(stripped)]
+                        # Check if previous ~20 lines already have environment: at same indent
+                        window = "\n".join(out[-20:])
+                        svc_indent_has_env = re.search(rf"^{re.escape(indent)}environment:", window, re.MULTILINE)
+                        if not svc_indent_has_env:
+                            out.append(f"{indent}environment:")
+                            out.append(f"{indent}  - GOGC=50")
+                            out.append(f"{indent}  - GOMEMLIMIT=7GiB")
+                            out.append(f"{indent}  - GOMAXPROCS=6")
+                    out.append(line)
+                    i += 1
+                return "\n".join(out)
+            src = insert_env_before_command(src)
+
+            # Patch 4: add healthcheck to validator-2,3,4 if missing
+            # Find each validator service block and add healthcheck after "command:" line
+            def add_healthcheck(src):
+                out = []
+                lines = src.split("\n")
+                i = 0
+                in_validator = None
+                current_service = None
+                while i < len(lines):
+                    line = lines[i]
+                    m = re.match(r"^\s*(tpix-validator-\d):\s*$", line)
+                    if m:
+                        current_service = m.group(1)
+                    # When we hit mem_limit line of a validator service, check if healthcheck exists in the service block
+                    if current_service and line.strip().startswith("mem_limit:"):
+                        # Look back to see if healthcheck was already defined in this service
+                        # Scan from last "tpix-validator-" header
+                        last_hdr = -1
+                        for j in range(len(out)-1, -1, -1):
+                            if re.match(r"^\s*tpix-validator-\d:\s*$", out[j]):
+                                last_hdr = j
+                                break
+                        block = "\n".join(out[last_hdr:]) if last_hdr >= 0 else ""
+                        if "healthcheck:" not in block:
+                            indent = line[:len(line)-len(line.lstrip())]
+                            out.append(f"{indent}healthcheck:")
+                            out.append(f'{indent}  test: ["CMD-SHELL", "polygon-edge status --grpc-address 127.0.0.1:10000 > /dev/null 2>&1"]')
+                            out.append(f"{indent}  interval: 30s")
+                            out.append(f"{indent}  timeout: 10s")
+                            out.append(f"{indent}  retries: 3")
+                            out.append(f"{indent}  start_period: 60s")
+                    out.append(line)
+                    i += 1
+                return "\n".join(out)
+            src = add_healthcheck(src)
+
+            with open(PATH, "w") as f:
+                f.write(src)
+            print("Patched docker-compose.yml successfully")
+            PYEOF
+
+            echo ""
+            echo "=== 3. VERIFY PATCH (grep) ==="
+            echo "--- mem_limit occurrences ---"
+            grep -n "mem_limit" docker-compose.yml
+            echo "--- environment blocks ---"
+            grep -n -A 3 "environment:" docker-compose.yml | head -40
+            echo "--- healthcheck count ---"
+            grep -c "healthcheck:" docker-compose.yml
+
+            echo ""
+            echo "=== 4. VALIDATE YAML ==="
+            python3 -c "import yaml; yaml.safe_load(open('docker-compose.yml'))" && echo "✅ YAML valid" || (echo "❌ YAML invalid — restoring backup"; cp "docker-compose.yml.bak-$TS" docker-compose.yml; exit 1)
+
+            echo ""
+            echo "=== 5. CURRENT BLOCK (before) ==="
+            B_BEFORE=$(curl -s -m 10 -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+            echo "Block before: $B_BEFORE"
+
+            echo ""
+            echo "=== 6. ROLLING RESTART (one validator at a time) ==="
+            for v in 1 2 3 4; do
+              echo ""
+              echo "--- Restarting tpix-validator-$v ---"
+              docker compose up -d tpix-validator-$v --force-recreate --no-deps
+              echo "Waiting 25s for validator-$v to sync back..."
+              sleep 25
+
+              # Verify block is still advancing after each restart
+              B_NOW=$(curl -s -m 10 -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+              echo "Block after validator-$v restart: $B_NOW"
+
+              if [ "$B_NOW" = "0" ] || [ "$B_NOW" -le "$B_BEFORE" ]; then
+                echo "⚠️ Block not advancing! Waiting extra 15s..."
+                sleep 15
+                B_NOW=$(curl -s -m 10 -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+                echo "Block after extra wait: $B_NOW"
+                if [ "$B_NOW" -le "$B_BEFORE" ]; then
+                  echo "❌ CHAIN STALLED after validator-$v restart — rolling back!"
+                  cp "docker-compose.yml.bak-$TS" docker-compose.yml
+                  docker compose up -d --force-recreate
+                  sleep 20
+                  exit 1
+                fi
+              fi
+              B_BEFORE=$B_NOW
+            done
+
+            echo ""
+            echo "=== 7. FINAL VERIFICATION ==="
+            sleep 10
+            B_FINAL=$(curl -s -m 10 -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
+            echo "Block final: $B_FINAL"
+
+            echo ""
+            echo "=== 8. VERIFY Go ENV VARS IN RUNNING CONTAINER ==="
+            docker exec tpix-validator-1 env 2>/dev/null | grep -E "GOGC|GOMEM|GOMAX" || echo "(vars not visible via env — but set at process level)"
+
+            echo ""
+            echo "=== 9. CONTAINER MEMORY LIMITS ==="
+            for v in 1 2 3 4; do
+              LIMIT=$(docker inspect tpix-validator-$v --format '{{.HostConfig.Memory}}' 2>/dev/null)
+              HUMAN=$((LIMIT / 1024 / 1024 / 1024))
+              echo "tpix-validator-$v: mem_limit = ${HUMAN}GB"
+            done
+
+            echo ""
+            echo "=== DONE — Tuning applied ==="
