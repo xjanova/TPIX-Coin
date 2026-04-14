@@ -1,0 +1,87 @@
+name: Fetch TPIX Chain Config
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump compose and config files
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 3m
+          script: |
+            INFRA="$HOME/tpix-infrastructure"
+            cd "$INFRA"
+
+            echo "=== 1. INFRA DIRECTORY TREE ==="
+            find . -maxdepth 3 -type f \( -name "*.yml" -o -name "*.yaml" -o -name "genesis.json" -o -name "Dockerfile" -o -name "*.sh" \) 2>/dev/null | head -50
+
+            echo ""
+            echo "=== 2. MAIN docker-compose.yml ==="
+            cat docker-compose.yml 2>/dev/null || echo "(not found)"
+
+            echo ""
+            echo "=== 3. tpix-chain directory ==="
+            ls -la tpix-chain/ 2>/dev/null
+
+            echo ""
+            echo "=== 4. tpix-chain/docker-compose ==="
+            cat tpix-chain/docker-compose*.yml 2>/dev/null || echo "(not found)"
+
+            echo ""
+            echo "=== 5. Polygon Edge version + flags (validator-1) ==="
+            docker inspect tpix-validator-1 2>/dev/null | python3 -c "
+            import sys,json
+            d=json.load(sys.stdin)[0]
+            cfg=d['Config']
+            print('Image:', cfg.get('Image'))
+            print('Cmd:', cfg.get('Cmd'))
+            print('Entrypoint:', cfg.get('Entrypoint'))
+            print('Env:')
+            for e in (cfg.get('Env') or []): print(' ', e)
+            print('Memory limit:', d['HostConfig'].get('Memory'))
+            print('CpuCount:', d['HostConfig'].get('CpuCount'))
+            print('NanoCpus:', d['HostConfig'].get('NanoCpus'))
+            print('CpuShares:', d['HostConfig'].get('CpuShares'))
+            print('RestartPolicy:', d['HostConfig'].get('RestartPolicy'))
+            print('LogConfig:', d['HostConfig'].get('LogConfig'))
+            "
+
+            echo ""
+            echo "=== 6. Polygon Edge binary version ==="
+            docker exec tpix-validator-1 polygon-edge version 2>/dev/null || docker exec tpix-validator-1 /usr/local/bin/polygon-edge version 2>/dev/null || echo "Cannot get version"
+
+            echo ""
+            echo "=== 7. Genesis timeouts ==="
+            for p in tpix-chain/genesis.json genesis.json tpix-chain/*/genesis.json; do
+              if [ -f "$p" ]; then
+                echo "--- $p ---"
+                python3 -c "
+            import json
+            d=json.load(open('$p'))
+            ibft=d.get('params',{}).get('engine',{}).get('ibft',{}) or d.get('params',{}).get('ibft',{})
+            print(json.dumps(ibft, indent=2))
+            # Also try top-level engine/extra fields
+            print('ChainID:', d.get('params',{}).get('chainID'))
+            print('BlockGasTarget:', d.get('params',{}).get('blockGasTarget'))
+            " 2>/dev/null
+              fi
+            done
+
+            echo ""
+            echo "=== 8. CPU info ==="
+            nproc
+            lscpu | grep -E "^CPU|^Model name|^Socket|^Core" | head -10
+
+            echo ""
+            echo "=== 9. Docker compose ps ==="
+            docker compose ps 2>/dev/null || docker-compose ps 2>/dev/null || echo "compose ps failed"
+
+            echo ""
+            echo "=== DONE ==="
