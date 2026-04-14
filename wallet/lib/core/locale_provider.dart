@@ -349,6 +349,23 @@ class LocaleProvider extends ChangeNotifier {
       'wc.activeCount': 'การเชื่อมต่อ',
       'wc.noSessions': 'ไม่มีการเชื่อมต่อ',
       'wc.noSessionsDesc': 'สแกน QR จากเว็บเทรดเพื่อเชื่อมต่อกระเป๋า',
+
+      // Update
+      'update.available': 'มีอัปเดตใหม่',
+      'update.whats_new': 'มีอะไรใหม่:',
+      'update.checking': 'กำลังตรวจสอบอัปเดต...',
+      'update.latest': 'คุณใช้เวอร์ชันล่าสุดแล้ว',
+      'update.auto_install': 'ดาวน์โหลด + ติดตั้งอัตโนมัติ',
+      'update.from_browser': 'ดาวน์โหลดจาก tpix.online',
+      'update.check_button': 'ตรวจสอบอัปเดต',
+      'update.check_desc': 'ตรวจหาเวอร์ชันใหม่',
+
+      // Common
+      'common.later': 'ภายหลัง',
+      'common.cancel': 'ยกเลิก',
+      'common.download': 'ดาวน์โหลด',
+      'common.error': 'เกิดข้อผิดพลาด',
+      'common.browser_error': 'ไม่สามารถเปิดเบราว์เซอร์ได้',
     },
     'en': {
       // Splash
@@ -659,6 +676,23 @@ class LocaleProvider extends ChangeNotifier {
       'wc.activeCount': 'connections',
       'wc.noSessions': 'No connections',
       'wc.noSessionsDesc': 'Scan a QR code from a trading site to connect your wallet',
+
+      // Update
+      'update.available': 'Update Available',
+      'update.whats_new': "What's new:",
+      'update.checking': 'Checking for updates...',
+      'update.latest': 'You are on the latest version',
+      'update.auto_install': 'Download & install automatically',
+      'update.from_browser': 'Download from tpix.online',
+      'update.check_button': 'Check for Update',
+      'update.check_desc': 'Check for new version',
+
+      // Common
+      'common.later': 'Later',
+      'common.cancel': 'Cancel',
+      'common.download': 'Download',
+      'common.error': 'An error occurred',
+      'common.browser_error': 'Could not open browser',
     },
   };
 }

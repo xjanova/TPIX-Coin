@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import '../core/locale_provider.dart';
 
 /// TPIX Wallet — Auto-Update Service
 /// Downloads APK directly from GitHub Releases and installs in-app.
@@ -38,7 +41,7 @@ class UpdateService {
         return ReleaseInfo.fromJson(response.data);
       }
     } catch (e) {
-      debugPrint('Update check failed: $e');
+      debugPrint('Update check failed: ${e.runtimeType}');
     }
     return null;
   }
@@ -67,7 +70,7 @@ class UpdateService {
         apkSize: release.apkSize,
       );
     } catch (e) {
-      debugPrint('Update check error: $e');
+      debugPrint('Update check error: ${e.runtimeType}');
       return UpdateResult(available: false, currentVersion: 'unknown');
     }
   }
@@ -140,7 +143,7 @@ class UpdateService {
       if (e is DioException && e.type == DioExceptionType.cancel) {
         rethrow; // Let caller handle cancellation
       }
-      debugPrint('Download/install failed: $e');
+      debugPrint('Download/install failed: ${e.runtimeType}');
       return false;
     }
   }
@@ -272,11 +275,12 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     try {
       await widget.service.openDownloadPage();
       if (mounted) Navigator.pop(context);
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
+        final l = context.read<LocaleProvider>();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not open browser: $e'),
+            content: Text(l.t('common.browser_error')),
             backgroundColor: Colors.red,
           ),
         );
@@ -286,6 +290,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l = context.watch<LocaleProvider>();
     return AlertDialog(
       backgroundColor: const Color(0xFF1A1F2E),
       shape: RoundedRectangleBorder(
@@ -304,9 +309,9 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                 color: Color(0xFF00BCD4), size: 24),
           ),
           const SizedBox(width: 12),
-          const Expanded(
-            child: Text('Update Available',
-                style: TextStyle(color: Colors.white, fontSize: 18)),
+          Expanded(
+            child: Text(l.t('update.available'),
+                style: const TextStyle(color: Colors.white, fontSize: 18)),
           ),
         ],
       ),
@@ -346,8 +351,8 @@ class _UpdateDialogState extends State<_UpdateDialog> {
           if (widget.result.releaseNotes != null &&
               widget.result.releaseNotes!.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text("What's new:",
-                style: TextStyle(
+            Text(l.t('update.whats_new'),
+                style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
                     fontWeight: FontWeight.bold)),
@@ -413,8 +418,8 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                   Expanded(
                     child: Text(
                       widget.result.apkDownloadUrl != null
-                          ? 'Download & install automatically'
-                          : 'Download from tpix.online',
+                          ? l.t('update.auto_install')
+                          : l.t('update.from_browser'),
                       style: const TextStyle(
                           color: Colors.white70, fontSize: 11),
                     ),
@@ -436,19 +441,19 @@ class _UpdateDialogState extends State<_UpdateDialog> {
               });
             },
             child:
-                const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                Text(l.t('common.cancel'), style: const TextStyle(color: Colors.grey)),
           )
         else ...[
           TextButton(
             onPressed: () => Navigator.pop(context),
             child:
-                const Text('Later', style: TextStyle(color: Colors.grey)),
+                Text(l.t('common.later'), style: const TextStyle(color: Colors.grey)),
           ),
           ElevatedButton.icon(
             icon:
                 const Icon(Icons.download, color: Colors.white, size: 18),
-            label: const Text('Download',
-                style: TextStyle(color: Colors.white)),
+            label: Text(l.t('common.download'),
+                style: const TextStyle(color: Colors.white)),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF00BCD4),
               shape: RoundedRectangleBorder(

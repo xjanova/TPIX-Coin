@@ -13,6 +13,8 @@ import 'pin_screen.dart';
 import 'onboarding_screen.dart';
 import 'dapp_connect_screen.dart';
 import '../services/walletconnect_service.dart';
+import '../services/update_service.dart';
+import '../providers/update_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -109,6 +111,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _sectionTitle(l.t('wc.sectionTitle')),
                       const SizedBox(height: 8),
                       _buildWalletConnectTile(l),
+
+                      const SizedBox(height: 24),
+
+                      // --- App ---
+                      _sectionTitle(l.t('settings.general')),
+                      const SizedBox(height: 8),
+                      _buildTile(
+                        icon: Icons.system_update_rounded,
+                        color: AppTheme.primary,
+                        title: l.t('update.check_button'),
+                        subtitle: l.t('update.check_desc'),
+                        onTap: () => _manualCheckUpdate(l),
+                      ),
 
                       const SizedBox(height: 24),
 
@@ -440,6 +455,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
         MaterialPageRoute(builder: (_) => const DAppConnectScreen()),
       ),
     );
+  }
+
+  /// Manual update check — force (bypass 6h cache)
+  Future<void> _manualCheckUpdate(LocaleProvider l) async {
+    final updateProvider = context.read<UpdateProvider>();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l.t('update.checking')),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+
+    final result = await updateProvider.manualCheck();
+    if (!mounted) return;
+
+    if (result != null && result.available) {
+      UpdateService.showUpdateDialog(context, result, updateProvider.service);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l.t('update.latest')),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   /// View backup seed phrase — requires PIN verification first

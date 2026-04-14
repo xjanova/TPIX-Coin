@@ -24,6 +24,7 @@ import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
 import '../services/walletconnect_service.dart';
 import '../services/update_service.dart';
+import '../providers/update_provider.dart';
 import 'package:app_links/app_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -118,18 +119,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Check for app updates — runs once after HomeScreen is fully built
+  /// Background check — ไม่ block UI, เก็บผลไว้ใน UpdateProvider
+  /// Banner จะโผล่บน home ถ้ามี update (cache 6 ชม.)
   void _checkForUpdate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        final service = UpdateService();
-        final result = await service.checkForUpdate();
-        if (result.available && mounted) {
-          UpdateService.showUpdateDialog(context, result, service);
-        }
-      } catch (_) {
-        // Silent — don't block the app
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<UpdateProvider>().checkInBackground();
     });
   }
 
@@ -166,6 +161,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   children: [
                     _buildHeader(wallet, l),
                     const SizedBox(height: 16),
+                    // Update banner (ถ้ามี version ใหม่)
+                    _buildUpdateBanner(l),
                     // Wallet selector (when multiple wallets)
                     if (wallet.walletCount > 1) ...[
                       _buildWalletSelector(wallet, l),
@@ -197,6 +194,87 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
       ),
+    );
+  }
+
+  /// Update banner — แสดงเมื่อมี version ใหม่ (ไม่ dismissed)
+  Widget _buildUpdateBanner(LocaleProvider l) {
+    return Consumer<UpdateProvider>(
+      builder: (_, update, __) {
+        if (!update.hasUpdate) return const SizedBox.shrink();
+        final result = update.result!;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () =>
+                UpdateService.showUpdateDialog(context, result, update.service),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppTheme.primary.withValues(alpha: 0.35),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primary.withValues(alpha: 0.15),
+                    blurRadius: 12,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.system_update_rounded,
+                        color: AppTheme.primary, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l.t('update.available'),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.of(context).text,
+                          ),
+                        ),
+                        Text(
+                          'v${result.currentVersion} → v${result.latestVersion}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.primary,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded,
+                        color: AppColors.of(context).textSec, size: 18),
+                    onPressed: () => update.dismiss(),
+                    tooltip: l.t('common.later'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
