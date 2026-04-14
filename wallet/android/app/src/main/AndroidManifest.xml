@@ -82,5 +82,11 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:mimeType="application/vnd.android.package-archive"/>
         </intent>
+        <!-- Cross-app discovery: TPIX Trade (tpixtrade://) -->
+        <package android:name="com.xmanstudio.tpix_trade"/>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tpixtrade"/>
+        </intent>
     </queries>
 </manifest>

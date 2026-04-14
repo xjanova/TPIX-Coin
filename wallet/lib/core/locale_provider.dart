@@ -366,6 +366,12 @@ class LocaleProvider extends ChangeNotifier {
       'common.download': 'ดาวน์โหลด',
       'common.error': 'เกิดข้อผิดพลาด',
       'common.browser_error': 'ไม่สามารถเปิดเบราว์เซอร์ได้',
+
+      // Peer app (cross-app discovery)
+      'peer.open_trade': 'เปิด TPIX Trade',
+      'peer.trade_desc': 'เทรดคริปโตด้วยกระเป๋าของคุณ',
+      'peer.install_trade': 'ติดตั้ง TPIX Trade',
+      'peer.install_trade_desc': 'แอพเทรดคริปโตอย่างเป็นทางการ',
     },
     'en': {
       // Splash
@@ -693,6 +699,12 @@ class LocaleProvider extends ChangeNotifier {
       'common.download': 'Download',
       'common.error': 'An error occurred',
       'common.browser_error': 'Could not open browser',
+
+      // Peer app (cross-app discovery)
+      'peer.open_trade': 'Open TPIX Trade',
+      'peer.trade_desc': 'Trade crypto with your wallet',
+      'peer.install_trade': 'Install TPIX Trade',
+      'peer.install_trade_desc': 'Official crypto trading app',
     },
   };
 }

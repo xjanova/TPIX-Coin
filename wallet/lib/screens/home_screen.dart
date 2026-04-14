@@ -25,6 +25,7 @@ import 'dapp_connect_screen.dart';
 import '../services/walletconnect_service.dart';
 import '../services/update_service.dart';
 import '../providers/update_provider.dart';
+import '../widgets/peer_app_card.dart';
 import 'package:app_links/app_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -163,6 +164,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     const SizedBox(height: 16),
                     // Update banner (ถ้ามี version ใหม่)
                     _buildUpdateBanner(l),
+                    // Peer app card (ถ้า TPIX Trade ติดตั้งในเครื่อง)
+                    const PeerAppCard(),
                     // Wallet selector (when multiple wallets)
                     if (wallet.walletCount > 1) ...[
                       _buildWalletSelector(wallet, l),
