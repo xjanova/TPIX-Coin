@@ -11,7 +11,10 @@ class PeerApp {
   PeerApp._();
 
   static const String _tradeScheme = 'tpixtrade';
-  static const String _tradeInstallUrl = 'https://tpix.online/trade';
+  // Direct download — GitHub release (APK asset latest)
+  static const String _tradeInstallUrl =
+      'https://github.com/xjanova/ThaiXTrade/releases/latest';
+  static const String _tradePackage = 'com.xmanstudio.tpix_trade';
 
   // Cache — ถ้าเพิ่งตรวจไปภายใน 5 นาที ใช้ผลเดิม
   static bool? _cachedInstalled;
