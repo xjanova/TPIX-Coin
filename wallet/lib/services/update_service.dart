@@ -19,7 +19,7 @@ class UpdateService {
   static const String _repo = 'TPIX-Coin';
   static const String _apiUrl =
       'https://api.github.com/repos/$_owner/$_repo/releases/latest';
-  static const String _downloadPageUrl = 'https://tpix.online';
+  static const String _downloadPageUrl = 'https://tpix.online/download';
 
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),

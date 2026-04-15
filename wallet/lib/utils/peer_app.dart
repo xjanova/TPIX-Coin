@@ -11,9 +11,8 @@ class PeerApp {
   PeerApp._();
 
   static const String _tradeScheme = 'tpixtrade';
-  // Direct download — GitHub release (APK asset latest)
-  static const String _tradeInstallUrl =
-      'https://github.com/xjanova/ThaiXTrade/releases/latest';
+  // หน้าดาวน์โหลดกลางของ tpix.online — มี APK ทั้ง Trade + Wallet + Masternode
+  static const String _tradeInstallUrl = 'https://tpix.online/download';
   static const String _tradePackage = 'com.xmanstudio.tpix_trade';
 
   // Cache — ถ้าเพิ่งตรวจไปภายใน 5 นาที ใช้ผลเดิม
