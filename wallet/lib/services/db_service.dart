@@ -20,7 +20,7 @@ class DbService {
 
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -33,6 +33,9 @@ class DbService {
         }
         if (oldVersion < 4) {
           await _addChainIdColumn(db);
+        }
+        if (oldVersion < 5) {
+          await _createSignHistoryTable(db);
         }
       },
     );
@@ -64,6 +67,27 @@ class DbService {
 
     // Price history table
     await _createPriceHistoryTable(db);
+
+    // Sign history table (cross-app sign audit log)
+    await _createSignHistoryTable(db);
+  }
+
+  static Future<void> _createSignHistoryTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sign_history(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER NOT NULL,
+        source_app TEXT NOT NULL,
+        source_scheme TEXT NOT NULL,
+        message TEXT NOT NULL,
+        message_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        wallet_slot INTEGER NOT NULL,
+        nonce TEXT
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sign_ts ON sign_history(wallet_slot, timestamp DESC)');
   }
 
   static Future<void> _createTokensTable(Database db) async {
@@ -391,6 +415,74 @@ class DbService {
     final db = await database;
     final cutoff = DateTime.now().subtract(Duration(days: keepDays)).millisecondsSinceEpoch ~/ 1000;
     await db.delete('price_history', where: 'timestamp < ?', whereArgs: [cutoff]);
+  }
+
+  // ================================================================
+  // Sign History CRUD (cross-app sign audit log)
+  // ================================================================
+
+  /// Log a cross-app sign request (approved or rejected)
+  /// [status]: 'signed' | 'rejected' | 'wallet_locked' | 'sign_failed'
+  static Future<void> logSign({
+    required String sourceApp,
+    required String sourceScheme,
+    required String message,
+    required String messageHash,
+    required String status,
+    required int walletSlot,
+    String? nonce,
+  }) async {
+    final db = await database;
+    await db.insert('sign_history', {
+      'timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      'source_app': sourceApp,
+      'source_scheme': sourceScheme,
+      // Truncate message to 500 chars for storage — preview is enough
+      'message': message.length > 500 ? '${message.substring(0, 500)}…' : message,
+      'message_hash': messageHash,
+      'status': status,
+      'wallet_slot': walletSlot,
+      'nonce': nonce,
+    });
+  }
+
+  /// Fetch sign history for a wallet, newest first
+  static Future<List<Map<String, dynamic>>> getSignHistory(
+    int walletSlot, {
+    int limit = 100,
+  }) async {
+    final db = await database;
+    return db.query(
+      'sign_history',
+      where: 'wallet_slot = ?',
+      whereArgs: [walletSlot],
+      orderBy: 'timestamp DESC',
+      limit: limit,
+    );
+  }
+
+  /// Delete all sign history for a wallet slot
+  static Future<void> clearSignHistory(int walletSlot) async {
+    final db = await database;
+    await db.delete('sign_history',
+        where: 'wallet_slot = ?', whereArgs: [walletSlot]);
+  }
+
+  /// Keep only the last N sign records per wallet — called periodically
+  /// to prevent history from growing unbounded
+  static Future<void> pruneSignHistory(int walletSlot,
+      {int keepLast = 200}) async {
+    final db = await database;
+    await db.execute('''
+      DELETE FROM sign_history
+      WHERE wallet_slot = ?
+        AND id NOT IN (
+          SELECT id FROM sign_history
+          WHERE wallet_slot = ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        )
+    ''', [walletSlot, walletSlot, keepLast]);
   }
 
   // ================================================================

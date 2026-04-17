@@ -12,6 +12,7 @@ import 'backup_screen.dart';
 import 'pin_screen.dart';
 import 'onboarding_screen.dart';
 import 'dapp_connect_screen.dart';
+import 'sign_history_screen.dart';
 import '../services/walletconnect_service.dart';
 import '../services/update_service.dart';
 import '../providers/update_provider.dart';
@@ -90,6 +91,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             (_) => false,
                           );
                         },
+                      ),
+                      const SizedBox(height: 8),
+                      // Sign history — audit log ของ cross-app sign requests
+                      _buildTile(
+                        icon: Icons.draw_rounded,
+                        color: AppTheme.primary,
+                        title: l.isThai
+                            ? 'ประวัติการเซ็น'
+                            : 'Sign History',
+                        subtitle: l.isThai
+                            ? 'ดูประวัติการเซ็นให้แอพอื่น (TPIX Trade ฯลฯ)'
+                            : 'Audit cross-app signatures (TPIX Trade, etc.)',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const SignHistoryScreen(),
+                          ),
+                        ),
                       ),
 
                       const SizedBox(height: 24),

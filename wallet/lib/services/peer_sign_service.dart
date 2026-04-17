@@ -20,6 +20,7 @@
 library;
 
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -28,6 +29,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import 'db_service.dart';
 
 class PeerSignService {
   PeerSignService._();
@@ -45,12 +47,18 @@ class PeerSignService {
 
   /// Try to handle a deep link; returns true if it was a sign request.
   ///
+  /// Handles both:
+  ///   - tpixwallet://sign?...        — plain message sign
+  ///   - tpixwallet://sign-typed?...  — EIP-712 typed-data sign
+  ///
   /// Caller (HomeScreen._handleDeepLink) checks the return value to know
   /// whether this URI was consumed.
   Future<bool> tryHandle(BuildContext context, Uri uri) async {
-    if (uri.scheme != 'tpixwallet' || uri.host != 'sign') {
-      return false;
+    if (uri.scheme != 'tpixwallet') return false;
+    if (uri.host == 'sign-typed') {
+      return _tryHandleTyped(context, uri);
     }
+    if (uri.host != 'sign') return false;
 
     final message = uri.queryParameters['message'];
     final nonce = uri.queryParameters['nonce'];
@@ -96,15 +104,33 @@ class PeerSignService {
 
     if (!context.mounted) return true;
 
+    final wallet = context.read<WalletProvider>();
+    final sourceAppName = _sourceAppNames[cbUri.scheme] ?? cbUri.scheme;
+
     if (!approved) {
       await _sendCallback(cbUri, nonce: nonce, error: 'user_rejected');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceAppName,
+        sourceScheme: cbUri.scheme,
+        message: message,
+        status: 'rejected',
+        nonce: nonce,
+      );
       return true;
     }
 
     // Wallet must be unlocked to sign
-    final wallet = context.read<WalletProvider>();
     if (!wallet.isUnlocked) {
       await _sendCallback(cbUri, nonce: nonce, error: 'wallet_locked');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceAppName,
+        sourceScheme: cbUri.scheme,
+        message: message,
+        status: 'wallet_locked',
+        nonce: nonce,
+      );
       return true;
     }
 
@@ -112,11 +138,205 @@ class PeerSignService {
     try {
       final signature = await wallet.signPersonalMessage(message);
       await _sendCallback(cbUri, nonce: nonce, signature: signature);
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceAppName,
+        sourceScheme: cbUri.scheme,
+        message: message,
+        status: 'signed',
+        nonce: nonce,
+      );
     } catch (e) {
       debugPrint('PeerSignService.sign: ${e.runtimeType}');
       await _sendCallback(cbUri, nonce: nonce, error: 'sign_failed');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceAppName,
+        sourceScheme: cbUri.scheme,
+        message: message,
+        status: 'sign_failed',
+        nonce: nonce,
+      );
     }
     return true;
+  }
+
+  /// Handle tpixwallet://sign-typed — EIP-712 typed-data sign request
+  ///
+  /// Decodes the `typed` param as JSON, shows a structured preview,
+  /// signs the JSON string as personal_sign (simplified — matches the
+  /// approach in WalletConnectService._handleSignTypedData).
+  Future<bool> _tryHandleTyped(BuildContext context, Uri uri) async {
+    final typedJson = uri.queryParameters['typed'];
+    final nonce = uri.queryParameters['nonce'];
+    final callback = uri.queryParameters['callback'];
+
+    if (typedJson == null || nonce == null || callback == null) {
+      debugPrint('PeerSignService.typed: missing params');
+      return true;
+    }
+
+    final cbUri = Uri.tryParse(callback);
+    if (cbUri == null || !_allowedCallbackSchemes.contains(cbUri.scheme)) {
+      debugPrint('PeerSignService.typed: callback scheme not allowed');
+      return true;
+    }
+    if (!RegExp(r'^[a-fA-F0-9]{8,64}$').hasMatch(nonce)) {
+      debugPrint('PeerSignService.typed: invalid nonce');
+      return true;
+    }
+    if (typedJson.length > 4000) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'message_too_large');
+      return true;
+    }
+
+    // Parse + validate EIP-712 structure
+    Map<String, dynamic>? typedData;
+    try {
+      final decoded = jsonDecode(typedJson);
+      if (decoded is Map<String, dynamic>) typedData = decoded;
+    } catch (_) {}
+    if (typedData == null || typedData['primaryType'] == null) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'invalid_typed_data');
+      return true;
+    }
+
+    if (!context.mounted) return true;
+
+    final sourceName = _sourceAppNames[cbUri.scheme] ?? cbUri.scheme;
+    final approved = await _showTypedConfirmDialog(
+      context,
+      sourceName: sourceName,
+      typedData: typedData,
+    );
+
+    if (!context.mounted) return true;
+
+    final wallet = context.read<WalletProvider>();
+
+    if (!approved) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'user_rejected');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: typedJson,
+        status: 'rejected',
+        nonce: nonce,
+      );
+      return true;
+    }
+
+    if (!wallet.isUnlocked) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'wallet_locked');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: typedJson,
+        status: 'wallet_locked',
+        nonce: nonce,
+      );
+      return true;
+    }
+
+    try {
+      // Simplified EIP-712: sign JSON as personal_sign
+      // (matches WalletConnectService approach — full struct hashing TBD)
+      final signature = await wallet.signPersonalMessage(typedJson);
+      await _sendCallback(cbUri, nonce: nonce, signature: signature);
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: typedJson,
+        status: 'signed',
+        nonce: nonce,
+      );
+    } catch (e) {
+      debugPrint('PeerSignService.typed sign: ${e.runtimeType}');
+      await _sendCallback(cbUri, nonce: nonce, error: 'sign_failed');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: typedJson,
+        status: 'sign_failed',
+        nonce: nonce,
+      );
+    }
+    return true;
+  }
+
+  /// Pretty-print EIP-712 typed-data for the confirmation dialog
+  Future<bool> _showTypedConfirmDialog(
+    BuildContext context, {
+    required String sourceName,
+    required Map<String, dynamic> typedData,
+  }) async {
+    final primaryType = typedData['primaryType'] as String? ?? '?';
+    final message = typedData['message'];
+    final domain = typedData['domain'];
+
+    final lines = <String>[];
+    if (domain is Map) {
+      lines.add('═ Domain ═');
+      domain.forEach((k, v) => lines.add('  $k: $v'));
+    }
+    lines.add('');
+    lines.add('═ $primaryType ═');
+    if (message is Map) {
+      message.forEach((k, v) => lines.add('  $k: $v'));
+    }
+
+    final l = context.read<LocaleProvider>();
+    final c = AppColors.of(context);
+    final isThai = l.isThai;
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SignConfirmSheet(
+        sourceName: sourceName,
+        message: jsonEncode(typedData),
+        preview: lines.join('\n'),
+        isThai: isThai,
+        bgColor: c.surface,
+        textColor: c.text,
+        textSecondary: c.textSec,
+      ),
+    );
+    return result == true;
+  }
+
+  /// Write a row to the local sign history log. Best-effort — failures are
+  /// silently ignored because we shouldn't fail a sign over a logging glitch.
+  Future<void> _logSign({
+    required WalletProvider wallet,
+    required String sourceApp,
+    required String sourceScheme,
+    required String message,
+    required String status,
+    String? nonce,
+  }) async {
+    try {
+      final hash = sha256.convert(utf8.encode(message)).toString();
+      await DbService.logSign(
+        sourceApp: sourceApp,
+        sourceScheme: sourceScheme,
+        message: message,
+        messageHash: hash,
+        status: status,
+        walletSlot: wallet.activeSlot,
+        nonce: nonce,
+      );
+      // Keep log small — prune periodically
+      await DbService.pruneSignHistory(wallet.activeSlot);
+    } catch (e) {
+      debugPrint('PeerSignService.logSign: ${e.runtimeType}');
+    }
   }
 
   /// Open the callback URL — wallet→peer app handoff
