@@ -56,6 +56,8 @@ class _PeerAppCardState extends State<PeerAppCard>
     if (wallet.address != null) {
       params['address'] = wallet.address!;
       params['chain'] = wallet.activeChainId.toString();
+      // Source app name — Trade ใช้แสดง "Linked from TPIX Wallet"
+      params['wallet'] = 'TPIX Wallet';
     }
     await PeerApp.openTrade(
       path: 'connect',
