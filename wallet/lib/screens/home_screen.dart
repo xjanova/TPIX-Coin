@@ -23,6 +23,7 @@ import 'swap_screen.dart';
 import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
 import '../services/walletconnect_service.dart';
+import '../services/peer_sign_service.dart';
 import '../services/update_service.dart';
 import '../providers/update_provider.dart';
 import '../widgets/peer_app_card.dart';
@@ -117,6 +118,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       Navigator.push(context, MaterialPageRoute(
         builder: (_) => DAppConnectScreen(initialUri: uriStr),
       ));
+      return;
+    }
+
+    // tpixwallet://sign?... — peer-app sign request (e.g. from TPIX Trade)
+    if (uri.scheme == 'tpixwallet' && uri.host == 'sign') {
+      if (!mounted) return;
+      // Fire-and-forget — PeerSignService handles UI + callback internally
+      PeerSignService().tryHandle(context, uri);
+      return;
     }
   }
 
