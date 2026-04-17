@@ -121,12 +121,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       return;
     }
 
-    // tpixwallet://sign?... — peer-app sign request (e.g. from TPIX Trade)
-    if (uri.scheme == 'tpixwallet' && uri.host == 'sign') {
-      if (!mounted) return;
-      // Fire-and-forget — PeerSignService handles UI + callback internally
-      PeerSignService().tryHandle(context, uri);
-      return;
+    if (uri.scheme == 'tpixwallet') {
+      // tpixwallet://sign?... — peer-app sign request (e.g. from TPIX Trade)
+      if (uri.host == 'sign') {
+        if (!mounted) return;
+        // Fire-and-forget — PeerSignService handles UI + callback internally
+        PeerSignService().tryHandle(context, uri);
+        return;
+      }
+      // tpixwallet://open — peer app re-launch (from Trade's "Open Wallet"
+      // banner button). App is already foregrounded via deep link; no
+      // further action needed — just return silently.
+      if (uri.host == 'open') return;
     }
   }
 
