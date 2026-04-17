@@ -16,6 +16,14 @@
   <a href="https://github.com/xjanova/TPIX-Coin/releases"><img src="https://img.shields.io/github/v/release/xjanova/TPIX-Coin?style=flat-square&color=cyan" alt="Release" /></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/ethereum-lists/chains/pull/8231"><img src="https://img.shields.io/badge/EIP--155-4289-6366f1?style=flat-square" alt="EIP-155 ID 4289" /></a>
+  <img src="https://img.shields.io/badge/Gas-FREE-22c55e?style=flat-square" alt="Gas: FREE" />
+  <img src="https://img.shields.io/badge/Block-2s-06b6d4?style=flat-square" alt="Block Time: 2s" />
+  <img src="https://img.shields.io/badge/Consensus-IBFT%202.0-f97316?style=flat-square" alt="IBFT 2.0" />
+  <img src="https://img.shields.io/badge/Supply-7B%20TPIX-facc15?style=flat-square" alt="7B TPIX fixed supply" />
+</p>
+
 ---
 
 ## Executive Summary
@@ -44,6 +52,64 @@ The native **TPIX coin** (7 billion fixed supply, 18 decimals) powers the entire
 | **Validators** | 4 IBFT nodes (BFT tolerates 1 faulty) |
 | **RPC URL** | `https://rpc.tpix.online` |
 | **Block Explorer** | [explorer.tpix.online](https://explorer.tpix.online) |
+
+---
+
+## Chain Listings & Registrations
+
+We believe in public, verifiable infrastructure. Here is the real-time status of TPIX Chain's registration across the ecosystem — no overclaims, no marketing fluff.
+
+### Public Registries
+
+| Registry | Status | Source |
+|----------|--------|--------|
+| **[ethereum-lists/chains](https://github.com/ethereum-lists/chains)** | ⏳ Under review | [PR #8231](https://github.com/ethereum-lists/chains/pull/8231) opened 2026-04-17 — source of truth for chainlist.org, chainid.network, and most EVM wallets |
+| **[chainlist.org](https://chainlist.org)** | ⏳ Pending merge | Auto-populates within hours after ethereum-lists merges PR #8231 |
+| **[chainid.network](https://chainid.network)** | ⏳ Pending merge | Same data source as chainlist.org |
+| **Rabby Wallet** | ⏳ Pending merge | Pulls from ethereum-lists — logo appears automatically after merge |
+| **OKX Web3 Wallet** | ⏳ Pending merge | Pulls from ethereum-lists |
+| **Trust Wallet** | ⏳ Pending merge | Partial — pulls chain data from ethereum-lists; native-icon submission to `trustwallet/assets` is a separate future step |
+| **MetaMask (built-in icon)** | 🔲 Not yet | Requires separate PR to `MetaMask/metamask-extension` — planned after PR #8231 merges |
+| **CoinGecko** | 🔲 Not yet | Listing application requires active market data from at least one exchange |
+| **CoinMarketCap** | 🔲 Not yet | Listing application requires verified circulating supply + exchange listings |
+| **DeFiLlama** | 🔲 Not yet | Requires TVL data via subgraph or adapter |
+
+### Icon Asset — Verifiable & Content-Addressed
+
+The official TPIX Chain logo is published both via IPFS (content-addressed, immutable) and via our own CDN.
+
+| Source | URL / Identifier |
+|--------|------------------|
+| **IPFS (primary, content-addressed)** | `ipfs://bafybeiby5mwnwdi53fye4iurjxlddfzonsj67ejl4sjy7qda53za6jlgo4` |
+| **IPFS Gateway (HTTPS)** | [ipfs.io/ipfs/bafybeiby5mwnwdi53fye4iurjxlddfzonsj67ejl4sjy7qda53za6jlgo4](https://ipfs.io/ipfs/bafybeiby5mwnwdi53fye4iurjxlddfzonsj67ejl4sjy7qda53za6jlgo4) |
+| **Canonical CDN (HTTPS)** | [`https://tpix.online/images/tpix-logo-512.png`](https://tpix.online/images/tpix-logo-512.png) |
+| **Format** | 512×512 PNG, transparent background, 323 KB |
+
+Anyone can verify the icon has not been tampered with: `ipfs get bafybeiby5mwnwdi53fye4iurjxlddfzonsj67ejl4sjy7qda53za6jlgo4` → SHA-256 matches.
+
+### Native DEX Integration (tpix.online)
+
+Our DEX at [tpix.online](https://tpix.online) acts as the primary on-ramp for chain adoption. Any visitor connecting a wallet gets TPIX Chain auto-added with icon (where the wallet supports it) — **no separate registry required**.
+
+| Feature | Implementation | Covered Wallets |
+|---------|----------------|-----------------|
+| **Auto-add TPIX Chain after connect** | [EIP-3085](https://eips.ethereum.org/EIPS/eip-3085) `wallet_addEthereumChain` with `iconUrls` | MetaMask, Rabby, OKX, Trust, Coinbase, WalletConnect |
+| **Chain icon displayed** | `iconUrls: ["https://tpix.online/images/tpix-logo-512.png"]` | Rabby, OKX, Trust (MetaMask ignores `iconUrls`; awaits PR to their repo) |
+| **1-click "Add to Wallet" for custom tokens** | [EIP-747](https://eips.ethereum.org/EIPS/eip-747) `wallet_watchAsset` | MetaMask, Rabby, OKX, Trust, Coinbase |
+| **Auto chain-switch before token add** | `wallet_switchEthereumChain` fallback + error toast if declined | All EIP-1193 wallets |
+
+Implementation reference: [`resources/js/utils/web3.js`](https://github.com/xjanova/ThaiXTrade/blob/main/resources/js/utils/web3.js) — `addTPIXChainToWallet()`, `addTokenToWallet()`, `buildAddChainParams()`.
+
+### What's Missing — Honest Gap Analysis
+
+| Gap | Effort | Blocker |
+|-----|--------|---------|
+| MetaMask built-in chain icon | Medium (SVG + PR) | Waiting for ethereum-lists/chains#8231 to merge first |
+| Trust Wallet native asset entry | Medium (PR to `trustwallet/assets`) | Low priority — chain already visible via chainlist import |
+| CoinGecko listing | High (needs DEX volume + supply proof) | Launch liquidity on external CEX/DEX needed |
+| CoinMarketCap listing | High (needs verified supply audit) | Token contract audit + exchange listings |
+| DeFiLlama adapter | Medium (SDK integration) | Our DEX factory needs subgraph indexing |
+| Wallet Connect v2 project listing | Low | Submit project metadata to WalletConnect Cloud |
 
 ---
 
@@ -317,23 +383,68 @@ TPIXNFTFactory (coordinator)
 
 ## Network Configuration
 
-### Add TPIX Chain to MetaMask
+### Option A — 1-Click Auto-Add (Recommended)
+
+Visit **[tpix.online](https://tpix.online)** and connect your wallet. TPIX Chain is added automatically with icon (on supported wallets) via EIP-3085. No manual setup required.
+
+### Option B — Manual Add to Any EVM Wallet
 
 | Field | Value |
 |-------|-------|
-| Network Name | TPIX Chain |
-| RPC URL | `https://rpc.tpix.online` |
-| Chain ID | `4289` |
-| Currency Symbol | `TPIX` |
-| Block Explorer | `https://explorer.tpix.online` |
+| **Network Name** | `TPIX Chain` |
+| **RPC URL** | `https://rpc.tpix.online` |
+| **Chain ID** | `4289` |
+| **Currency Symbol** | `TPIX` |
+| **Decimals** | `18` |
+| **Block Explorer** | `https://explorer.tpix.online` |
+| **Icon URL** (if wallet asks) | `https://tpix.online/images/tpix-logo-512.png` |
 
-### Token Icon for Wallets
+### Developer Quick-Connect
 
-Official TPIX token icon for wallet integrations and CoinMarketCap/CoinGecko:
-
+Ethers.js v6:
+```js
+const provider = new ethers.JsonRpcProvider('https://rpc.tpix.online', {
+  chainId: 4289,
+  name: 'TPIX Chain',
+});
 ```
-https://tpix.online/tpixlogo.webp
+
+Viem:
+```js
+import { defineChain } from 'viem';
+export const tpixChain = defineChain({
+  id: 4289,
+  name: 'TPIX Chain',
+  nativeCurrency: { name: 'TPIX', symbol: 'TPIX', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.tpix.online'] } },
+  blockExplorers: { default: { name: 'TPIX Explorer', url: 'https://explorer.tpix.online' } },
+});
 ```
+
+Hardhat (`hardhat.config.js`):
+```js
+networks: {
+  tpix: {
+    url: 'https://rpc.tpix.online',
+    chainId: 4289,
+    accounts: [process.env.DEPLOYER_KEY],
+  },
+}
+```
+
+---
+
+## Brand Assets
+
+All logo assets are open for use by integrators, exchanges, and listing services. **Please do not modify the logo.** Use the 512×512 PNG for wallet/app integrations and the SVG (when published) for scalable UI.
+
+| Asset | Size | URL | Purpose |
+|-------|------|-----|---------|
+| **Primary PNG** | 512×512, transparent | [`tpix.online/images/tpix-logo-512.png`](https://tpix.online/images/tpix-logo-512.png) | Wallet integration, chainlist icon |
+| **IPFS CID** | 512×512, transparent | `ipfs://bafybeiby5mwnwdi53fye4iurjxlddfzonsj67ejl4sjy7qda53za6jlgo4` | Content-addressed (for ethereum-lists) |
+| **Legacy WebP** | variable | [`tpix.online/tpixlogo.webp`](https://tpix.online/tpixlogo.webp) | Web UI, legacy links |
+
+For exchange listings (CoinGecko, CoinMarketCap, CEX partners), please use the **Primary PNG** — the content hash matches what is registered in `ethereum-lists/chains`.
 
 ---
 
@@ -396,18 +507,32 @@ npm run verify
 
 ## Links
 
+### Product & Ecosystem
 | Resource | URL |
 |----------|-----|
 | **TPIX TRADE (DEX)** | [tpix.online](https://tpix.online) |
 | **Block Explorer** | [explorer.tpix.online](https://explorer.tpix.online) |
+| **JSON-RPC Endpoint** | `https://rpc.tpix.online` |
 | **Whitepaper** | [tpix.online/whitepaper](https://tpix.online/whitepaper) |
 | **Carbon Credits** | [tpix.online/carbon-credits](https://tpix.online/carbon-credits) |
 | **Token Sale** | [tpix.online/token-sale](https://tpix.online/token-sale) |
 | **Master Node Guide** | [tpix.online/masternode/guide](https://tpix.online/masternode/guide) |
 | **Download Apps** | [tpix.online/download](https://tpix.online/download) |
+
+### Documentation
+| Resource | URL |
+|----------|-----|
 | **Whitepaper (MD)** | [docs/WHITEPAPER.md](docs/WHITEPAPER.md) |
 | **Carbon Credit Docs** | [docs/CARBON-CREDIT.md](docs/CARBON-CREDIT.md) |
 | **Explorer Setup** | [docs/EXPLORER.md](docs/EXPLORER.md) |
+
+### Registry & Listings
+| Resource | URL |
+|----------|-----|
+| **ethereum-lists/chains PR** | [pull/8231](https://github.com/ethereum-lists/chains/pull/8231) |
+| **Chain ID Registry** | [chainid.network/chain/4289](https://chainid.network/chain/4289) (post-merge) |
+| **Chainlist** | [chainlist.org/chain/4289](https://chainlist.org/chain/4289) (post-merge) |
+| **IPFS Logo (CID)** | `bafybeiby5mwnwdi53fye4iurjxlddfzonsj67ejl4sjy7qda53za6jlgo4` |
 
 ---
 
