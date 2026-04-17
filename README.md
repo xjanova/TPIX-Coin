@@ -108,8 +108,77 @@ Implementation reference: [`resources/js/utils/web3.js`](https://github.com/xjan
 | Trust Wallet native asset entry | Medium (PR to `trustwallet/assets`) | Low priority — chain already visible via chainlist import |
 | CoinGecko listing | High (needs DEX volume + supply proof) | Launch liquidity on external CEX/DEX needed |
 | CoinMarketCap listing | High (needs verified supply audit) | Token contract audit + exchange listings |
-| DeFiLlama adapter | Medium (SDK integration) | Our DEX factory needs subgraph indexing |
+| DeFiLlama adapter | Medium (SDK integration) | DEX factory deployment + liquidity pools. See [docs/DEFILLAMA.md](docs/DEFILLAMA.md) |
 | Wallet Connect v2 project listing | Low | Submit project metadata to WalletConnect Cloud |
+
+---
+
+## Transparency & Public APIs
+
+All infrastructure-relevant data is exposed over simple HTTPS endpoints so anyone — exchanges, aggregators, auditors, researchers — can verify our claims independently.
+
+### Supply Endpoints (CoinGecko plain-text spec)
+
+| Endpoint | Response | Purpose |
+|----------|----------|---------|
+| `GET /api/v1/supply/total_supply` | `7000000000` | CoinGecko-spec plain text |
+| `GET /api/v1/supply/circulating_supply` | *live computed* | CoinGecko-spec plain text |
+| `GET /api/v1/supply/max_supply` | `7000000000` | CoinGecko-spec plain text |
+| `GET /api/v1/supply` | JSON | Full breakdown with locked-address inventory |
+
+**Base URL:** `https://tpix.online`
+
+**Circulating-supply methodology (fully reproducible):**
+
+```
+circulating = total_supply − Σ balance(locked_address_i)
+```
+
+Where `locked_address_i` is each genesis allocation pool (validators, team vesting, ecosystem treasury, master-node rewards, token sale vesting, liquidity reserves). The list is published in [`config/supply.php`](https://github.com/xjanova/ThaiXTrade/blob/main/config/supply.php) and queried live against [`rpc.tpix.online`](https://rpc.tpix.online) on every request. No admin override, no opaque calculations.
+
+Third parties can reproduce the circulating-supply calculation in two commands:
+
+```bash
+# 1. Get the list of locked addresses
+curl -s https://tpix.online/api/v1/supply | jq '.locked_addresses[].address'
+
+# 2. Query each balance via public RPC, sum, subtract from 7,000,000,000
+```
+
+### Market Data Endpoints (CMC/CG DEX spec)
+
+Implements the [CoinMarketCap DEX API specification](https://github.com/CoinMarketCap/dex-api-specification):
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/cmc/summary` | Condensed pair info — last price, 24h volume, price change |
+| `GET /api/v1/cmc/assets` | Asset metadata — supply, decimals, chain, withdraw limits |
+| `GET /api/v1/cmc/tickers` | Full tickers — base/quote volume per pair |
+| `GET /api/v1/cmc/orderbook/{MARKET}` | Order-book depth (e.g. `TPIX_USDT`) |
+
+All endpoints set `Access-Control-Allow-Origin: *` and are cached 15-30 seconds for protection against abuse.
+
+### Policies
+
+| Policy | Document |
+|--------|----------|
+| Security vulnerability reporting | [SECURITY.md](SECURITY.md) — coordinated disclosure, < 12h response for critical |
+| Contributing guidelines | [CONTRIBUTING.md](CONTRIBUTING.md) — Conventional Commits, scenario-based review |
+| Release notes | [CHANGELOG.md](CHANGELOG.md) — Keep a Changelog format |
+| Code owners | [.github/CODEOWNERS](.github/CODEOWNERS) |
+| DeFiLlama integration plan | [docs/DEFILLAMA.md](docs/DEFILLAMA.md) |
+
+### Smart Contract Verification
+
+Deployed contracts live in [`contracts/deployed-contracts.json`](contracts/deployed-contracts.json) and are source-verified on [explorer.tpix.online](https://explorer.tpix.online). Re-verify or batch-submit with:
+
+```bash
+cd contracts
+npm run verify:sources           # submit unverified contracts
+npm run verify:recheck           # audit verification status only
+```
+
+The script pulls contract metadata from `deployed-contracts.json`, submits flattened source to Blockscout's Etherscan-compatible endpoint, and writes the result back to the registry.
 
 ---
 

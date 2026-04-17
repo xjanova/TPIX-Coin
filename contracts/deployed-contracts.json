@@ -1,0 +1,37 @@
+{
+  "_doc": "Registry of deployed contracts on TPIX Chain (4289). Keep in sync after each deploy. Feeds scripts/verify-sources.js and external explorers/aggregators.",
+  "_schema_version": 1,
+  "updated": "2026-04-17",
+  "chain": {
+    "chainId": 4289,
+    "name": "TPIX Chain",
+    "rpc": "https://rpc.tpix.online",
+    "explorer": "https://explorer.tpix.online"
+  },
+  "contracts": [
+    {
+      "name": "TPIXTokenFactoryV2",
+      "category": "token-factory",
+      "address": "0xCdE5792A556A2D8571Efb31843CF6C15c3BDdfF2",
+      "sourceFile": "contracts/token-factory/TPIXTokenFactoryV2.sol",
+      "compilerVersion": "0.8.20",
+      "optimizer": { "enabled": true, "runs": 200 },
+      "verified": false,
+      "description": "Coordinator contract for all ERC-20 token types (Enhanced, Utility, Reward, Governance, Stablecoin)"
+    },
+    {
+      "name": "TPIXNFTFactory",
+      "category": "nft-factory",
+      "address": "0x38713C76036eb4Ff438eF8CEC12b6D676ad776F9",
+      "sourceFile": "contracts/token-factory/TPIXNFTFactory.sol",
+      "compilerVersion": "0.8.20",
+      "optimizer": { "enabled": true, "runs": 200 },
+      "verified": false,
+      "description": "Coordinator for NFT deployment — single NFT + collection"
+    }
+  ],
+  "notes": {
+    "howToAdd": "After deploying a new contract, append { name, address, sourceFile, compilerVersion, optimizer, description, verified: false } and run `npm run verify:sources`. The script updates `verified: true` on success.",
+    "aggregators": "CoinGecko, CoinMarketCap, DeFiLlama, and CEX listings all check source verification status on the block explorer — keep this file up to date."
+  }
+}

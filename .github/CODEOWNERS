@@ -1,0 +1,40 @@
+# TPIX Chain — Code Owners
+#
+# Syntax: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# Rules are evaluated top-to-bottom; later rules override earlier ones.
+# Paths without an owner entry require default review.
+
+# Default — all files
+*                               @xjanova
+
+# Smart contracts (highest risk — always require owner review)
+/contracts/                     @xjanova
+/contracts/identity/            @xjanova
+/contracts/masternode/          @xjanova
+/contracts/dex/                 @xjanova
+/contracts/bridge/              @xjanova
+/contracts/token-factory/       @xjanova
+
+# Chain infrastructure
+/infrastructure/                @xjanova
+/masternode/                    @xjanova
+
+# Wallet (mobile app — user-facing secrets)
+/wallet/                        @xjanova
+/wallet/lib/services/           @xjanova
+
+# Masternode UI (desktop wallet + node manager)
+/masternode-ui/                 @xjanova
+/masternode-ui/electron/        @xjanova
+
+# CI/CD & release automation
+/.github/workflows/             @xjanova
+/.github/CODEOWNERS             @xjanova
+
+# Security-critical meta files
+/SECURITY.md                    @xjanova
+/CHANGELOG.md                   @xjanova
+
+# Documentation
+/docs/                          @xjanova
+/README.md                      @xjanova

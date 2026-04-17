@@ -7,7 +7,9 @@
     "compile": "npx hardhat compile",
     "deploy:identity": "npx hardhat run scripts/deploy-identity.js --network tpix",
     "deploy:identity:local": "npx hardhat run scripts/deploy-identity.js --network localhost",
-    "verify": "npx hardhat run scripts/verify-identity.js --network tpix"
+    "verify": "npx hardhat run scripts/verify-identity.js --network tpix",
+    "verify:sources": "node scripts/verify-sources.js",
+    "verify:recheck": "node scripts/verify-sources.js --recheck"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
