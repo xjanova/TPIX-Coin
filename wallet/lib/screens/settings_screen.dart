@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/theme_provider.dart';
+import '../core/themes/theme_bundle.dart';
 import '../providers/wallet_provider.dart';
 import '../services/biometric_service.dart';
 import '../services/wallet_service.dart';
@@ -255,52 +257,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildThemeTile(LocaleProvider l) {
     final c = AppColors.of(context);
+    final themeProv = context.watch<ThemeProvider>();
+    final bundle = themeProv.current;
     final isDark = l.isDark;
+
     return GestureDetector(
-      onTap: () => l.toggleTheme(),
+      onTap: () => _showThemePicker(l),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: adaptiveGlassCard(context, borderRadius: 16),
         child: Row(
           children: [
-            Icon(isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-                color: isDark ? AppTheme.accent : AppTheme.warm, size: 22),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                gradient: bundle.buildDark().extension<TpixThemeExtension>()!.brandGradient,
+              ),
+              child: Icon(bundle.icon, color: Colors.white, size: 18),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(l.t('settings.theme'), style: TextStyle(fontSize: 14, color: c.text)),
-                  Text(isDark ? l.t('settings.themeDark') : l.t('settings.themeLight'),
-                      style: TextStyle(fontSize: 11, color: c.textMuted)),
+                  Text(
+                    '${l.isThai ? bundle.nameTh : bundle.nameEn} · ${isDark ? l.t('settings.themeDark') : l.t('settings.themeLight')}',
+                    style: TextStyle(fontSize: 11, color: c.textMuted),
+                  ),
                 ],
               ),
             ),
-            Container(
-              width: 44,
-              height: 24,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: isDark ? AppTheme.accent.withValues(alpha: 0.3) : AppTheme.warm.withValues(alpha: 0.3),
-              ),
-              child: AnimatedAlign(
-                duration: const Duration(milliseconds: 200),
-                alignment: isDark ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  width: 20,
-                  height: 20,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDark ? AppTheme.accent : AppTheme.warm,
-                  ),
-                  child: Icon(isDark ? Icons.dark_mode : Icons.light_mode, size: 12, color: Colors.white),
-                ),
-              ),
-            ),
+            Icon(Icons.chevron_right_rounded, color: c.textMuted, size: 20),
           ],
         ),
       ),
+    );
+  }
+
+  void _showThemePicker(LocaleProvider l) {
+    final themeProv = context.read<ThemeProvider>();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) => _ThemePickerSheet(locale: l, themeProv: themeProv),
     );
   }
 
@@ -651,3 +654,367 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Theme Picker Bottom Sheet — เลือกธีม + (ถ้ารองรับ) light/dark
+// ──────────────────────────────────────────────────────────────────────────
+
+class _ThemePickerSheet extends StatelessWidget {
+  final LocaleProvider locale;
+  final ThemeProvider themeProv;
+  const _ThemePickerSheet({required this.locale, required this.themeProv});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(
+          top: BorderSide(color: c.border, width: 1),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: c.textMuted.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Title
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+              child: Row(
+                children: [
+                  Icon(Icons.palette_rounded, color: c.brandPrimary, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    locale.isThai ? 'เลือกธีม' : 'Choose Theme',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: c.text,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Text(
+                locale.isThai
+                    ? 'แต่ละธีมเปลี่ยนทั้งสี ฟอนต์ และเอฟเฟกต์ทั่วทั้งแอพ'
+                    : 'Each theme changes colors, fonts, and effects across the app',
+                style: TextStyle(fontSize: 12, color: c.textMuted),
+              ),
+            ),
+
+            // Theme cards (staggered entrance)
+            ...ThemeProvider.registry.asMap().entries.map((entry) {
+              final i = entry.key;
+              final bundle = entry.value;
+              final isSelected = bundle.id == themeProv.id;
+              return TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: Duration(milliseconds: 350 + i * 90),
+                curve: Curves.easeOutCubic,
+                builder: (_, t, child) => Transform.translate(
+                  offset: Offset(0, (1 - t) * 30),
+                  child: Opacity(opacity: t, child: child),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  child: _ThemeCard(
+                    bundle: bundle,
+                    isSelected: isSelected,
+                    isThai: locale.isThai,
+                    onTap: () async {
+                      await themeProv.setTheme(bundle.id);
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                  ),
+                ),
+              );
+            }),
+
+            const SizedBox(height: 8),
+
+            // Light/Dark toggle (เฉพาะธีมที่รองรับ)
+            if (themeProv.current.supportsLight)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: c.border),
+                  ),
+                  child: Row(
+                    children: [
+                      _ModeChip(
+                        label: locale.t('settings.themeLight'),
+                        icon: Icons.light_mode_rounded,
+                        active: !locale.isDark,
+                        onTap: () {
+                          if (locale.isDark) locale.toggleTheme();
+                        },
+                      ),
+                      _ModeChip(
+                        label: locale.t('settings.themeDark'),
+                        icon: Icons.dark_mode_rounded,
+                        active: locale.isDark,
+                        onTap: () {
+                          if (!locale.isDark) locale.toggleTheme();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 14, color: c.textMuted),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        locale.isThai
+                            ? 'ธีมนี้รองรับโหมดมืดเท่านั้น (ตามอุดมการณ์ CRT)'
+                            : 'This theme is dark-only (CRT spirit)',
+                        style: TextStyle(fontSize: 11, color: c.textMuted),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeCard extends StatefulWidget {
+  final ThemeBundle bundle;
+  final bool isSelected;
+  final bool isThai;
+  final VoidCallback onTap;
+
+  const _ThemeCard({
+    required this.bundle,
+    required this.isSelected,
+    required this.isThai,
+    required this.onTap,
+  });
+
+  @override
+  State<_ThemeCard> createState() => _ThemeCardState();
+}
+
+class _ThemeCardState extends State<_ThemeCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _glowCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    // Glow pulse 2 วินาที — เฉพาะ selected card
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _glowCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ext = widget.bundle.buildDark().extension<TpixThemeExtension>()!;
+    final c = AppColors.of(context);
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: AnimatedBuilder(
+        animation: _glowCtrl,
+        builder: (_, __) {
+          final glowAlpha = widget.isSelected
+              ? 0.20 + 0.20 * Curves.easeInOut.transform(_glowCtrl.value)
+              : 0.0;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: widget.isSelected
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        ext.brandPrimary.withValues(alpha: 0.18),
+                        ext.brandSecondary.withValues(alpha: 0.10),
+                      ],
+                    )
+                  : null,
+              color: widget.isSelected ? null : c.surface,
+              border: Border.all(
+                color: widget.isSelected ? ext.brandPrimary : c.border,
+                width: widget.isSelected ? 2 : 1,
+              ),
+              boxShadow: widget.isSelected
+                  ? [
+                      BoxShadow(
+                        color: ext.brandPrimary.withValues(alpha: glowAlpha),
+                        blurRadius: 24,
+                        spreadRadius: -1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              children: [
+                // Mini swatch with shimmer when selected
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: ext.brandGradient,
+                    boxShadow: widget.isSelected
+                        ? [
+                            BoxShadow(
+                              color: ext.brandPrimary.withValues(alpha: 0.6),
+                              blurRadius: 12,
+                              spreadRadius: -2,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Icon(widget.bundle.icon, color: Colors.white, size: 26),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.isThai ? widget.bundle.nameTh : widget.bundle.nameEn,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: c.text,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.isThai
+                            ? widget.bundle.taglineTh
+                            : widget.bundle.taglineEn,
+                        style: TextStyle(fontSize: 12, color: c.textSec),
+                      ),
+                    ],
+                  ),
+                ),
+                // Animated check (bouncy entry when selected)
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, anim) => ScaleTransition(
+                    scale: CurvedAnimation(parent: anim, curve: Curves.elasticOut),
+                    child: child,
+                  ),
+                  child: widget.isSelected
+                      ? Container(
+                          key: const ValueKey('selected'),
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: ext.brandPrimary,
+                          ),
+                          child: const Icon(Icons.check_rounded,
+                              color: Colors.white, size: 18),
+                        )
+                      : Icon(
+                          Icons.radio_button_unchecked,
+                          key: const ValueKey('unselected'),
+                          color: c.textMuted,
+                          size: 24,
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _ModeChip({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: active ? c.brandPrimary.withValues(alpha: 0.18) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: active
+                ? Border.all(color: c.brandPrimary.withValues(alpha: 0.5))
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: active ? c.brandPrimary : c.textMuted),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  color: active ? c.text : c.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
