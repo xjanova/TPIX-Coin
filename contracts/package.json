@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
     "deploy:identity": "npx hardhat run scripts/deploy-identity.js --network tpix",
     "deploy:identity:local": "npx hardhat run scripts/deploy-identity.js --network localhost",
     "verify": "npx hardhat run scripts/verify-identity.js --network tpix",
@@ -12,7 +13,11 @@
     "verify:recheck": "node scripts/verify-sources.js --recheck"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-network-helpers": "^1.1.2",
+    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
+    "chai": "^4.5.0",
     "ethers": "^6.13.0",
     "hardhat": "^2.22.0"
   },
