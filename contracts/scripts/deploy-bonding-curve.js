@@ -33,9 +33,18 @@ const MIGRATION_TPIX_THRESHOLD = hre.ethers.parseUnits("350000000", 18); // 350M
 const TOKEN_SALE_WALLET = "0x3F8EB4046F5C79fd0D67C7547B5830cB2Cfb401A";
 const LIQUIDITY_WALLET = "0x3da3776e0AB0F442c181aa031f47FA83696859AF";
 
-// TPIX wrapped (ERC-20) — ต้อง deploy แยกถ้ายังไม่มี
-// ตอนนี้ใช้ placeholder — แก้เมื่อ deploy WTPIX-on-TPIX (native wrapper) เสร็จ
-const TPIX_WRAPPED_ADDRESS = process.env.TPIX_WRAPPED_ADDRESS || "";
+/**
+ * TPIX wrapped address resolution order:
+ *   1. TPIX_WRAPPED_ADDRESS env var (override สำหรับ testing)
+ *   2. deployed-contracts.json registry (name: "WTPIX") — default path
+ *
+ * ต้อง deploy WTPIX ก่อนผ่าน scripts/deploy-wtpix.js
+ */
+function resolveWtpixAddress(registry) {
+    if (process.env.TPIX_WRAPPED_ADDRESS) return process.env.TPIX_WRAPPED_ADDRESS;
+    const entry = registry.contracts.find((c) => c.name === "WTPIX");
+    return entry ? entry.address : "";
+}
 
 async function main() {
     const [deployer] = await hre.ethers.getSigners();
@@ -46,6 +55,19 @@ async function main() {
         console.warn(`⚠️ Deployer ไม่ใช่ Token Sale wallet (${TOKEN_SALE_WALLET}) — proceed อยู่ดี`);
     }
 
+    // Load registry first (ใช้หา WTPIX + เขียน entry ใหม่ทีหลัง)
+    const registryPath = path.join(__dirname, "..", "deployed-contracts.json");
+    const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+
+    const TPIX_WRAPPED_ADDRESS = resolveWtpixAddress(registry);
+    if (!TPIX_WRAPPED_ADDRESS) {
+        console.error("\n❌ ไม่พบ WTPIX address");
+        console.error("   วิธีแก้ (เลือก 1):");
+        console.error("   (a) Deploy WTPIX ก่อน: npx hardhat run scripts/deploy-wtpix.js --network tpix");
+        console.error("   (b) ใช้ address ที่มีอยู่แล้ว: set TPIX_WRAPPED_ADDRESS=0x...");
+        process.exit(1);
+    }
+
     // 1. Deploy USDT_TPIX
     console.log("\n[1/2] Deploying USDT_TPIX...");
     const USDT = await hre.ethers.getContractFactory("USDT_TPIX");
@@ -53,14 +75,6 @@ async function main() {
     await usdt.waitForDeployment();
     const usdtAddress = await usdt.getAddress();
     console.log("   USDT_TPIX:", usdtAddress);
-
-    // 2. Deploy Bonding Curve
-    if (!TPIX_WRAPPED_ADDRESS) {
-        console.error("\n❌ TPIX_WRAPPED_ADDRESS env var ว่าง");
-        console.error("   ต้อง deploy WTPIX (wrapped TPIX as ERC-20) บน TPIX chain ก่อน");
-        console.error("   หรือใช้ existing wrapped contract — set TPIX_WRAPPED_ADDRESS=0x...");
-        process.exit(1);
-    }
 
     console.log("\n[2/2] Deploying TPIXBondingCurve...");
     console.log("   TPIX wrapped:", TPIX_WRAPPED_ADDRESS);
@@ -86,9 +100,7 @@ async function main() {
     const curveAddress = await curve.getAddress();
     console.log("   TPIXBondingCurve:", curveAddress);
 
-    // 3. Update deployed-contracts.json
-    const registryPath = path.join(__dirname, "..", "deployed-contracts.json");
-    const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+    // 3. Update deployed-contracts.json (registry โหลดไว้ข้างบนแล้ว)
     registry.updated = new Date().toISOString().slice(0, 10);
 
     const newEntries = [
@@ -131,9 +143,11 @@ async function main() {
     console.log("\nNext steps:");
     console.log("  1. Set bridge relayer:");
     console.log(`     usdt.setBridge('<RELAYER_ADDRESS>', true)`);
-    console.log("  2. Fund bonding curve with TPIX:");
-    console.log(`     tpix.transfer('${curveAddress}', ${hre.ethers.formatUnits(SALE_SUPPLY, 18)} × 10^18)`);
-    console.log("  3. Frontend integration → user สามารถ buy ผ่าน curve ได้");
+    console.log("  2. Wrap 700M native TPIX → WTPIX (Token Sale wallet):");
+    console.log(`     wtpix.deposit({ value: '700000000000000000000000000' })`);
+    console.log("  3. Fund bonding curve with WTPIX:");
+    console.log(`     wtpix.transfer('${curveAddress}', '${SALE_SUPPLY.toString()}')`);
+    console.log("  4. Frontend integration → user สามารถ buy ผ่าน curve ได้");
 }
 
 main().catch((err) => {
