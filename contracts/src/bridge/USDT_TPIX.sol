@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+
+/**
+ * @title USDT_TPIX (Bridged Tether) — ERC-20 บน TPIX Chain
+ * @author Xman Studio
+ * @notice Wrapped Tether ที่ peg 1:1 กับ USDT จริง (BSC USDT-BEP20 / ETH USDT-ERC20)
+ *         User bridge USDT จาก BSC/ETH มา → relayer mint USDT_TPIX ที่นี่
+ *         User bridge ออก → burn USDT_TPIX → relayer unlock USDT ที่ chain ต้นทาง
+ *
+ * Decimals: 6 (เหมือน Tether จริง — กัน user งงเรื่องราคา)
+ *
+ * Security:
+ *   - Mint/burn เฉพาะ relayer addresses ใน whitelist (multi-sig recommended)
+ *   - Pausable เผื่อกรณี bridge exploit ต้อง freeze ทันที
+ *   - ไม่มี max supply (peg 1:1 — supply ขึ้นกับยอด USDT ที่ lock บน chain ต้นทาง)
+ */
+contract USDT_TPIX is ERC20, ERC20Burnable, Ownable, Pausable {
+    /// @notice Whitelist ของ relayer addresses ที่ mint/burn ได้
+    mapping(address => bool) public bridges;
+
+    /// @notice Total minted ตลอดอายุ (ไม่ลดเมื่อ burn — สำหรับ audit/proof)
+    uint256 public totalEverMinted;
+
+    /// @notice Total burned ตลอดอายุ (สำหรับ reconciliation กับ source chain)
+    uint256 public totalEverBurned;
+
+    event BridgeSet(address indexed bridge, bool status);
+    event Minted(address indexed to, uint256 amount, bytes32 indexed sourceTxHash);
+    event Burned(address indexed from, uint256 amount, address indexed targetChain, string targetAddress);
+
+    constructor() ERC20("Tether USD (TPIX bridged)", "USDT") Ownable(msg.sender) {}
+
+    /// @notice เลขทศนิยม — ตั้ง 6 ให้ตรงกับ Tether จริง
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    // =========================================================================
+    // Admin
+    // =========================================================================
+
+    /**
+     * @notice ตั้ง relayer/bridge address ที่อนุญาตให้ mint/burn
+     * @dev ควรเป็น multi-sig wallet ที่ team controls — ห้ามใช้ EOA หลัก deploy
+     */
+    function setBridge(address bridge, bool status) external onlyOwner {
+        bridges[bridge] = status;
+        emit BridgeSet(bridge, status);
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    // =========================================================================
+    // Bridge mint/burn (relayer-only)
+    // =========================================================================
+
+    /**
+     * @notice Mint USDT_TPIX ให้ user — เรียกหลังตรวจ deposit บน chain ต้นทาง
+     * @param to ที่อยู่ผู้รับบน TPIX chain
+     * @param amount จำนวน (6 decimals — ตรงกับ Tether)
+     * @param sourceTxHash tx hash ของ deposit บน source chain (เก็บ event)
+     */
+    function bridgeMint(address to, uint256 amount, bytes32 sourceTxHash)
+        external
+        whenNotPaused
+    {
+        require(bridges[msg.sender], "USDT_TPIX: not a bridge");
+        require(to != address(0), "USDT_TPIX: zero recipient");
+        require(amount > 0, "USDT_TPIX: zero amount");
+
+        totalEverMinted += amount;
+        _mint(to, amount);
+        emit Minted(to, amount, sourceTxHash);
+    }
+
+    /**
+     * @notice Burn USDT_TPIX จาก user — user เรียกเอง (พร้อม approve เผื่อ bridge เป็น contract)
+     * @param amount จำนวน
+     * @param targetChain chain id ปลายทาง (1=ETH, 56=BSC, ฯลฯ)
+     * @param targetAddress ที่อยู่ปลายทาง (string เผื่อ chain ที่ไม่ใช่ EVM ในอนาคต)
+     */
+    function bridgeBurn(uint256 amount, address targetChain, string calldata targetAddress)
+        external
+        whenNotPaused
+    {
+        require(amount > 0, "USDT_TPIX: zero amount");
+        require(bytes(targetAddress).length > 0, "USDT_TPIX: empty target");
+
+        totalEverBurned += amount;
+        _burn(msg.sender, amount);
+        emit Burned(msg.sender, amount, targetChain, targetAddress);
+    }
+
+    // =========================================================================
+    // Pausable hook
+    // =========================================================================
+
+    function _update(address from, address to, uint256 value)
+        internal
+        override
+        whenNotPaused
+    {
+        super._update(from, to, value);
+    }
+}
