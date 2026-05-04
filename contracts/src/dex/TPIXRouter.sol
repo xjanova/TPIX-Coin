@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IUniswapV2Router02} from "./interfaces/IUniswapV2Router02.sol";
 
@@ -36,7 +36,7 @@ import {IUniswapV2Router02} from "./interfaces/IUniswapV2Router02.sol";
  *      - Native -> ERC20 (swapExactETHForTokens)
  *      - ERC20 -> Native (swapExactTokensForETH)
  */
-contract TPIXRouter is ReentrancyGuard, Ownable, Pausable {
+contract TPIXRouter is ReentrancyGuard, Ownable2Step, Pausable {
     using SafeERC20 for IERC20;
 
     // =========================================================================

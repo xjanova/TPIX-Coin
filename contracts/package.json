@@ -6,9 +6,8 @@
   "scripts": {
     "compile": "npx hardhat compile",
     "test": "npx hardhat test",
-    "deploy:identity": "npx hardhat run scripts/deploy-identity.js --network tpix",
-    "deploy:identity:local": "npx hardhat run scripts/deploy-identity.js --network localhost",
-    "verify": "npx hardhat run scripts/verify-identity.js --network tpix",
+    "deploy:wtpix": "npx hardhat run scripts/deploy-wtpix.js --network tpix",
+    "deploy:bonding-curve": "npx hardhat run scripts/deploy-bonding-curve.js --network tpix",
     "verify:sources": "node scripts/verify-sources.js",
     "verify:recheck": "node scripts/verify-sources.js --recheck"
   },

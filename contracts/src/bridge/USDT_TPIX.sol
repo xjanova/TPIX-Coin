@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
@@ -20,9 +20,13 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  *   - Pausable เผื่อกรณี bridge exploit ต้อง freeze ทันที
  *   - ไม่มี max supply (peg 1:1 — supply ขึ้นกับยอด USDT ที่ lock บน chain ต้นทาง)
  */
-contract USDT_TPIX is ERC20, ERC20Burnable, Ownable, Pausable {
+contract USDT_TPIX is ERC20, ERC20Burnable, Ownable2Step, Pausable {
     /// @notice Whitelist ของ relayer addresses ที่ mint/burn ได้
     mapping(address => bool) public bridges;
+
+    /// @notice Replay protection — sourceTxHash ที่ process แล้วห้าม mint ซ้ำ
+    /// @dev สำคัญมาก: ถ้าไม่มีตัวนี้, compromised relayer สามารถ mint ซ้ำได้ไม่จำกัด
+    mapping(bytes32 => bool) public processedTxHashes;
 
     /// @notice Total minted ตลอดอายุ (ไม่ลดเมื่อ burn — สำหรับ audit/proof)
     uint256 public totalEverMinted;
@@ -32,7 +36,7 @@ contract USDT_TPIX is ERC20, ERC20Burnable, Ownable, Pausable {
 
     event BridgeSet(address indexed bridge, bool status);
     event Minted(address indexed to, uint256 amount, bytes32 indexed sourceTxHash);
-    event Burned(address indexed from, uint256 amount, address indexed targetChain, string targetAddress);
+    event Burned(address indexed from, uint256 amount, uint256 indexed targetChainId, string targetAddress);
 
     constructor() ERC20("Tether USD (TPIX bridged)", "USDT") Ownable(msg.sender) {}
 
@@ -70,7 +74,8 @@ contract USDT_TPIX is ERC20, ERC20Burnable, Ownable, Pausable {
      * @notice Mint USDT_TPIX ให้ user — เรียกหลังตรวจ deposit บน chain ต้นทาง
      * @param to ที่อยู่ผู้รับบน TPIX chain
      * @param amount จำนวน (6 decimals — ตรงกับ Tether)
-     * @param sourceTxHash tx hash ของ deposit บน source chain (เก็บ event)
+     * @param sourceTxHash tx hash ของ deposit บน source chain (unique key — ป้องกัน replay)
+     * @dev sourceTxHash ใช้เป็น nonce — ห้ามใช้ tx hash เดียวกัน mint ซ้ำ
      */
     function bridgeMint(address to, uint256 amount, bytes32 sourceTxHash)
         external
@@ -79,8 +84,13 @@ contract USDT_TPIX is ERC20, ERC20Burnable, Ownable, Pausable {
         require(bridges[msg.sender], "USDT_TPIX: not a bridge");
         require(to != address(0), "USDT_TPIX: zero recipient");
         require(amount > 0, "USDT_TPIX: zero amount");
+        require(sourceTxHash != bytes32(0), "USDT_TPIX: empty txhash");
+        require(!processedTxHashes[sourceTxHash], "USDT_TPIX: txhash replayed");
 
+        // CEI: state ก่อน external interaction
+        processedTxHashes[sourceTxHash] = true;
         totalEverMinted += amount;
+
         _mint(to, amount);
         emit Minted(to, amount, sourceTxHash);
     }
@@ -88,19 +98,20 @@ contract USDT_TPIX is ERC20, ERC20Burnable, Ownable, Pausable {
     /**
      * @notice Burn USDT_TPIX จาก user — user เรียกเอง (พร้อม approve เผื่อ bridge เป็น contract)
      * @param amount จำนวน
-     * @param targetChain chain id ปลายทาง (1=ETH, 56=BSC, ฯลฯ)
+     * @param targetChainId chain id ปลายทาง (1=ETH, 56=BSC, ฯลฯ — uint256 ตามมาตรฐาน EIP-155)
      * @param targetAddress ที่อยู่ปลายทาง (string เผื่อ chain ที่ไม่ใช่ EVM ในอนาคต)
      */
-    function bridgeBurn(uint256 amount, address targetChain, string calldata targetAddress)
+    function bridgeBurn(uint256 amount, uint256 targetChainId, string calldata targetAddress)
         external
         whenNotPaused
     {
         require(amount > 0, "USDT_TPIX: zero amount");
+        require(targetChainId != 0, "USDT_TPIX: zero chain id");
         require(bytes(targetAddress).length > 0, "USDT_TPIX: empty target");
 
         totalEverBurned += amount;
         _burn(msg.sender, amount);
-        emit Burned(msg.sender, amount, targetChain, targetAddress);
+        emit Burned(msg.sender, amount, targetChainId, targetAddress);
     }
 
     // =========================================================================

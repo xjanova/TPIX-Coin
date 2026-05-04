@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
@@ -32,7 +32,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  *   - Pausable เผื่อ emergency
  *   - Reentrancy guarded
  */
-contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
+contract TPIXBondingCurve is Ownable2Step, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // =========================================================================
@@ -69,6 +69,20 @@ contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
     uint256 public constant EXIT_FEE_BPS = 500; // 5%
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
+    /// @notice Min trade size (1 USDT, 6 decimals) — ป้องกัน dust spam
+    uint256 public constant MIN_USDT_IN = 1_000_000;
+
+    /// @notice Max ที่ wallet เดียวซื้อได้ (1% ของ saleSupply) — กระจาย token
+    /// @dev set เป็น immutable ใน constructor — derived จาก saleSupply
+    uint256 public immutable maxBuyPerWallet;
+
+    /// @notice Migration delay หลัง threshold ถึง — ป้องกัน owner frontrun ก่อน DEX list
+    uint256 public constant MIGRATION_DELAY = 24 hours;
+
+    /// @notice Max pause duration — หลังนี้ user emergency sell ที่ floor price ได้
+    /// @dev ป้องกัน owner pause ค้างไว้ rug แบบ soft
+    uint256 public constant MAX_PAUSE_DURATION = 30 days;
+
     // =========================================================================
     // Mutable state
     // =========================================================================
@@ -82,8 +96,14 @@ contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
     /// @notice Migration เกิดขึ้นแล้วหรือยัง — true = sale ปิด, รอ DEX pool
     bool public migrated;
 
-    /// @notice Buyer history สำหรับ analytics + airdrop ในอนาคต
+    /// @notice Buyer history สำหรับ analytics + airdrop + wallet cap enforcement
     mapping(address => uint256) public bought;
+
+    /// @notice Timestamp เมื่อ threshold ถึงครั้งแรก (เริ่ม MIGRATION_DELAY countdown)
+    uint256 public thresholdReachedAt;
+
+    /// @notice Timestamp เมื่อ pause ถูกเรียกล่าสุด — สำหรับ emergency sell หลัง 30d
+    uint256 public pausedAt;
 
     // =========================================================================
     // Events
@@ -92,7 +112,9 @@ contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
     event Bought(address indexed buyer, uint256 usdtIn, uint256 tpixOut, uint256 newPrice);
     event Sold(address indexed seller, uint256 tpixIn, uint256 usdtOut, uint256 fee, uint256 newPrice);
     event Migrated(uint256 usdtToLiquidity, uint256 tpixToLiquidity, uint256 tpixUnsold);
-    event ThresholdReached(string reason, uint256 raised, uint256 sold);
+    event ThresholdReached(string reason, uint256 raised, uint256 sold, uint256 migrationAvailableAt);
+    event MigrationCountdownStarted(uint256 availableAt);
+    event EmergencySell(address indexed seller, uint256 tpixIn, uint256 usdtOut);
 
     // =========================================================================
     // Constructor
@@ -132,6 +154,8 @@ contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
         endPrice = _endPrice;
         migrationUsdtThreshold = _migrationUsdtThreshold;
         migrationTpixThreshold = _migrationTpixThreshold;
+        // 1% ของ saleSupply ต่อ wallet — ป้องกัน whale concentration
+        maxBuyPerWallet = _saleSupply / 100;
     }
 
     // =========================================================================
@@ -226,30 +250,34 @@ contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
         returns (uint256 tpixOut)
     {
         require(!migrated, "BC: migrated");
-        require(usdtIn > 0, "BC: zero in");
+        require(usdtIn >= MIN_USDT_IN, "BC: below min");
 
         tpixOut = quoteBuy(usdtIn);
         require(tpixOut >= minTpixOut, "BC: slippage");
         require(tpixOut > 0, "BC: zero out");
+        require(bought[msg.sender] + tpixOut <= maxBuyPerWallet, "BC: wallet cap");
 
-        // Transfer USDT from buyer
-        usdt.safeTransferFrom(msg.sender, address(this), usdtIn);
-
-        // Transfer TPIX to buyer
-        tpix.safeTransfer(msg.sender, tpixOut);
-
+        // CEI: state ก่อน external interaction
         totalSold += tpixOut;
         totalRaised += usdtIn;
         bought[msg.sender] += tpixOut;
 
-        emit Bought(msg.sender, usdtIn, tpixOut, _priceAt(totalSold));
-
-        // Auto-flag threshold (owner can call migrate() after)
-        if (totalRaised >= migrationUsdtThreshold) {
-            emit ThresholdReached("usdt", totalRaised, totalSold);
-        } else if (totalSold >= migrationTpixThreshold) {
-            emit ThresholdReached("tpix", totalRaised, totalSold);
+        // Auto-start migration countdown ครั้งแรกที่ threshold ถึง
+        bool reachedNow = thresholdReachedAt == 0 &&
+            (totalRaised >= migrationUsdtThreshold || totalSold >= migrationTpixThreshold);
+        if (reachedNow) {
+            thresholdReachedAt = block.timestamp;
+            uint256 migrationAvailable = block.timestamp + MIGRATION_DELAY;
+            emit MigrationCountdownStarted(migrationAvailable);
+            string memory reason = totalRaised >= migrationUsdtThreshold ? "usdt" : "tpix";
+            emit ThresholdReached(reason, totalRaised, totalSold, migrationAvailable);
         }
+
+        // External interactions ตอนท้าย
+        usdt.safeTransferFrom(msg.sender, address(this), usdtIn);
+        tpix.safeTransfer(msg.sender, tpixOut);
+
+        emit Bought(msg.sender, usdtIn, tpixOut, _priceAt(totalSold));
     }
 
     /**
@@ -270,16 +298,44 @@ contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
         (usdtOut, fee) = quoteSell(tpixIn);
         require(usdtOut >= minUsdtOut, "BC: slippage");
 
-        // Transfer TPIX from seller back to contract
-        tpix.safeTransferFrom(msg.sender, address(this), tpixIn);
-
-        // Transfer USDT to seller
-        usdt.safeTransfer(msg.sender, usdtOut);
-
+        // CEI: state ก่อน external interaction
         totalSold -= tpixIn;
         // totalRaised stays — fee accumulates as protocol revenue
 
+        // External interactions ตอนท้าย
+        tpix.safeTransferFrom(msg.sender, address(this), tpixIn);
+        usdt.safeTransfer(msg.sender, usdtOut);
+
         emit Sold(msg.sender, tpixIn, usdtOut, fee, _priceAt(totalSold));
+    }
+
+    /**
+     * @notice Emergency sell ที่ floor price (startPrice) เมื่อ contract ถูก pause นานเกิน MAX_PAUSE_DURATION
+     * @dev ป้องกัน owner pause ค้างไว้ rug — user ทุกคนยังถอนเงินคืนได้
+     *      ใช้ floor price (startPrice = $0.10) เป็น conservative bound — protocol อาจขาดทุน
+     *      หาก totalRaised < expected, แต่ user ที่ลงเงินไปย่อมได้คืนอย่างน้อยส่วนหนึ่ง
+     */
+    function emergencySell(uint256 tpixIn) external nonReentrant returns (uint256 usdtOut) {
+        require(paused(), "BC: not paused");
+        require(pausedAt > 0 && block.timestamp >= pausedAt + MAX_PAUSE_DURATION, "BC: pause too short");
+        require(!migrated, "BC: migrated");
+        require(tpixIn > 0 && tpixIn <= totalSold, "BC: invalid in");
+
+        // Floor price — ไม่มี exit fee ในโหมดฉุกเฉิน
+        usdtOut = (tpixIn * startPrice) / 1e18;
+        uint256 contractUsdt = usdt.balanceOf(address(this));
+        if (usdtOut > contractUsdt) {
+            // ถ้าเงินไม่พอจ่ายเต็ม — pro-rata ตาม balance ที่เหลือ
+            usdtOut = contractUsdt;
+        }
+        require(usdtOut > 0, "BC: drained");
+
+        totalSold -= tpixIn;
+
+        tpix.safeTransferFrom(msg.sender, address(this), tpixIn);
+        usdt.safeTransfer(msg.sender, usdtOut);
+
+        emit EmergencySell(msg.sender, tpixIn, usdtOut);
     }
 
     // =========================================================================
@@ -295,16 +351,24 @@ contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
+     * @notice Timestamp ที่ migrate() จะเรียกได้ (0 = ยังไม่ถึง threshold)
+     */
+    function migrationAvailableAt() external view returns (uint256) {
+        return thresholdReachedAt == 0 ? 0 : thresholdReachedAt + MIGRATION_DELAY;
+    }
+
+    /**
      * @notice Trigger migration — โอน USDT + TPIX ที่เหลือ ไป Liquidity wallet
-     * @dev เรียกได้เมื่อ threshold ถึง — owner อย่างเดียว
+     * @dev Permissionless หลัง threshold + 24h delay — ป้องกัน owner frontrun ก่อน DEX list
      *      Liquidity wallet จะเป็นคน addLiquidity() ใน DEX (off-chain process)
      *
      *      ทำไมไม่ auto-call DEX router? — เพื่อให้มีเวลา set DEX address + ตัดสินใจ
      *      ratio ก่อน lock liquidity (อาจอยากแบ่ง 80% ไป DEX, 20% ไว้ buyback)
      */
-    function migrate() external onlyOwner nonReentrant {
+    function migrate() external nonReentrant {
         require(isMigrationReady(), "BC: not ready");
-        require(!migrated, "BC: already migrated");
+        require(thresholdReachedAt > 0, "BC: countdown not started");
+        require(block.timestamp >= thresholdReachedAt + MIGRATION_DELAY, "BC: in delay");
 
         migrated = true;
 
@@ -323,10 +387,12 @@ contract TPIXBondingCurve is Ownable, ReentrancyGuard, Pausable {
 
     function pause() external onlyOwner {
         _pause();
+        pausedAt = block.timestamp;
     }
 
     function unpause() external onlyOwner {
         _unpause();
+        pausedAt = 0;
     }
 
     /**

@@ -1,37 +1,41 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { loadFixture, setBalance } = require("@nomicfoundation/hardhat-network-helpers");
+const { loadFixture, setBalance, time } = require("@nomicfoundation/hardhat-network-helpers");
 
 /**
- * ทดสอบ TPIXBondingCurve (linear bonding curve token sale)
+ * ทดสอบ TPIXBondingCurve (linear bonding curve token sale) — security-hardened 2026-05-04
  *
- * Coverage:
+ * Coverage (post-hardening):
  *   - Constructor validation
  *   - Price curve (start, end, intermediate)
  *   - Buy/Sell happy path + slippage protection + ERC20 approval
- *   - Multiple buys accumulate totalSold + totalRaised correctly
- *   - Migration: threshold detection, owner-only, asset sweep, buy/sell blocked after
- *   - Pausable behavior
+ *   - MIN_USDT_IN guard (1 USDT minimum) — dust attack mitigation
+ *   - maxBuyPerWallet cap (1% of saleSupply) — whale concentration mitigation
+ *   - CEI ordering — state updated before external calls (covered implicitly by replay tests)
+ *   - Migration: threshold detection, 24h delay, permissionless trigger, asset sweep, buy/sell blocked after
+ *   - Pausable behavior + pausedAt tracking
+ *   - emergencySell after MAX_PAUSE_DURATION (30 days)
  *   - rescueToken cannot drain TPIX/USDT
- *
- * ใช้ scaled-down numbers เพื่อให้อ่านง่าย (ไม่ใช่ WHITEPAPER scale)
- * แต่มี 1 test ที่ใช้ scale จริงเพื่อเช็ค overflow
+ *   - Ownable2Step ownership transfer
  */
 describe("TPIXBondingCurve", function () {
-    // Scaled test params (ชัดเจน อ่านง่าย)
-    const SALE_SUPPLY = ethers.parseEther("1000000");                  // 1M TPIX
+    // unique tx hash helper (replay-protection-friendly)
+    const txHash = (n) => "0x" + n.toString(16).padStart(64, "0");
+
+    // Scaled test params — bumped supply to 100M to give meaningful per-wallet cap (1M)
+    const SALE_SUPPLY = ethers.parseEther("100000000");                // 100M TPIX
     const START_PRICE = ethers.parseUnits("1", 6);                     // $1.00
     const END_PRICE = ethers.parseUnits("10", 6);                      // $10.00
     const MIGRATION_USDT = ethers.parseUnits("1000000", 6);            // $1M
-    const MIGRATION_TPIX = ethers.parseEther("500000");                // 500k TPIX
+    const MIGRATION_TPIX = ethers.parseEther("50000000");              // 50M TPIX
 
     const LIQUIDITY_WALLET = "0x3da3776e0AB0F442c181aa031f47FA83696859AF";
 
     async function deployFixture() {
-        const [owner, relayer, alice, bob, charlie] = await ethers.getSigners();
+        const [owner, relayer, alice, bob, charlie, dave] = await ethers.getSigners();
 
-        // Pre-fund owner กับ 2M native TPIX (default 10k ไม่พอสำหรับ wrap 1M)
-        await setBalance(owner.address, ethers.parseEther("2000000"));
+        // Pre-fund owner กับ 200M native TPIX (default ไม่พอสำหรับ wrap 100M)
+        await setBalance(owner.address, ethers.parseEther("200000000"));
 
         // 1. Deploy WTPIX
         const WTPIX = await ethers.getContractFactory("src/sale/WTPIX_ERC20.sol:WTPIX");
@@ -62,14 +66,14 @@ describe("TPIXBondingCurve", function () {
         await wtpix.connect(owner).deposit({ value: SALE_SUPPLY });
         await wtpix.connect(owner).transfer(await curve.getAddress(), SALE_SUPPLY);
 
-        // 5. Relayer mints USDT to test buyers
+        // 5. Relayer mints USDT to test buyers (each gets fresh tx hash for replay protection)
         const MINT_EACH = ethers.parseUnits("500000", 6);
-        const TX_HASH = "0x" + "a".repeat(64);
-        await usdt.connect(relayer).bridgeMint(alice.address, MINT_EACH, TX_HASH);
-        await usdt.connect(relayer).bridgeMint(bob.address, MINT_EACH, TX_HASH);
-        await usdt.connect(relayer).bridgeMint(charlie.address, MINT_EACH, TX_HASH);
+        await usdt.connect(relayer).bridgeMint(alice.address, MINT_EACH, txHash(1));
+        await usdt.connect(relayer).bridgeMint(bob.address, MINT_EACH, txHash(2));
+        await usdt.connect(relayer).bridgeMint(charlie.address, MINT_EACH, txHash(3));
+        await usdt.connect(relayer).bridgeMint(dave.address, MINT_EACH, txHash(4));
 
-        return { wtpix, usdt, curve, owner, relayer, alice, bob, charlie };
+        return { wtpix, usdt, curve, owner, relayer, alice, bob, charlie, dave };
     }
 
     // =========================================================================
@@ -94,7 +98,6 @@ describe("TPIXBondingCurve", function () {
         });
 
         it("reverts when endPrice <= startPrice", async function () {
-            const [owner] = await ethers.getSigners();
             const WTPIX = await ethers.getContractFactory("src/sale/WTPIX_ERC20.sol:WTPIX");
             const USDT = await ethers.getContractFactory("USDT_TPIX");
             const wtpix = await WTPIX.deploy();
@@ -135,6 +138,11 @@ describe("TPIXBondingCurve", function () {
                 )
             ).to.be.revertedWith("BC: threshold > supply");
         });
+
+        it("sets maxBuyPerWallet = saleSupply / 100", async function () {
+            const { curve } = await loadFixture(deployFixture);
+            expect(await curve.maxBuyPerWallet()).to.equal(SALE_SUPPLY / 100n);
+        });
     });
 
     // =========================================================================
@@ -155,7 +163,7 @@ describe("TPIXBondingCurve", function () {
     describe("buy()", function () {
         it("transfers USDT in + TPIX out and updates state", async function () {
             const { curve, usdt, alice } = await loadFixture(deployFixture);
-            const usdtIn = ethers.parseUnits("1000", 6); // $1000 at ~$1 each = ~1000 TPIX
+            const usdtIn = ethers.parseUnits("1000", 6); // $1000
 
             await usdt.connect(alice).approve(await curve.getAddress(), usdtIn);
 
@@ -194,22 +202,41 @@ describe("TPIXBondingCurve", function () {
                 .to.be.revertedWith("BC: slippage");
         });
 
+        it("reverts on input below MIN_USDT_IN (1 USDT)", async function () {
+            const { curve, usdt, alice } = await loadFixture(deployFixture);
+            await usdt.connect(alice).approve(await curve.getAddress(), 999_999n);
+            await expect(curve.connect(alice).buy(999_999n, 0))
+                .to.be.revertedWith("BC: below min");
+        });
+
         it("reverts on zero input", async function () {
             const { curve, alice } = await loadFixture(deployFixture);
-            await expect(curve.connect(alice).buy(0, 0)).to.be.revertedWith("BC: zero in");
+            await expect(curve.connect(alice).buy(0, 0)).to.be.revertedWith("BC: below min");
+        });
+
+        it("WALLET CAP: rejects buy that exceeds 1% of supply per wallet", async function () {
+            const { curve, usdt, relayer, alice } = await loadFixture(deployFixture);
+            const curveAddr = await curve.getAddress();
+
+            // Top up alice to push past wallet cap
+            const huge = ethers.parseUnits("3000000", 6); // $3M
+            await usdt.connect(relayer).bridgeMint(alice.address, huge, txHash(100));
+            await usdt.connect(alice).approve(curveAddr, huge);
+
+            // 1M TPIX cap; $3M at avg ~$1 ≈ ~3M TPIX → over cap
+            await expect(curve.connect(alice).buy(huge, 0))
+                .to.be.revertedWith("BC: wallet cap");
         });
 
         it("price increases with sold amount (monotonic)", async function () {
             const { curve, usdt, alice, bob } = await loadFixture(deployFixture);
             const curveAddr = await curve.getAddress();
 
-            // Alice buys first
             const usdtIn = ethers.parseUnits("10000", 6);
             await usdt.connect(alice).approve(curveAddr, usdtIn);
             await curve.connect(alice).buy(usdtIn, 0);
             const priceAfterAlice = await curve.currentPrice();
 
-            // Bob buys — should see higher price
             await usdt.connect(bob).approve(curveAddr, usdtIn);
             await curve.connect(bob).buy(usdtIn, 0);
             const priceAfterBob = await curve.currentPrice();
@@ -228,19 +255,16 @@ describe("TPIXBondingCurve", function () {
             const { curve, usdt, wtpix, alice } = await loadFixture(deployFixture);
             const curveAddr = await curve.getAddress();
 
-            // Buy first
             const usdtIn = ethers.parseUnits("1000", 6);
             await usdt.connect(alice).approve(curveAddr, usdtIn);
             await curve.connect(alice).buy(usdtIn, 0);
             const tpixHeld = await wtpix.balanceOf(alice.address);
 
-            // Sell back
             await wtpix.connect(alice).approve(curveAddr, tpixHeld);
             const [expectedUsdt, expectedFee] = await curve.quoteSell(tpixHeld);
             expect(expectedFee).to.be.gt(0);
-            // fee ≈ 5% of gross
             const gross = expectedUsdt + expectedFee;
-            expect(expectedFee * 10000n / gross).to.be.closeTo(500n, 2n); // 5% ± rounding
+            expect(expectedFee * 10000n / gross).to.be.closeTo(500n, 2n);
 
             const usdtBefore = await usdt.balanceOf(alice.address);
             await curve.connect(alice).sell(tpixHeld, expectedUsdt);
@@ -252,7 +276,6 @@ describe("TPIXBondingCurve", function () {
 
         it("reverts when trying to sell more than totalSold", async function () {
             const { curve, alice } = await loadFixture(deployFixture);
-            // alice hasn't bought anything
             await expect(curve.connect(alice).sell(1n, 0)).to.be.revertedWith("BC: invalid in");
         });
 
@@ -273,13 +296,25 @@ describe("TPIXBondingCurve", function () {
     });
 
     // =========================================================================
-    // Migration
+    // Migration (with 24h delay + permissionless trigger)
     // =========================================================================
 
     describe("migrate()", function () {
+        // helper: drive totalRaised past MIGRATION_USDT
+        async function reachThreshold(curve, usdt, signers) {
+            const curveAddr = await curve.getAddress();
+            const each = ethers.parseUnits("400000", 6);
+            for (const s of signers) {
+                await usdt.connect(s).approve(curveAddr, each);
+                await curve.connect(s).buy(each, 0);
+            }
+        }
+
         it("isMigrationReady false at start", async function () {
             const { curve } = await loadFixture(deployFixture);
             expect(await curve.isMigrationReady()).to.equal(false);
+            expect(await curve.thresholdReachedAt()).to.equal(0);
+            expect(await curve.migrationAvailableAt()).to.equal(0);
         });
 
         it("reverts migrate when not ready", async function () {
@@ -287,69 +322,68 @@ describe("TPIXBondingCurve", function () {
             await expect(curve.migrate()).to.be.revertedWith("BC: not ready");
         });
 
-        it("only owner can migrate", async function () {
-            const { curve, alice } = await loadFixture(deployFixture);
-            await expect(curve.connect(alice).migrate())
-                .to.be.revertedWithCustomError(curve, "OwnableUnauthorizedAccount");
+        it("starts countdown when threshold first hit (event + state)", async function () {
+            const { curve, usdt, alice, bob, charlie } = await loadFixture(deployFixture);
+            await reachThreshold(curve, usdt, [alice, bob, charlie]);
+
+            const t0 = await curve.thresholdReachedAt();
+            expect(t0).to.be.gt(0);
+            expect(await curve.migrationAvailableAt()).to.equal(t0 + 24n * 3600n);
+            expect(await curve.isMigrationReady()).to.equal(true);
         });
 
-        it("becomes ready when USDT raised hits threshold + sweeps to liquidity wallet", async function () {
-            const { curve, usdt, wtpix, alice, bob, charlie, relayer } =
+        it("DELAY: reverts migrate during 24h grace period", async function () {
+            const { curve, usdt, alice, bob, charlie } = await loadFixture(deployFixture);
+            await reachThreshold(curve, usdt, [alice, bob, charlie]);
+
+            // Try immediately — must revert
+            await expect(curve.migrate()).to.be.revertedWith("BC: in delay");
+
+            // Try at 23h — still revert
+            await time.increase(23 * 3600);
+            await expect(curve.migrate()).to.be.revertedWith("BC: in delay");
+        });
+
+        it("PERMISSIONLESS: anyone can call migrate after delay", async function () {
+            const { curve, usdt, wtpix, alice, bob, charlie, dave } =
                 await loadFixture(deployFixture);
             const curveAddr = await curve.getAddress();
+            await reachThreshold(curve, usdt, [alice, bob, charlie]);
 
-            // ต้อง mint USDT เพิ่มให้ครบ $1M threshold (ทุกคนมี $500k แล้ว = $1.5M รวม พอ)
-            const big = ethers.parseUnits("400000", 6);
-            for (const user of [alice, bob, charlie]) {
-                await usdt.connect(user).approve(curveAddr, big);
-                await curve.connect(user).buy(big, 0);
-            }
-
-            expect(await curve.totalRaised()).to.be.gte(MIGRATION_USDT);
-            expect(await curve.isMigrationReady()).to.equal(true);
+            await time.increase(24 * 3600 + 1);
 
             const usdtInCurve = await usdt.balanceOf(curveAddr);
             const tpixInCurve = await wtpix.balanceOf(curveAddr);
 
-            await expect(curve.migrate())
+            // dave (random user, NOT owner) triggers migrate
+            await expect(curve.connect(dave).migrate())
                 .to.emit(curve, "Migrated")
                 .withArgs(usdtInCurve, tpixInCurve, tpixInCurve);
 
             expect(await curve.migrated()).to.equal(true);
             expect(await usdt.balanceOf(LIQUIDITY_WALLET)).to.equal(usdtInCurve);
             expect(await wtpix.balanceOf(LIQUIDITY_WALLET)).to.equal(tpixInCurve);
-            expect(await usdt.balanceOf(curveAddr)).to.equal(0n);
-            expect(await wtpix.balanceOf(curveAddr)).to.equal(0n);
         });
 
         it("blocks buy/sell after migration", async function () {
             const { curve, usdt, alice, bob, charlie } = await loadFixture(deployFixture);
             const curveAddr = await curve.getAddress();
-
-            const big = ethers.parseUnits("400000", 6);
-            for (const user of [alice, bob, charlie]) {
-                await usdt.connect(user).approve(curveAddr, big);
-                await curve.connect(user).buy(big, 0);
-            }
+            await reachThreshold(curve, usdt, [alice, bob, charlie]);
+            await time.increase(24 * 3600 + 1);
             await curve.migrate();
 
-            await usdt.connect(alice).approve(curveAddr, 1n);
-            await expect(curve.connect(alice).buy(1n, 0)).to.be.revertedWith("BC: migrated");
+            await usdt.connect(alice).approve(curveAddr, ethers.parseUnits("1", 6));
+            await expect(curve.connect(alice).buy(ethers.parseUnits("1", 6), 0))
+                .to.be.revertedWith("BC: migrated");
             await expect(curve.connect(alice).sell(1n, 0)).to.be.revertedWith("BC: migrated");
         });
 
         it("cannot migrate twice", async function () {
             const { curve, usdt, alice, bob, charlie } = await loadFixture(deployFixture);
-            const curveAddr = await curve.getAddress();
-
-            const big = ethers.parseUnits("400000", 6);
-            for (const user of [alice, bob, charlie]) {
-                await usdt.connect(user).approve(curveAddr, big);
-                await curve.connect(user).buy(big, 0);
-            }
+            await reachThreshold(curve, usdt, [alice, bob, charlie]);
+            await time.increase(24 * 3600 + 1);
             await curve.migrate();
-            // หลัง migrate = true → isMigrationReady() returns false เพราะ !migrated
-            // จึงโดน guard แรกก่อน ("BC: not ready") — ไม่ถึง require(!migrated)
+            // หลัง migrate=true → isMigrationReady() returns false → "BC: not ready"
             await expect(curve.migrate()).to.be.revertedWith("BC: not ready");
         });
     });
@@ -365,13 +399,68 @@ describe("TPIXBondingCurve", function () {
                 .to.be.revertedWithCustomError(curve, "OwnableUnauthorizedAccount");
         });
 
-        it("paused blocks buy + sell", async function () {
+        it("paused blocks buy + sell + records pausedAt", async function () {
             const { curve, usdt, alice } = await loadFixture(deployFixture);
             await curve.pause();
+            expect(await curve.pausedAt()).to.be.gt(0);
 
-            await usdt.connect(alice).approve(await curve.getAddress(), 100n);
-            await expect(curve.connect(alice).buy(100n, 0))
+            const oneUsdt = ethers.parseUnits("1", 6);
+            await usdt.connect(alice).approve(await curve.getAddress(), oneUsdt);
+            await expect(curve.connect(alice).buy(oneUsdt, 0))
                 .to.be.revertedWithCustomError(curve, "EnforcedPause");
+        });
+
+        it("unpause clears pausedAt", async function () {
+            const { curve } = await loadFixture(deployFixture);
+            await curve.pause();
+            await curve.unpause();
+            expect(await curve.pausedAt()).to.equal(0);
+        });
+    });
+
+    // =========================================================================
+    // emergencySell — anti-rug after extended pause
+    // =========================================================================
+
+    describe("emergencySell()", function () {
+        it("reverts when not paused", async function () {
+            const { curve, alice } = await loadFixture(deployFixture);
+            await expect(curve.connect(alice).emergencySell(1n))
+                .to.be.revertedWith("BC: not paused");
+        });
+
+        it("reverts during pause < MAX_PAUSE_DURATION (30 days)", async function () {
+            const { curve, alice } = await loadFixture(deployFixture);
+            await curve.pause();
+            await time.increase(29 * 24 * 3600); // 29 days
+            await expect(curve.connect(alice).emergencySell(1n))
+                .to.be.revertedWith("BC: pause too short");
+        });
+
+        it("ANTI-RUG: lets user redeem at floor price after 30d pause", async function () {
+            const { curve, usdt, wtpix, alice } = await loadFixture(deployFixture);
+            const curveAddr = await curve.getAddress();
+
+            // Alice buys
+            const usdtIn = ethers.parseUnits("1000", 6);
+            await usdt.connect(alice).approve(curveAddr, usdtIn);
+            await curve.connect(alice).buy(usdtIn, 0);
+            const tpixHeld = await wtpix.balanceOf(alice.address);
+
+            // Owner pauses and never unpauses → 30+ days later
+            await curve.pause();
+            await time.increase(31 * 24 * 3600);
+
+            // Alice can redeem at floor price (startPrice = $1.00)
+            await wtpix.connect(alice).approve(curveAddr, tpixHeld);
+            const usdtBefore = await usdt.balanceOf(alice.address);
+            await expect(curve.connect(alice).emergencySell(tpixHeld))
+                .to.emit(curve, "EmergencySell");
+            const usdtAfter = await usdt.balanceOf(alice.address);
+
+            // Got back at least floor-priced amount, no fee
+            const expectedFloor = (tpixHeld * START_PRICE) / ethers.parseEther("1");
+            expect(usdtAfter - usdtBefore).to.equal(expectedFloor);
         });
     });
 
@@ -394,14 +483,29 @@ describe("TPIXBondingCurve", function () {
 
         it("can rescue unrelated token", async function () {
             const { curve, owner } = await loadFixture(deployFixture);
-            // deploy a stray token and send to curve
             const Stray = await ethers.getContractFactory("USDT_TPIX");
             const stray = await Stray.deploy();
             await stray.setBridge(owner.address, true);
-            await stray.bridgeMint(await curve.getAddress(), 1000n, "0x" + "f".repeat(64));
+            await stray.bridgeMint(await curve.getAddress(), 1000n, txHash(200));
 
             await curve.rescueToken(await stray.getAddress(), 1000n);
             expect(await stray.balanceOf(owner.address)).to.equal(1000n);
+        });
+    });
+
+    // =========================================================================
+    // Ownable2Step
+    // =========================================================================
+
+    describe("Ownable2Step ownership transfer", function () {
+        it("transferOwnership requires acceptOwnership step", async function () {
+            const { curve, owner, alice } = await loadFixture(deployFixture);
+            await curve.connect(owner).transferOwnership(alice.address);
+            expect(await curve.owner()).to.equal(owner.address);
+            expect(await curve.pendingOwner()).to.equal(alice.address);
+
+            await curve.connect(alice).acceptOwnership();
+            expect(await curve.owner()).to.equal(alice.address);
         });
     });
 
@@ -411,7 +515,7 @@ describe("TPIXBondingCurve", function () {
 
     describe("production-scale no overflow", function () {
         it("computes quoteBuy with 700M supply + $5M input without overflow", async function () {
-            const [owner, relayer, alice] = await ethers.getSigners();
+            const [, relayer] = await ethers.getSigners();
 
             const WTPIX = await ethers.getContractFactory("src/sale/WTPIX_ERC20.sol:WTPIX");
             const USDT = await ethers.getContractFactory("USDT_TPIX");
@@ -437,11 +541,13 @@ describe("TPIXBondingCurve", function () {
                 REAL_TPIX_THRESHOLD,
             );
 
-            // $5M input — should return ~35-50M TPIX at ~$0.10-0.14 avg, no overflow
             const fiveM = ethers.parseUnits("5000000", 6);
             const out = await curve.quoteBuy(fiveM);
             expect(out).to.be.gt(ethers.parseEther("30000000"));
             expect(out).to.be.lt(ethers.parseEther("60000000"));
+
+            // Verify maxBuyPerWallet = 7M TPIX (1% of 700M)
+            expect(await curve.maxBuyPerWallet()).to.equal(REAL_SUPPLY / 100n);
         });
     });
 });
