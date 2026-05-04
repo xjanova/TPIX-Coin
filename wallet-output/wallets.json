@@ -1,0 +1,79 @@
+[
+  {
+    "path": "m/44'/60'/0'/0/0",
+    "role": "main",
+    "address": "0x18A4076b9B107121280a4373cD8474f9858D5D3f",
+    "balance_tpix": "0",
+    "balance_wei_hex": "0x0"
+  },
+  {
+    "path": "m/44'/60'/0'/0/1",
+    "role": "masternode-rewards",
+    "address": "0xf54c0deE404ec728a03b467cba7bBA171CC77dad",
+    "balance_tpix": "1400000000",
+    "balance_wei_hex": "0x4860d8812f0b38878000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/2",
+    "role": "ecosystem-development",
+    "address": "0x6E176Bf5Aa39Fb4217E0ebd00E14B67aDfFaf440",
+    "balance_tpix": "1710000000",
+    "balance_wei_hex": "0x5867a95bf5cdb496e000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/3",
+    "role": "team-advisors",
+    "address": "0x87e62D9e0C2aF15d634D3301Dd2D4DA57972052d",
+    "balance_tpix": "700000000",
+    "balance_wei_hex": "0x24306c4097859c43c000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/4",
+    "role": "token-sale",
+    "address": "0x4BcC1844Ad9E8587f7005f092928a5D14C30F463",
+    "balance_tpix": "700000000",
+    "balance_wei_hex": "0x24306c4097859c43c000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/5",
+    "role": "liquidity-market-making",
+    "address": "0x2644A740A06e0401D21F8B4A840400fFe8dB42A9",
+    "balance_tpix": "1050000000",
+    "balance_wei_hex": "0x3648a260e3486a65a000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/6",
+    "role": "community-rewards",
+    "address": "0x6dECa2E185CF37e7c838fE5Ae6897aED025c9921",
+    "balance_tpix": "1400000000",
+    "balance_wei_hex": "0x4860d8812f0b38878000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/7",
+    "role": "validator-1-stake",
+    "address": "0x24CD5d5A6B5EcC6520c76f5427DB06F81BcC61C5",
+    "balance_tpix": "10000000",
+    "balance_wei_hex": "0x84595161401484a000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/8",
+    "role": "validator-2-stake",
+    "address": "0x394418d33641D967C3553e45Af0646d565F51Ba7",
+    "balance_tpix": "10000000",
+    "balance_wei_hex": "0x84595161401484a000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/9",
+    "role": "validator-3-stake",
+    "address": "0x9D6Fc1cf3C17b495057356B95e995834248993F0",
+    "balance_tpix": "10000000",
+    "balance_wei_hex": "0x84595161401484a000000"
+  },
+  {
+    "path": "m/44'/60'/0'/0/10",
+    "role": "validator-4-stake",
+    "address": "0xec91028198E8cC55B284c018aBB4B2A87c6f3F12",
+    "balance_tpix": "10000000",
+    "balance_wei_hex": "0x84595161401484a000000"
+  }
+]
