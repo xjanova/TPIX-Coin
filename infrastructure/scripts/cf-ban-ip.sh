@@ -43,7 +43,7 @@ case "$cmd" in
         RESP=$(cf -X POST "$API/accounts/$CF_ACCOUNT_ID/rules/lists/$CF_LIST_ID/items" \
             --data "[{\"ip\":\"$IP\",\"comment\":\"$COMMENT\"}]")
 
-        if echo "$RESP" | grep -q '"success":true'; then
+        if echo "$RESP" | grep -qE '"success":\s*true'; then
             log "BANNED $IP via CF list ($COMMENT)"
         else
             log "FAIL ban $IP — response: $(echo "$RESP" | head -c 300)"
@@ -72,7 +72,7 @@ for it in d.get('result', []):
         RESP=$(cf -X DELETE "$API/accounts/$CF_ACCOUNT_ID/rules/lists/$CF_LIST_ID/items" \
             --data "{\"items\":[{\"id\":\"$ITEM_ID\"}]}")
 
-        if echo "$RESP" | grep -q '"success":true'; then
+        if echo "$RESP" | grep -qE '"success":\s*true'; then
             log "UNBANNED $IP from CF list"
         else
             log "FAIL unban $IP — $(echo "$RESP" | head -c 300)"
@@ -129,7 +129,7 @@ print(','.join(ids))
         RESP=$(cf -X DELETE "$API/accounts/$CF_ACCOUNT_ID/rules/lists/$CF_LIST_ID/items" \
             --data "{\"items\":[$items]}")
 
-        if echo "$RESP" | grep -q '"success":true'; then
+        if echo "$RESP" | grep -qE '"success":\s*true'; then
             count=$(echo "$ids" | tr ',' '\n' | wc -l)
             log "Pruned $count old bans"
         else
