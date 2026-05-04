@@ -222,6 +222,61 @@ git push origin main
 
 ---
 
+## 🟪 PHASE 3.5 — SELF-HOSTED MONITORING (free, ไม่ต้องสมัครอะไร)
+
+### 3.5.1 ติดตั้ง chain watchdog + daily report
+
+ไป SSH ที่ RPC server แล้ว:
+
+```bash
+cd ~/TPIX-Coin && git pull
+sudo bash infrastructure/monitoring/install-monitoring.sh
+```
+
+Script จะ:
+- Generate ntfy.sh topic ใหม่อัตโนมัติ → ส่ง topic name มาให้ subscribe
+- ติดตั้ง `/usr/local/sbin/tpix-chain-watchdog` (รันทุกนาที)
+- ติดตั้ง `/usr/local/sbin/tpix-daily-report` (รันทุก 00:05)
+- ตั้ง cron `/etc/cron.d/tpix-monitoring`
+- ส่ง test notification → คุณเห็นใน app
+
+### 3.5.2 Subscribe alerts บนมือถือ
+
+1. ติดตั้ง app **ntfy** (Free):
+   - iOS: https://apps.apple.com/app/ntfy/id1625396347
+   - Android: https://play.google.com/store/apps/details?id=io.heckel.ntfy
+2. กด Add subscription
+3. Server: `ntfy.sh` (default), Topic: ที่ script generate ให้ใน `/etc/tpix-watchdog.env`
+4. ทดสอบ: `sudo /usr/local/sbin/tpix-daily-report` → ดูใน app
+
+### 3.5.3 Alerts ที่จะได้รับ
+
+- 🚨 **RPC down** — eth_blockNumber timeout (urgent priority)
+- ⚠️ **Block stuck** — blocks not advancing > 2 minutes (high priority)
+- ⚠️ **Low peers** — connected peers < 2 (high)
+- 🔐 **SSL cert expiring** — < 30 days left (default)
+- 🚨 **Disk almost full** — > 95% used (urgent)
+- ⚠️ **fail2ban down** — service stopped (high)
+- 📊 **Daily report** — 00:05 every day (top abusive IPs, traffic stats, fail2ban summary)
+
+Cooldown: same alert type ไม่ส่งซ้ำใน 15 นาที (ปรับใน `/etc/tpix-watchdog.env`)
+
+### 3.5.4 Self-hosted ntfy server (advanced, optional)
+
+ถ้าไม่อยากใช้ public ntfy.sh:
+```bash
+# Run private ntfy server in Docker
+docker run -d --name ntfy --restart unless-stopped \
+  -p 8082:80 \
+  -v ~/ntfy-cache:/var/cache/ntfy \
+  binwiederhier/ntfy serve
+
+# Update /etc/tpix-watchdog.env:
+NTFY_SERVER=https://ntfy.yourdomain.com  # behind nginx + Let's Encrypt
+```
+
+---
+
 ## 🟦 PHASE 4 — POST-DEPLOY HARDENING (free, ทำได้ทันที)
 
 ### 4.1 ย้าย ownership ไป multisig
@@ -252,15 +307,29 @@ npx hardhat console --network tpix
 
 ### 4.2 ตั้ง monitoring ที่ฟรี
 
-#### Sentry (5k errors/mo ฟรี)
+#### Sentry (5k errors/mo ฟรี) — **SDK pre-installed แล้ว**
 🌐 https://sentry.io/signup
 - สร้าง 2 projects: `tpix-trade-laravel`, `tpix-trade-vue`
-- เอา DSN มา set `.env`:
+- เอา DSN มา set ใน ThaiXTrade `.env`:
+  ```env
+  SENTRY_LARAVEL_DSN=https://...@o123.ingest.sentry.io/...
+  VITE_SENTRY_DSN=https://...@o123.ingest.sentry.io/...
+  SENTRY_TRACES_SAMPLE_RATE=0.10
   ```
-  SENTRY_LARAVEL_DSN=https://...
-  SENTRY_VUE_DSN=https://...
+- บน server รัน:
+  ```bash
+  cd ~/domains/tpix.online/public_html
+  composer require sentry/sentry-laravel
+  npm install @sentry/vue
+  npm run build
   ```
-- ผมพร้อมเขียน Laravel + Vue SDK install ให้เมื่อคุณได้ DSN
+- ใน `resources/js/app.js` import + call: `import { initSentry } from './sentry'; initSentry(app, router);`
+- Test: `php artisan sentry:test`
+- **Pre-configured features (already in repo):**
+  - PII stripping (wallet addresses + mnemonic auto-redacted)
+  - Performance: 10% trace sampling
+  - Ignore noise: 404, 422, 429, user-rejected wallet signs, ResizeObserver
+  - Tags: site=tpix-trade, chain_id=4289
 
 #### Tenderly (free tier)
 🌐 https://dashboard.tenderly.co/register
