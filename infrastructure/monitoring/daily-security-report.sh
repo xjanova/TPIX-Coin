@@ -20,30 +20,30 @@ APACHE_LOG="${APACHE_LOG:-/var/log/httpd/access_log}"
 [[ -r "$APACHE_LOG" ]] || { echo "No readable Apache log"; exit 1; }
 
 # ─ Aggregate yesterday's stats
-TOTAL_REQ=$(grep "$YESTERDAY" "$APACHE_LOG" 2>/dev/null | wc -l)
-BLOCKED_403=$(grep "$YESTERDAY" "$APACHE_LOG" 2>/dev/null | awk '{print $9}' | grep -c "^403" || echo 0)
-RATE_LIMITED=$(grep "$YESTERDAY" "$APACHE_LOG" 2>/dev/null | awk '{print $9}' | grep -c "^429" || echo 0)
-ERRORS_5XX=$(grep "$YESTERDAY" "$APACHE_LOG" 2>/dev/null | awk '{print $9}' | grep -cE "^5[0-9][0-9]" || echo 0)
+# Use awk-only (avoids grep -c return-code-1 on no-match killing pipefail)
+TOTAL_REQ=$(awk -v d="$YESTERDAY" '$0 ~ d {c++} END {print c+0}' "$APACHE_LOG" 2>/dev/null || echo 0)
+BLOCKED_403=$(awk -v d="$YESTERDAY" '$0 ~ d && $9=="403" {c++} END {print c+0}' "$APACHE_LOG" 2>/dev/null || echo 0)
+RATE_LIMITED=$(awk -v d="$YESTERDAY" '$0 ~ d && $9=="429" {c++} END {print c+0}' "$APACHE_LOG" 2>/dev/null || echo 0)
+ERRORS_5XX=$(awk -v d="$YESTERDAY" '$0 ~ d && $9 ~ /^5[0-9][0-9]$/ {c++} END {print c+0}' "$APACHE_LOG" 2>/dev/null || echo 0)
 
 # Top 5 abuser IPs (got 403/429)
-TOP_IPS=$(grep "$YESTERDAY" "$APACHE_LOG" 2>/dev/null \
-    | awk '$9=="403" || $9=="429" { print $1 }' \
-    | sort | uniq -c | sort -rn | head -5)
+TOP_IPS=$(awk -v d="$YESTERDAY" '$0 ~ d && ($9=="403" || $9=="429") {print $1}' "$APACHE_LOG" 2>/dev/null \
+    | sort | uniq -c | sort -rn | head -5 || true)
+[[ -z "$TOP_IPS" ]] && TOP_IPS="  (none)"
 
 # Top 5 RPC POST source IPs
-TOP_RPC_IPS=$(grep "$YESTERDAY" "$APACHE_LOG" 2>/dev/null \
-    | grep "rpc.tpix.online" \
-    | awk '{ print $1 }' \
-    | sort | uniq -c | sort -rn | head -5)
+TOP_RPC_IPS=$(awk -v d="$YESTERDAY" '$0 ~ d && /rpc\.tpix\.online/ {print $1}' "$APACHE_LOG" 2>/dev/null \
+    | sort | uniq -c | sort -rn | head -5 || true)
+[[ -z "$TOP_RPC_IPS" ]] && TOP_RPC_IPS="  (none)"
 
-# fail2ban status
+# fail2ban status (running as root via cron — no sudo needed)
 F2B=""
+BANNED_TODAY="?"
 if command -v fail2ban-client >/dev/null 2>&1; then
-    F2B=$(sudo fail2ban-client status 2>/dev/null \
-        | grep "Banned IP" \
-        | head -10)
-    BANNED_TODAY=$(sudo fail2ban-client status apache-overflows 2>/dev/null \
-        | grep "Total banned" | awk '{print $NF}' || echo "?")
+    F2B=$(fail2ban-client status 2>/dev/null | grep -E "Banned IP|Jail list" | head -10 || true)
+    BANNED_TODAY=$(fail2ban-client status apache-overflows 2>/dev/null \
+        | awk -F: '/Total banned/ {gsub(/^ +| +$/,"",$2); print $2; exit}' || echo "?")
+    [[ -z "$BANNED_TODAY" ]] && BANNED_TODAY="0"
 fi
 
 # Disk + load
