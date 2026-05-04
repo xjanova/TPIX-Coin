@@ -107,7 +107,20 @@ Write-Host "Step 6/6: commit + push to GitHub" -ForegroundColor Yellow
 $repoRoot = Resolve-Path (Join-Path (Get-Location).Path "..")
 Push-Location $repoRoot
 try {
-    & git add infrastructure/genesis.json infrastructure/data .gitignore wallet-output/wallets.json wallet-output/README.md 2>&1 | Out-Null
+    # Only stage paths that actually exist (infrastructure/data lives on server, not in git)
+    $toAdd = @()
+    foreach ($p in @(
+        'infrastructure/genesis.json',
+        'infrastructure/data',
+        '.gitignore',
+        'wallet-output/wallets.json',
+        'wallet-output/README.md'
+    )) {
+        if (Test-Path $p) { $toAdd += $p }
+    }
+    if ($toAdd.Count -gt 0) {
+        & git add @toAdd 2>&1 | Out-Null
+    }
     & git commit -m "chore(chain): regenesis - whitepaper-aligned BIP-44 HD allocation"
     & git push origin main
 } finally {
