@@ -53,10 +53,9 @@ fi
 
 cd "$INFRA"
 
-# ─── 2. Stop validators
-log "[1/6] Stopping validators..."
-docker compose -f "$(basename "$COMPOSE_FILE")" stop 2>&1 | tail -5 || \
-    docker-compose -f "$(basename "$COMPOSE_FILE")" stop 2>&1 | tail -5
+# ─── 2. Stop + remove validators (down, not stop — so up -d can recreate clean)
+log "[1/6] Stopping + removing validator containers..."
+docker compose -f "$(basename "$COMPOSE_FILE")" down 2>&1 | tail -5
 
 # ─── 3. Backup chain state
 TS=$(date +%Y%m%d-%H%M%S)
@@ -101,8 +100,7 @@ done
 
 # ─── 6. Start validators
 log "[5/6] Starting validators..."
-docker compose -f "$(basename "$COMPOSE_FILE")" up -d 2>&1 | tail -10 || \
-    docker-compose -f "$(basename "$COMPOSE_FILE")" up -d 2>&1 | tail -10
+docker compose -f "$(basename "$COMPOSE_FILE")" up -d 2>&1 | tail -15
 
 # ─── 7. Verify
 log "[6/6] Waiting for chain to come up (15 sec)..."
