@@ -47,9 +47,31 @@ REPO_DIR="$(cd "$(dirname "$(readlink -f "$0")")"/../.. && pwd)"
 
 # ─── 1. Discover account ID
 log "[1/9] Discovering Cloudflare account..."
-ACCOUNT_ID=$(cf "https://api.cloudflare.com/client/v4/accounts?per_page=1" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['result'][0]['id'])")
-log "  Account: $ACCOUNT_ID"
+if [[ -n "${CF_ACCOUNT_ID:-}" ]]; then
+    log "  Using preset CF_ACCOUNT_ID: $CF_ACCOUNT_ID"
+    ACCOUNT_ID="$CF_ACCOUNT_ID"
+else
+    ACCOUNT_ID=$(cf "https://api.cloudflare.com/client/v4/accounts?per_page=1" \
+        | python3 -c "
+import sys,json
+try:
+    d = json.load(sys.stdin)
+    r = d.get('result') or []
+    if r:
+        print(r[0]['id'])
+    else:
+        print('')
+except Exception:
+    print('')
+")
+    if [[ -z "$ACCOUNT_ID" ]]; then
+        err "Token cannot list accounts — set CF_ACCOUNT_ID env var manually"
+        err "  Find your account ID at https://dash.cloudflare.com (URL pattern: /<ACCOUNT_ID>/...)"
+        err "  Then re-run: sudo CF_API_TOKEN=... CF_ACCOUNT_ID=... bash $0"
+        exit 1
+    fi
+    log "  Discovered account: $ACCOUNT_ID"
+fi
 
 # Zone ID for tpix.online
 ZONE_ID=$(cf "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
