@@ -59,3 +59,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# TPIX master wallet outputs — NEVER commit private keys/mnemonic
+# wallets.json (public addresses) is allow-listed below
+wallet-output/master-wallet.mnemonic.txt
+wallet-output/master-wallet.privatekeys.txt
+wallet-output/master-wallet.privatekey.txt
+wallet-output/master-wallet.keystore.json
+wallet-output/master-wallet.keystores.json
