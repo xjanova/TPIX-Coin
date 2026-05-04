@@ -74,8 +74,26 @@ except Exception:
 fi
 
 # Zone ID for tpix.online
-ZONE_ID=$(cf "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['result'][0]['id'])")
+if [[ -n "${CF_ZONE_ID:-}" ]]; then
+    log "  Using preset CF_ZONE_ID: $CF_ZONE_ID"
+    ZONE_ID="$CF_ZONE_ID"
+else
+    ZONE_ID=$(cf "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
+        | python3 -c "
+import sys,json
+try:
+    d = json.load(sys.stdin)
+    r = d.get('result') or []
+    print(r[0]['id'] if r else '')
+except Exception:
+    print('')
+")
+    if [[ -z "$ZONE_ID" ]]; then
+        err "Token cannot list zones — set CF_ZONE_ID env var manually"
+        err "  Find your zone ID at https://dash.cloudflare.com/<ACCOUNT_ID>/$ZONE_NAME (right sidebar 'API' section)"
+        exit 1
+    fi
+fi
 log "  Zone $ZONE_NAME: $ZONE_ID"
 
 # ─── 2. Create or find IP list
