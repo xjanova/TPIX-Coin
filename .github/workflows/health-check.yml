@@ -1,9 +1,14 @@
-name: TPIX Chain Health Check
+name: TPIX Chain Health Check (manual fallback)
 
+# Auto-schedule REMOVED 2026-05-15 — superseded by server-side cron:
+#   sudo bash infrastructure/scripts/install-watchdog.sh
+#
+# Server cron runs every 1 min (vs 5 min here), no SSH overhead, has restart-loop
+# guard + healthchecks.io dead-man-switch + ntfy push on critical events.
+#
+# Kept here for manual emergency-trigger via GH Actions UI in case server cron
+# is broken AND user can't SSH in to fix it directly.
 on:
-  schedule:
-    # Run every 5 minutes
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
