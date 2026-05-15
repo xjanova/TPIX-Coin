@@ -1,14 +1,20 @@
-name: TPIX Chain Health Check (manual fallback)
+name: TPIX Chain Health Check (4h backup)
 
-# Auto-schedule REMOVED 2026-05-15 — superseded by server-side cron:
-#   sudo bash infrastructure/scripts/install-watchdog.sh
+# 2026-05-15 — เปลี่ยนจากทุก 5 นาที เป็นทุก 4 ชั่วโมง
+# เหตุผล: server-side cron (infrastructure/scripts/chain-watchdog.sh) เป็น
+# watchdog หลัก รันทุก 1 นาทีบน server มี restart-loop guard + healthchecks.io
+# external alert
 #
-# Server cron runs every 1 min (vs 5 min here), no SSH overhead, has restart-loop
-# guard + healthchecks.io dead-man-switch + ntfy push on critical events.
+# GH workflow นี้เก็บไว้เป็น "เซฟตี้เน็ตอันสุดท้าย" — ครอบคลุมกรณีที่:
+#   - server cron แตก (cron daemon ตาย / disk full / script bug)
+#   - healthchecks.io alert ไม่ส่ง (email โดน spam filter)
+#   - หรือลูกค้าอยากกด manual ผ่าน Actions UI
 #
-# Kept here for manual emergency-trigger via GH Actions UI in case server cron
-# is broken AND user can't SSH in to fix it directly.
+# 4 ชม. = 6 รอบ/วัน — เปลือง GH minutes น้อย แต่ก็ยังเห็น chain healthy ผ่าน
+# UI ได้ถี่พอ
 on:
+  schedule:
+    - cron: '0 */4 * * *'  # 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
   workflow_dispatch:
 
 jobs:
