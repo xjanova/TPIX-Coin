@@ -12,10 +12,23 @@ const os = require('os');
 const https = require('https');
 const http = require('http');
 const EventEmitter = require('events');
+const { BROWSER_UA } = require('./rpc-client');
+const chainHealth = require('./chain-health');
 
 const TPIX_RPC = 'https://rpc.tpix.online';
 const CHAIN_ID = 4289;
-const BLOCK_TIME = 2; // seconds
+
+// blockTime ที่ genesis ตั้งไว้ — ใช้เป็น "ค่าสำรองสุดท้าย" เท่านั้น ห้ามใช้คำนวณตรงๆ
+//
+// แก้ 2026-08-05: เดิมค่านี้ถูกใช้ประมาณ block number ตอน RPC ล่ม
+//     blockNumber = last_reward_block + Math.floor(elapsedSeconds / BLOCK_TIME)
+// ตรวจเชนจริงเมื่อ 2026-08-05 แล้วพบว่าบล็อกออกทุก ~6 วินาที ไม่ใช่ 2
+// (validator 1 ใน 4 ไม่ propose → IBFT timeout รอบละ ~10s ดู chain-health.js)
+// → สูตรเดิมประมาณ block number **เกินไป 3 เท่า** แล้วค่านั้นถูกเขียนลงเป็น
+//   checkpoint การจ่ายรางวัล staking (db.updateStakingRewardCheckpoint)
+// ตอนนี้ใช้ chainHealth.measuredBlockTime() ที่วัดจากเชนจริง (median ของช่องว่าง
+// บล็อก เพื่อไม่ให้ round timeout ที่เป็น outlier ลากค่าเพี้ยน)
+const BLOCK_TIME_FALLBACK = 2; // seconds
 
 // Tier definitions — stake in TPIX, APY as decimal
 const TIER_CONFIG = {
@@ -405,8 +418,23 @@ class NodeManager extends EventEmitter {
             if (rewardWei <= 0n) return;
 
             // Get current block number for the reward record
-            this.getBlockNumber().then(blockNumber => {
-                if (!blockNumber) blockNumber = staking.last_reward_block + Math.floor(elapsedSeconds / BLOCK_TIME);
+            //
+            // ถ้า RPC ตอบไม่ได้ ต้องประมาณจากเวลาที่ผ่านไป — แต่ต้องหารด้วย blockTime
+            // ที่ **วัดจากเชนจริง** ไม่ใช่ค่าใน genesis (ดูคอมเมนต์ที่ BLOCK_TIME_FALLBACK)
+            this.getBlockNumber().then(async blockNumber => {
+                if (!blockNumber) {
+                    let bt = BLOCK_TIME_FALLBACK;
+                    try {
+                        bt = await chainHealth.measuredBlockTime();
+                    } catch {
+                        // วัดไม่ได้ก็ใช้ค่าสำรอง — อย่าให้ตัววัดทำให้การจ่ายรางวัลล้ม
+                    }
+                    if (!Number.isFinite(bt) || bt <= 0) bt = BLOCK_TIME_FALLBACK;
+                    blockNumber = staking.last_reward_block + Math.floor(elapsedSeconds / bt);
+                    this.addLog('warn',
+                        `RPC ตอบไม่ได้ — ประมาณ block number จาก blockTime ที่วัดได้ ${bt}s `
+                        + `(ค่าใน genesis คือ ${BLOCK_TIME_FALLBACK}s)`);
+                }
 
                 // Determine which wallet gets the reward
                 const rewardWalletAddress = staking.reward_wallet || staking.wallet_address;
@@ -516,6 +544,9 @@ class NodeManager extends EventEmitter {
                     headers: {
                         'Content-Type': 'application/json',
                         'Content-Length': Buffer.byteLength(body),
+                        // Cloudflare WAF blocks UA-less requests with a 403 — see rpc-client.js
+                        'User-Agent': BROWSER_UA,
+                        Accept: 'application/json, text/plain, */*',
                     },
                     timeout: 10000,
                 },
@@ -523,6 +554,12 @@ class NodeManager extends EventEmitter {
                     let data = '';
                     res.on('data', (chunk) => (data += chunk));
                     res.on('end', () => {
+                        if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+                            return reject(new Error(
+                                `RPC endpoint returned HTTP ${res.statusCode} ` +
+                                `(request blocked at the edge or node unreachable)`
+                            ));
+                        }
                         try {
                             const json = JSON.parse(data);
                             if (json.error) {
@@ -531,7 +568,7 @@ class NodeManager extends EventEmitter {
                                 resolve(json.result);
                             }
                         } catch (e) {
-                            reject(new Error('Invalid JSON response'));
+                            reject(new Error('Invalid JSON response (non-JSON body)'));
                         }
                     });
                 }
