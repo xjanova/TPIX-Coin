@@ -1,0 +1,100 @@
+name: Contracts — compile + test
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  เขียนขึ้น 2026-08-05 เพราะพบว่า repo มีเทสต์สัญญา 95 เคส แต่
+#  **ไม่มี workflow ไหนรันมันเลยแม้แต่ตัวเดียว**
+#
+#  ผลของช่องว่างนี้ที่เกิดขึ้นจริง: ช่องโหว่ C1 (bonding curve ให้คนที่ไม่เคยซื้อ
+#  ขายเข้า curve ดูด USDT ออกได้) อยู่ในโค้ดมาตลอดโดยที่ 78 เทสต์เดิม "ผ่านหมด"
+#  เพราะไม่มีเคสไหนครอบ และไม่มีอะไรบังคับให้ใครรันเทสต์ก่อน merge
+#
+#  ถ้าไม่มีไฟล์นี้ เทสต์ regression ที่เพิ่งเขียน (C1 + W1) ก็ไม่ได้ปกป้องอะไรเลย
+#  เพราะไม่มีใครรัน — มันจะเน่าไปเงียบๆ พร้อมกับความมั่นใจผิดๆ
+# ══════════════════════════════════════════════════════════════════════════════
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts-test.yml'
+  pull_request:
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Compile and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        run: npx hardhat compile
+
+      # ── เทสต์ทั้งชุด ต้องผ่านหมด ไม่มีข้อยกเว้น ──────────────────────────────
+      - name: Test
+        run: npx hardhat test
+
+      # ── หา .sol ที่ยังไม่มีไฟล์เทสต์คู่กัน ────────────────────────────────────
+      # ไม่ทำให้ build แดง (เป็นคำเตือน) เพราะ interface / library ไม่จำเป็นต้องมี
+      # เทสต์ของตัวเอง — แต่ต้อง "เห็น" เมื่อมีสัญญาใหม่โผล่มาโดยไม่มีเทสต์
+      #
+      # ช่องว่างนี้เป็นตัวที่ปล่อยให้ WTPIX_BEP20 (มีช่องโหว่ W1 เผาเหรียญคนอื่นได้)
+      # และ TPIXTokenSale อยู่ใน repo โดยไม่มีเทสต์เลยแม้แต่ข้อเดียว
+      - name: Warn on contracts without tests
+        run: |
+          # เทียบด้วย "ชื่อ contract ปรากฏในเนื้อไฟล์เทสต์ไหม" ไม่ใช่ชื่อไฟล์ต้องตรงกัน
+          # เพราะหลายสัญญาถูกเทสต์รวมในไฟล์เดียว เช่น TPIXDEXFactory/Pair/Router02
+          # อยู่ใน TPIXDEX.test.js และ WTPIX_ERC20 อยู่ใน WTPIX.test.js
+          MISSING=""
+          while IFS= read -r sol; do
+            case "$sol" in
+              */interfaces/*|*/libraries/*) continue ;;
+            esac
+            # ดึงชื่อ contract จริงจากในไฟล์ (ไม่ใช่ชื่อไฟล์ — WTPIX_BEP20.sol ประกาศ `contract WTPIX`)
+            while IFS= read -r cname; do
+              [ -n "$cname" ] || continue
+              if ! grep -rqE "\b${cname}\b" test/ 2>/dev/null; then
+                MISSING="${MISSING}  - ${cname}  (${sol})\n"
+              fi
+            done < <(grep -oE '^contract +[A-Za-z0-9_]+' "$sol" | awk '{print $2}')
+          done < <(find src -name '*.sol' | sort)
+
+          if [ -n "$MISSING" ]; then
+            echo "::warning::สัญญาต่อไปนี้ไม่ถูกอ้างถึงในเทสต์ใดเลย:"
+            printf "%b" "$MISSING"
+            {
+              echo "### ⚠️ สัญญาที่ยังไม่มีเทสต์"
+              printf "%b" "$MISSING"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ทุกสัญญาถูกอ้างถึงในเทสต์"
+          fi
+
+      - name: Test summary
+        if: always()
+        run: |
+          COUNT=$(ls test/*.test.js 2>/dev/null | wc -l)
+          echo "### Contracts CI" >> "$GITHUB_STEP_SUMMARY"
+          echo "ไฟล์เทสต์: ${COUNT}" >> "$GITHUB_STEP_SUMMARY"

@@ -19,7 +19,25 @@ permissions:
   contents: write
 
 env:
-  POLYGON_EDGE_VERSION: "1.3.2"
+  # ⛔ ต้องตรงกับเวอร์ชันที่ production รันจริงเสมอ (infrastructure/chain/alloc.env)
+  #
+  # แก้ 2026-08-05 — เดิมตั้งไว้ "1.3.2" ขณะที่ production รัน 0.9.0
+  # นี่คือกลไกต้นเหตุที่ทำให้ regenesis ค้างบล็อก 0 ทั้ง 8 ครั้ง (2026-05-04 → 05-07):
+  #   1. CI ดาวน์โหลด binary 1.3.2
+  #   2. setup-chain.sh ส่ง --ibft-validators-prefix-path ซึ่งเป็น flag ยุค 0.9.x
+  #      (คอมเมนต์ที่ setup-chain.sh:166 เขียนกำกับไว้เองว่า "not --validators-prefix")
+  #   3. ได้ genesis ที่ validator set ว่างเปล่าออกมาโดยไม่มี error
+  #   4. step Validate ตรวจแค่ `jq empty` → ผ่าน
+  #   5. step Commit auto-commit ไฟล์เสียกลับเข้า repo
+  #   6. production 0.9.0 รับ genesis นั้นไป → ค้างบล็อก 0 ตลอดกาล
+  #
+  # หลักฐานว่าไฟล์ถูกสร้างด้วย binary 1.x: genesis.json มีฟิลด์ baseFeeEM,
+  # baseFeeChangeDenom, burnContract และ fork ชื่อ londonfix / quorumcalcalignment /
+  # txHashWithType ซึ่งเป็นของยุค 1.x ทั้งชุด
+  #
+  # ถ้าจะอัปเกรดเป็น 1.x ต้องอัปเกรด "ทั้งสองฝั่งพร้อมกัน" (CI + docker image
+  # ใน alloc.env) และซ้อมใน infrastructure/lab/run-lab.sh ก่อนทุกครั้ง
+  POLYGON_EDGE_VERSION: "0.9.0"
 
 jobs:
   generate-genesis:
@@ -33,6 +51,23 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq jq zip
+
+      # ด่านกันเวอร์ชันหลุดจากกัน — ถ้ามีคนแก้ที่เดียวแล้วลืมอีกที่ ต้องพังที่นี่
+      # ไม่ใช่ไปพังตอน genesis ขึ้น production แล้วเชนไม่เดิน
+      - name: Assert CI version matches production image
+        run: |
+          PROD_IMAGE="$(grep -E '^POLYGON_EDGE_IMAGE=' infrastructure/chain/alloc.env \
+            | cut -d= -f2- | tr -d '"' | tr -d "'")"
+          PROD_VER="${PROD_IMAGE##*:}"
+          echo "CI version         : ${POLYGON_EDGE_VERSION}"
+          echo "production image   : ${PROD_IMAGE}"
+          echo "production version : ${PROD_VER}"
+          if [ "${PROD_VER}" != "${POLYGON_EDGE_VERSION}" ]; then
+            echo "::error::เวอร์ชันไม่ตรงกัน — CI=${POLYGON_EDGE_VERSION} แต่ production=${PROD_VER}"
+            echo "genesis ที่สร้างด้วย CLI คนละ major version กับ node ที่รันจริง"
+            echo "คือกลไกที่ทำให้ regenesis ค้างบล็อก 0 มา 8 ครั้ง — ดู docs/REGENESIS-RUNBOOK.md"
+            exit 1
+          fi
 
       - name: Download polygon-edge
         run: |
