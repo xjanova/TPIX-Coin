@@ -74,7 +74,37 @@ wc -l /tmp/old-chain-balances.csv
 head -30 /tmp/old-chain-balances.csv
 ```
 
-จากผลลัพธ์ ให้เลือกหนึ่งทาง แล้วเขียนไว้ในบันทึกว่าเลือกอะไร:
+**แต่ยอดเหรียญ native เป็นแค่ครึ่งเดียวของความเสียหาย** — DB ของ ThaiXTrade ยังเก็บ
+reference ไปยัง on-chain state อีกเยอะที่จะกลายเป็นซาก โดยที่แถวยังบอกว่า
+`status = 'deployed'` / `'active'` / `'retired'` อยู่เหมือนเดิม ไม่มี error ที่ไหนเลย
+
+รันตัวนี้บน **production** (อ่านเท่านั้น ไม่เขียนอะไร):
+
+```bash
+php artisan tpix:audit-chain-deps
+php artisan tpix:audit-chain-deps --json > /tmp/blast-radius.json   # เก็บเป็นหลักฐาน
+```
+
+มันจะไล่ทุกตารางในฐาน หา column ที่อ้าง on-chain (`contract_address`, `tx_hash`,
+`block_number`, …) แล้วนับแถว + แยกตามสถานะ + นับกระเป๋าที่กระทบ พร้อมชี้ว่าตารางไหน
+**ข้อมูลหาย = ปัญหาความน่าเชื่อถือของธุรกิจ** ไม่ใช่แค่ความสวยงาม:
+
+| ตาราง | ทำไมสำคัญ |
+|---|---|
+| `carbon_retirements` | หลักฐานว่าเครดิตถูกใช้สิทธิ์ไปแล้ว — หายแล้วพิสูจน์ไม่ได้ย้อนหลัง |
+| `carbon_credits` | เครดิตที่ขายไปแล้ว |
+| `food_certificates` / `food_traces` | ใบรับรอง + บันทึกตรวจสอบย้อนกลับ — สินค้าที่ขายความ "ตรวจสอบได้" |
+| `factory_tokens` | เหรียญที่ผู้ใช้สร้างเองผ่าน Token Factory |
+| `staking_positions` | เงินที่ผู้ใช้ stake ไว้ |
+| `bridge_transactions` | รายการ bridge ที่อาจกำลังค้างกลางทาง |
+
+> ⚠️ **เชนใหม่จะใช้ chainId 4289 เหมือนเดิม** → wallet และ explorer **จะไม่เตือน**
+> ว่า "ผิดเน็ตเวิร์ก" มันจะแสดงศูนย์เฉยๆ ผู้ใช้ไม่รู้ว่าเกิดอะไรขึ้น
+> ถ้าเปลี่ยนไปใช้ **chainId ใหม่** client จะบอกว่า "unknown network" = ผู้ใช้รู้ตัวทันที
+> และ mobile app เวอร์ชันเก่าที่ปล่อยไปแล้ว (v1.13.12 บน GitHub releases) จะเลิกเชื่อมต่อ
+> แทนที่จะแสดงยอดศูนย์อย่างเงียบๆ — **แลกความสะดวกกับความซื่อสัตย์ ต้องเลือก**
+
+จากผลลัพธ์ทั้งสองอย่าง (ยอด native + blast radius) ให้เลือกหนึ่งทาง แล้วเขียนไว้ในบันทึกว่าเลือกอะไร:
 
 | ทาง | ทำอย่างไร | เหมาะเมื่อ |
 |---|---|---|
@@ -240,11 +270,39 @@ sudo bash bootstrap-node.sh --index 1 --peers "IP2,IP3,IP4"
 
 ทำครบทั้ง 4 เครื่อง (เปลี่ยน `--index` และรายการ `--peers` ให้ตรง) แล้ว **จดค่า `PUBLIC_IP` ที่มันพิมพ์ออกมา**
 
+### 2.4 พลิก `infrastructure/TOPOLOGY` เป็น `distributed` ⛔ ห้ามลืม
+
+มี workflow **6 ตัว** ที่ SSH เข้า `secrets.SSH_HOST` (ค่าเดี่ยว) และสมมติว่า validator
+ทุกตัวอยู่ที่ `$HOME/tpix-infrastructure` บนเครื่องนั้น:
+
+`restart-chain.yml` · `tune-chain.yml` · `deploy-explorer.yml` ·
+`health-check.yml` · `diagnose-chain.yml` · `fetch-chain-config.yml`
+
+วันที่ย้าย validator ออกไปคนละ VPS สมมติฐานนี้พังหมด แต่ **workflow จะไม่ error**
+มันจะไปทำงานกับเครื่องเก่าอย่างมั่นใจ ตัวที่อันตรายที่สุด:
+
+> `restart-chain.yml` รัน `docker compose up -d` ที่ `$HOME/tpix-infrastructure`
+> = **ปลุกเชนเก่า (2.7M บล็อก) ขึ้นมาใหม่ขณะที่เชนใหม่ก็รันอยู่ ด้วย chainId 4289
+> เหมือนกันทั้งคู่** → nginx upstream / mobile app / explorer ที่ยังเข้าถึงเครื่องเก่าได้
+> จะเห็นสองเชนที่อ้างว่าเป็นเชนเดียวกัน ยอดเงินกับประวัติไม่ตรงกันทั้งระบบ
+
+```bash
+# แก้บรรทัดแรกของไฟล์ single-host → distributed
+sed -i '1s/.*/distributed/' infrastructure/TOPOLOGY
+git commit -am "chore(infra): topology → distributed" && git push
+```
+
+หลังพลิกแล้ว workflow ทั้ง 6 จะ **หยุดเสียงดัง** พร้อมบอกเหตุ แทนที่จะทำสิ่งที่ผิดอย่างเงียบๆ
+ค่อยแก้ทีละตัวให้รองรับหลายโฮสต์ (matrix + `SSH_HOST_1..4`) แล้วเพิ่ม `distributed`
+เข้าไปใน `expects` ของตัวนั้น
+
 ### ✅ เกณฑ์ผ่าน Phase 2
 - [ ] VPS 4 เครื่อง ping ถึงกัน
 - [ ] `nc -zv <ip-เพื่อน> 10001` เปิดถึงกันครบทุกคู่
 - [ ] `nc -zv <ip-เพื่อน> 8545` **ต้องต่อไม่ได้** (ถ้าต่อได้ = ไฟร์วอลล์รั่ว หยุดแก้ก่อน)
 - [ ] `docker --version` ขึ้นครบ 4 เครื่อง
+- [ ] `infrastructure/TOPOLOGY` = `distributed` แล้ว และ push ขึ้น repo แล้ว
+- [ ] ลองกด `restart-chain.yml` ดู — **ต้องขึ้น error เรื่อง topology** ถ้ามันรันผ่านได้คือ guard ไม่ทำงาน
 
 ---
 

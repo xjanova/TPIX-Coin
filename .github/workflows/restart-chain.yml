@@ -2,11 +2,40 @@ name: Restart TPIX Chain Validators
 
 on:
   workflow_dispatch:
+    # เพิ่ม 2026-08-05 — เดิม workflow นี้ "ไม่มี gate อะไรเลย" คลิก Run เดียวจาก
+    # GitHub UI แล้วมันจะ SSH ไปรัน docker compose restart/up -d ทับเชนจริงทันที
+    # ตัวเดียวใน repo ที่แตะ production ได้โดยไม่ต้องยืนยันอะไร (tune-chain มี confirm อยู่แล้ว)
+    inputs:
+      confirm:
+        description: 'พิมพ์ RESTART เพื่อยืนยันว่าจะรีสตาร์ท validator บนเชนจริง'
+        required: true
+        default: ''
+        type: string
 
 jobs:
   restart:
     runs-on: ubuntu-latest
     steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "RESTART" ]; then
+            echo "::error::ต้องพิมพ์ RESTART เพื่อยืนยัน (ได้รับ: '${{ inputs.confirm }}')"
+            exit 1
+          fi
+
+      # ── ด่านกัน automation ล้าสมัยไปสั่งงานเครื่องผิด (เพิ่ม 2026-08-05) ──────────
+      # workflow นี้ SSH เข้า secrets.SSH_HOST ซึ่งเป็นค่าเดี่ยว และสมมติว่า validator
+      # ทุกตัวอยู่ที่ $HOME/tpix-infrastructure บนเครื่องนั้น วันที่ย้าย validator
+      # ออกไปคนละ VPS สมมติฐานนี้พัง แต่ workflow จะไม่ error — มันจะไปทำงานกับ
+      # เครื่องเก่าอย่างมั่นใจ ดูรายละเอียดใน infrastructure/TOPOLOGY
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Assert chain topology
+        uses: ./.github/actions/assert-topology
+        with:
+          expects: single-host
+
       - name: Restart validators via SSH
         uses: appleboy/ssh-action@v1
         with:

@@ -1,0 +1,67 @@
+name: Assert chain topology
+description: >
+  หยุด workflow ถ้าโครงสร้างการวาง validator เปลี่ยนไปจากที่ workflow นั้นรองรับ
+  กัน automation ที่ล้าสมัยไปสั่งงานเครื่องผิดอย่างเงียบๆ — ดู infrastructure/TOPOLOGY
+
+inputs:
+  expects:
+    description: 'โครงสร้างที่ workflow นี้รองรับ คั่นด้วย , (เช่น "single-host" หรือ "single-host,distributed")'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Read infrastructure/TOPOLOGY
+      shell: bash
+      env:
+        EXPECTS: ${{ inputs.expects }}
+      run: |
+        set -euo pipefail
+        FILE="infrastructure/TOPOLOGY"
+
+        # fail-closed: ไม่มีไฟล์ = ไม่รู้สถานะ = ไม่ทำอะไรเลย
+        if [ ! -f "$FILE" ]; then
+          echo "::error::ไม่พบ $FILE — หยุดไว้ก่อนโดยเจตนา (fail-closed)"
+          echo "workflow นี้สั่งงานเชนผ่าน SSH และต้องรู้ก่อนว่า validator วางอยู่แบบไหน"
+          exit 1
+        fi
+
+        # บรรทัดแรกที่ไม่ใช่คอมเมนต์และไม่ว่าง = ค่าจริง
+        ACTUAL="$(grep -vE '^\s*(#|$)' "$FILE" | head -1 | tr -d '[:space:]')"
+        if [ -z "$ACTUAL" ]; then
+          echo "::error::$FILE ไม่มีค่า — ต้องมีบรรทัดแรกเป็น single-host หรือ distributed"
+          exit 1
+        fi
+
+        echo "topology ปัจจุบัน : $ACTUAL"
+        echo "workflow รองรับ   : $EXPECTS"
+
+        MATCHED=0
+        IFS=',' read -ra WANT <<< "$EXPECTS"
+        for w in "${WANT[@]}"; do
+          [ "$(echo "$w" | tr -d '[:space:]')" = "$ACTUAL" ] && MATCHED=1
+        done
+
+        if [ "$MATCHED" -ne 1 ]; then
+          echo "::error::topology ไม่ตรง — ไฟล์บอกว่า '$ACTUAL' แต่ workflow นี้รองรับแค่ '$EXPECTS'"
+          {
+            echo "### ⛔ หยุดเพราะ topology เปลี่ยน"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| topology ปัจจุบัน | \`$ACTUAL\` |"
+            echo "| workflow นี้รองรับ | \`$EXPECTS\` |"
+            echo ""
+            echo "workflow นี้สั่งงานผ่าน \`secrets.SSH_HOST\` ซึ่งเป็นค่าเดี่ยว และสมมติว่า"
+            echo "validator ทุกตัวอยู่ที่ \`\$HOME/tpix-infrastructure\` บนเครื่องนั้น"
+            echo ""
+            echo "ถ้า validator ถูกย้ายไปคนละ VPS แล้ว การรันต่อไปจะไปทำงานกับ**เครื่องผิด**"
+            echo "โดยไม่มี error — เช่น \`restart-chain\` จะปลุกเชนเก่าขึ้นมาซ้อน chainId เดียวกัน"
+            echo ""
+            echo "แก้ workflow ให้รองรับหลายโฮสต์ก่อน (matrix + SSH_HOST_1..4)"
+            echo "แล้วค่อยเพิ่ม \`$ACTUAL\` เข้าไปใน \`expects\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
+
+        echo "topology ตรงกัน — ไปต่อได้"

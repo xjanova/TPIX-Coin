@@ -7,6 +7,19 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
+      # ── ด่านกัน automation ล้าสมัยไปสั่งงานเครื่องผิด (เพิ่ม 2026-08-05) ──────────
+      # workflow นี้ SSH เข้า secrets.SSH_HOST ซึ่งเป็นค่าเดี่ยว และสมมติว่า validator
+      # ทุกตัวอยู่ที่ $HOME/tpix-infrastructure บนเครื่องนั้น วันที่ย้าย validator
+      # ออกไปคนละ VPS สมมติฐานนี้พัง แต่ workflow จะไม่ error — มันจะไปทำงานกับ
+      # เครื่องเก่าอย่างมั่นใจ ดูรายละเอียดใน infrastructure/TOPOLOGY
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Assert chain topology
+        uses: ./.github/actions/assert-topology
+        with:
+          expects: single-host
+
       - name: Dump compose and config files
         uses: appleboy/ssh-action@v1
         with:
