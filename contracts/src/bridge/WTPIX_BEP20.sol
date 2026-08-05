@@ -117,9 +117,17 @@ contract WTPIX is ERC20, ERC20Burnable, ERC20Pausable, Ownable2Step {
      * ผู้ใช้ต้อง approve bridge contract ก่อน
      * @param from ที่อยู่ผู้ burn
      * @param amount จำนวน wTPIX
+     *
+     * @dev แก้ 2026-08-05 (SECURITY-AUDIT ข้อ W1):
+     *      เดิมมีแค่ `require(msg.sender == bridgeContract)` แล้ว `_burn(from, amount)`
+     *      คอมเมนต์บอกว่า "ผู้ใช้ต้อง approve bridge contract ก่อน" แต่โค้ด
+     *      **ไม่เคยตรวจ allowance เลย** → bridge เผาเหรียญของใครก็ได้โดยเจ้าของ
+     *      ไม่ต้องยินยอม ถ้า bridge ถูกยึดหรือมีบั๊กสักจุด = เผา wTPIX ได้ทั้งเชน
+     *      ตอนนี้หัก allowance จริงตาม ERC-20 semantics ที่คอมเมนต์อ้างไว้แต่แรก
      */
     function bridgeBurn(address from, uint256 amount) external whenNotPaused {
         require(msg.sender == bridgeContract, "WTPIX: only bridge");
+        _spendAllowance(from, msg.sender, amount);
         _burn(from, amount);
     }
 

@@ -51,9 +51,49 @@ function upsertContract(registry, entry) {
     }
 }
 
+/**
+ * ตรวจว่า registry ที่โหลดมาเป็นของเชนที่กำลัง deploy จริง
+ *
+ * เพิ่ม 2026-08-05 (SECURITY-AUDIT ข้อ R1):
+ * deployed-contracts.json มี `chain.chainId` เดียวทั้งไฟล์ แต่ findContract()
+ * กับ upsertContract() จับคู่ด้วย "ชื่อสัญญาเปล่าๆ" ไม่มี chainId กำกับ
+ * และมีสัญญาชื่อซ้ำกันจริงระหว่างเชน — `WTPIX` มีทั้งบน BSC (WTPIX_BEP20)
+ * และบน TPIX Chain (WTPIX_ERC20)
+ *
+ * ถ้าเผลอรัน deploy ของเชนอื่นแล้วเขียนลงไฟล์เดียวกัน:
+ *   - findContract("WTPIX") จะคืน address ของ "อีกเชนหนึ่ง"
+ *   - script จะข้ามการ deploy wrapper แล้วผูก Router กับ address ที่ผิด
+ *   - WTPIX_BEP20 ไม่มี deposit()/withdraw() → ทุก path ที่ใช้ native TPIX
+ *     (swapExactETHForTokens / addLiquidityETH) ตายหมด และรู้ตัวหลัง deploy แล้ว
+ *
+ * ด่านนี้ทำให้พลาดแบบนั้นหยุดก่อนเสียแก๊ส แทนที่จะไปเจอตอนใช้งาน
+ */
+async function assertRegistryChain(registry) {
+    const net = await hre.ethers.provider.getNetwork();
+    const live = Number(net.chainId);
+    const expected = Number(registry?.chain?.chainId);
+
+    if (!expected) {
+        throw new Error(
+            `deployed-contracts.json ไม่มี chain.chainId — ห้าม deploy ต่อ ` +
+            `เพราะ findContract() จับคู่ด้วยชื่อเปล่าๆ อาจหยิบ address ของเชนอื่นมาใช้`
+        );
+    }
+    if (expected !== live) {
+        throw new Error(
+            `chainId ไม่ตรงกัน: registry = ${expected} (${registry.chain?.name ?? "?"}) ` +
+            `แต่กำลังต่อกับเชน ${live}\n` +
+            `ถ้าจะ deploy ลงเชน ${live} ให้ใช้ไฟล์ registry แยกของเชนนั้น ` +
+            `อย่าเขียนทับไฟล์นี้ (ชื่อสัญญาซ้ำกันข้ามเชน เช่น WTPIX)`
+        );
+    }
+    console.log(`Registry chain: ${expected} (${registry.chain?.name ?? "?"}) — ตรงกับเชนที่ต่ออยู่\n`);
+}
+
 async function main() {
     const [deployer] = await hre.ethers.getSigners();
     const registry = loadRegistry();
+    await assertRegistryChain(registry);
 
     console.log("Deployer:", deployer.address);
     console.log(

@@ -298,7 +298,170 @@ listen 80;                       # ไม่มี TLS ที่ origin
 
 ---
 
+---
+
+# รอบสาม — สแกนสัญญาที่เหลือทั้งหมด
+
+ตรวจ `TPIXDEXFactory` · `TPIXDEXPair` · `TPIXDEXRouter02` · `TPIXDEXLibrary` · `TPIXRouter`
+(fee layer) · `WTPIX_BEP20` · `TPIXTokenSale`
+
+| # | เรื่อง | ระดับ | สถานะ |
+|---|---|---|---|
+| W1 | `WTPIX_BEP20.bridgeBurn()` ไม่หัก allowance — bridge เผาเหรียญใครก็ได้ | **CRITICAL** | ✅ **แก้แล้ว** + เทสต์ใหม่ 12 เคส |
+| R1 | deploy registry จับคู่ด้วยชื่อเปล่า ไม่ผูก chainId | **LOGIC** | ✅ **แก้แล้ว** — `assertRegistryChain()` |
+| T1 | `TPIXTokenSale` รับเงินแล้วไม่ส่งอะไรกลับเลย | **CRITICAL (ธุรกิจ)** | ⛔ **ต้องตัดสินใจ** |
+| F1 | `TPIXRouter` ใช้กับ fee-on-transfer token ไม่ได้ (DoS) | **LOGIC** | 📝 เอกสาร |
+| F2 | `setFeeCollector` ไม่มี timelock ขณะที่เปลี่ยน router มี | **MINOR** | 📝 เอกสาร |
+
+## W1 — `bridgeBurn()` เผาเหรียญคนอื่นได้  🔴 CRITICAL · แก้แล้ว
+
+**ไฟล์**: `contracts/src/bridge/WTPIX_BEP20.sol:121`
+
+```solidity
+/**
+ * ผู้ใช้ต้อง approve bridge contract ก่อน      ← คอมเมนต์บอกไว้อย่างนี้
+ */
+function bridgeBurn(address from, uint256 amount) external whenNotPaused {
+    require(msg.sender == bridgeContract, "WTPIX: only bridge");
+    _burn(from, amount);                        ← แต่โค้ดไม่เคยตรวจ allowance เลย
+}
+```
+
+คอมเมนต์สัญญาไว้ว่าต้อง approve แต่โค้ดไม่บังคับ → `bridgeContract` เผา wTPIX ของ
+holder คนไหนก็ได้โดยเจ้าของไม่ต้องยินยอมและไม่รู้ตัว ถ้า bridge ถูกยึดหรือมีบั๊กที่เปิดให้
+เรียก `bridgeBurn` ด้วย argument ที่ควบคุมได้ = เผา wTPIX ได้ทั้งเชน
+
+อันตรายเป็นพิเศษเพราะ **คอมเมนต์หลอกให้คนรีวิว bridge เชื่อว่ามีชั้น allowance กันอยู่แล้ว**
+
+**แก้**: `_spendAllowance(from, msg.sender, amount);` ก่อน `_burn` — บังคับตาม ERC-20
+semantics ที่คอมเมนต์อ้างไว้แต่แรก
+
+**เทสต์**: `contracts/test/WTPIX_BEP20.test.js` — 12 เคส (เดิมสัญญานี้ **ไม่มีเทสต์เลย**)
+ครอบ: mint whitelist · MAX_SUPPLY · W1 regression · หัก allowance จริง · เผาเกิน allowance ·
+คนที่ไม่ใช่ bridge · timelock 2 วัน (execute เร็ว / cancel / non-owner) · pause บล็อก 3 ทาง
+
+## R1 — registry ไม่ผูก chainId  🟠 LOGIC · แก้แล้ว
+
+**ไฟล์**: `contracts/scripts/deploy-dex.js:40-52`
+
+```javascript
+function findContract(registry, name) {
+    return registry.contracts.find((c) => c.name === name)?.address ?? null;
+}
+```
+
+`deployed-contracts.json` มี `chain.chainId` เดียวทั้งไฟล์ แต่ `findContract`/`upsertContract`
+จับคู่ด้วย **ชื่อสัญญาเปล่าๆ** และมีชื่อซ้ำข้ามเชนจริง — `WTPIX` มีทั้งบน BSC
+(`WTPIX_BEP20`) และ TPIX Chain (`WTPIX_ERC20`)
+
+ถ้าเผลอรัน deploy ของเชนอื่นเขียนลงไฟล์เดียวกัน: `findContract("WTPIX")` คืน address ของ
+อีกเชนหนึ่ง → script ข้ามการ deploy wrapper แล้วผูก Router กับ address ผิด →
+`WTPIX_BEP20` ไม่มี `deposit()`/`withdraw()` → ทุก path ที่ใช้ native TPIX
+(`swapExactETHForTokens`, `addLiquidityETH`) ตายหมด **และรู้ตัวหลัง deploy เสร็จแล้ว**
+
+**แก้**: `assertRegistryChain()` เทียบ `registry.chain.chainId` กับ chainId ที่ต่ออยู่จริง
+ก่อนแตะอะไร ทดสอบแล้ว — รันบน hardhat (31337) กับ registry 4289 หยุดทันทีก่อนเสียแก๊ส
+
+## T1 — `TPIXTokenSale` รับเงินแล้วไม่ส่งอะไรกลับ  🔴 ต้องตัดสินใจ
+
+**ไฟล์**: `contracts/src/TPIXTokenSale.sol:59-88`
+
+```solidity
+function purchaseWithBNB() external payable nonReentrant {
+    require(saleActive, "Sale not active");
+    require(msg.value > 0, "Amount must be > 0");
+    (bool sent, ) = payable(treasuryWallet).call{value: msg.value}("");
+    require(sent, "BNB transfer failed");
+    totalBnbRaised += msg.value;
+    emit PurchaseWithBNB(msg.sender, msg.value, block.timestamp);
+}   // ← จบแค่นี้ ไม่มี mint ไม่มี transfer ไม่มีบันทึกสิทธิ์
+```
+
+ผู้ซื้อจ่าย BNB/USDT จริง → เงินไป treasury ทันที → ได้กลับมาแค่ **event log**
+
+ไม่มีในสัญญาเลย: ราคา/อัตราแลกเปลี่ยน · บัญชีสิทธิ์ว่าใครควรได้เท่าไร · เพดานต่อกระเป๋า ·
+เพดานรวม · ทางคืนเงิน · ทาง claim
+
+แปลว่า **อัตราแลกถูกกำหนดย้อนหลังนอกเชน** และเปลี่ยนได้ตามใจหลังรับเงินแล้ว
+ประกอบกับที่โน้ต *"TPIX TRADE architecture audit 2026-06-19"* บันทึกว่า
+`TokenSaleApiController` บรรทัด ~328 ยังเป็น **TODO** → ถ้าไม่มีใครแจกด้วยมือ ผู้ซื้อไม่มีทางเรียกร้อง
+
+**สองทางเลือก — ต้องเลือกอย่างใดอย่างหนึ่ง**
+
+1. **ลบ/ปิดตายทิ้ง (แนะนำ)** — bonding curve แทนที่บทบาทนี้ไปแล้วตามที่ตัดสินใจ 2026-04-19
+   สัญญานี้ไม่มีเทสต์ ไม่อยู่ใน deploy script ที่ใช้งาน (เจอแต่ใน `deploy-all.js.legacy`)
+   เก็บไว้เฉยๆ = ระเบิดเวลารอวันมีคน deploy
+2. **ถ้าจะใช้จริง** ต้องเพิ่ม: `rate` on-chain · `mapping(address => uint256) owed`
+   บันทึกตอนซื้อ · ฟังก์ชัน `claim()` · เพดานต่อกระเป๋า/รวม · ทางคืนเงินเมื่อ sale ยกเลิก
+   และต้องมีเทสต์ก่อน deploy
+
+## F1 — fee-on-transfer token ใช้กับ `TPIXRouter` ไม่ได้  🟠 LOGIC
+
+**ไฟล์**: `contracts/src/dex/TPIXRouter.sol:258-270`
+
+```solidity
+IERC20(inputToken).safeTransferFrom(msg.sender, address(this), amountIn);
+uint256 feeAmount = _calculateFee(amountIn);
+uint256 amountAfterFee = amountIn - feeAmount;
+IERC20(inputToken).safeTransfer(feeCollector, feeAmount);
+IERC20(inputToken).forceApprove(address(dexRouter), amountAfterFee);
+```
+
+โค้ดคิดว่าได้รับ `amountIn` เต็มจำนวน แล้วจ่ายออก `feeAmount + amountAfterFee = amountIn`
+ถ้า token หักค่าธรรมเนียมตอนโอน จะได้รับจริงน้อยกว่า → ยอดไม่พอ → swap revert ทุกครั้ง
+
+ไม่ใช่การสูญเงิน (revert ทั้งรายการ) แต่เป็น **DoS ถาวรสำหรับ token ประเภทนั้น** และ
+Token Factory เปิดให้ผู้ใช้สร้าง token อะไรก็ได้ จึงจะมีคนเจอแน่
+
+**เลือกทางใดทางหนึ่ง**: ประกาศชัดว่าไม่รองรับ FoT token (ถูกและพอ) หรือเปลี่ยนไปวัดยอดจริง
+ด้วย balance delta (`balanceAfter - balanceBefore`) แล้วคิด fee จากยอดที่ได้รับจริง
+
+## F2 — `setFeeCollector` ไม่มี timelock  🔵 MINOR
+
+`queueRouterChange` มี timelock 2 วัน แต่ `setFeeCollector` เปลี่ยนได้ทันที
+ถ้าคีย์ owner ถูกยึด ผู้โจมตีเปลี่ยนปลายทางค่าธรรมเนียมได้เดี๋ยวนั้นโดยไม่มีช่วงเตือน
+เป็นรายได้โปรโตคอลไม่ใช่เงินผู้ใช้ จึงไม่รุนแรง แต่ควรปิดความไม่สมมาตรนี้ตอนที่แตะไฟล์นี้ครั้งหน้า
+
+---
+
 ## ✅ ส่วนที่ตรวจแล้วไม่พบปัญหาเพิ่ม
+
+**AMM (UniV2 port)** — ตรวจจุดที่พลาดกันบ่อยแล้วผ่านทุกข้อ:
+
+| จุดตรวจ | ผล |
+|---|---|
+| `pairFor` init-code-hash | ✅ เลิกทำนายด้วย CREATE2 แล้ว เรียก `factory.getPair()` + require ไม่ใช่ zero |
+| MINIMUM_LIQUIDITY (donation attack) | ✅ ล็อก 1000 หน่วยแรกไปที่ `0xdead` (OZ v5 ห้าม mint ไป `address(0)`) |
+| ค่าธรรมเนียมตรงกันระหว่าง library กับ pair | ✅ library `997/1000` ↔ pair `balanceAdjusted` หัก `amountIn*3` เทียบ `*1000**2` |
+| K invariant หลัง swap | ✅ `TPIXDEXPair.sol:200` |
+| reentrancy | ✅ `nonReentrant` ครบทั้ง mint/burn/swap/skim/sync |
+| INVALID_TO | ✅ `require(to != _token0 && to != _token1)` |
+| uint112 overflow | ✅ `_update` เช็คก่อนเขียน reserve |
+| `_safeTransfer` ตรวจค่า return | ✅ เช็คทั้ง `success` และ `abi.decode(data)` |
+| Factory access control | ✅ identical/zero/PAIR_EXISTS + mapping สองทิศทาง + `feeToSetter` guard |
+| deadline | ✅ `ensure(deadline)` ทุก swap |
+
+**`TPIXRouter` (fee layer)** — `MAX_FEE_RATE` 500 bp คุมทั้งใน constructor และ setter ·
+timelock 2 วันสำหรับเปลี่ยน router · Pausable · `forceApprove` · มีแต่ variant "exact-in"
+จึงไม่มีทางที่เงิน native ค้างจาก refund ของ router ปลายทาง
+
+**`WTPIX_BEP20.mint`** — `MAX_SUPPLY` + minter whitelist + `whenNotPaused` ครบ
+
+**MasterNode heartbeat / allowlist (ThaiXTrade)** — ผ่าน audit เต็มรูปแบบไปแล้ว 2026-05-15
+แก้ครบ 6 ข้อ (L1 `ltrim` กัดสตริง signature, L2 replay window, L3 spoof `CF-Connecting-IP`,
+L4 leak IP operator, L5 `orWhereNotIn` ทำ scope พัง, L6 delegation อายุไม่จำกัด) พร้อมเทสต์ 74/74
+**ไม่ต้องรื้อซ้ำ** ยกเว้นตอน Phase 5 ให้ยืนยันว่า `MASTERNODE_TRUST_CF_HEADERS` ยังตั้งถูก
+
+**`USDT_TPIX`** — `bridgeMint` มี whitelist relayer + กัน replay ด้วย `processedTxHashes`
++ Pausable + ตัวนับ mint/burn สะสม ความเสี่ยงที่เหลืออยู่นอกสัญญา: **คีย์ relayer**
+ควรเป็น multisig ก่อนเปิดใช้จริง
+
+## ⚠️ ช่องว่างเทสต์ที่เหลือ
+
+`TPIXTokenSale.sol` — ยังไม่มีเทสต์เลย แต่ผูกกับข้อ T1 ที่ต้องตัดสินใจก่อนว่าจะเก็บหรือลบ
+ถ้าเลือกลบก็ไม่ต้องเขียนเทสต์
+
+ชุดเทสต์ปัจจุบัน: **95 ผ่าน** (78 → 83 หลังแก้ C1 → 95 หลังเพิ่ม WTPIX_BEP20)
 
 **MasterNode heartbeat / allowlist (ฝั่ง ThaiXTrade)** — ผ่าน audit เต็มรูปแบบไปแล้วเมื่อ 2026-05-15
 แก้ครบ 6 ข้อ (L1 `ltrim` กัดสตริง signature, L2 replay window, L3 spoof `CF-Connecting-IP`,
