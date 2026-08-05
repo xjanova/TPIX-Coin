@@ -1,0 +1,82 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  LAB — เชน 4 validator ในเครื่องเดียว สำหรับพิสูจน์ว่า genesis ใหม่เดินได้จริง
+# ══════════════════════════════════════════════════════════════════════════════
+#  นี่ไม่ใช่ production — ห้ามเอาไปใช้บนเซิร์ฟเวอร์จริง
+#  จุดประสงค์เดียว: ยืนยันว่า "เชนเกิดใหม่จากบล็อก 0 แล้วผลิตบล็อกได้"
+#  ก่อนจะไปแตะอะไรบนของจริง (รอบก่อนพังบน production 8 ครั้งเพราะข้ามขั้นนี้)
+#
+#  รันผ่าน lab/run-lab.sh เท่านั้น — อย่า docker compose up เอง
+#  เพราะสคริปต์ทำหน้าที่ล้าง data + สร้าง genesis + ตรวจผลให้ครบ
+#
+#  RPC โผล่แค่ 127.0.0.1 — lab ไม่ควรเข้าถึงได้จากเน็ต
+# ══════════════════════════════════════════════════════════════════════════════
+
+x-validator: &validator
+  image: 0xpolygon/polygon-edge:0.9.0
+  restart: "no"                 # lab พังต้องรู้ทันที ไม่ใช่ restart วนไปเรื่อยๆ
+  networks: [tpixlab]
+  mem_limit: 2g
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "3" }
+
+services:
+  tpix-validator-1:
+    <<: *validator
+    container_name: tpix-validator-1
+    volumes:
+      - ./data/validator-1:/data
+      - ./genesis.json:/genesis.json:ro
+    ports:
+      - "127.0.0.1:8545:8545"
+    command: >
+      server --data-dir /data --chain /genesis.json
+      --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545
+      --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0
+      --log-level INFO
+
+  tpix-validator-2:
+    <<: *validator
+    container_name: tpix-validator-2
+    volumes:
+      - ./data/validator-2:/data
+      - ./genesis.json:/genesis.json:ro
+    ports:
+      - "127.0.0.1:8546:8545"
+    command: >
+      server --data-dir /data --chain /genesis.json
+      --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545
+      --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0
+      --log-level INFO
+
+  tpix-validator-3:
+    <<: *validator
+    container_name: tpix-validator-3
+    volumes:
+      - ./data/validator-3:/data
+      - ./genesis.json:/genesis.json:ro
+    ports:
+      - "127.0.0.1:8547:8545"
+    command: >
+      server --data-dir /data --chain /genesis.json
+      --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545
+      --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0
+      --log-level INFO
+
+  tpix-validator-4:
+    <<: *validator
+    container_name: tpix-validator-4
+    volumes:
+      - ./data/validator-4:/data
+      - ./genesis.json:/genesis.json:ro
+    ports:
+      - "127.0.0.1:8548:8545"
+    command: >
+      server --data-dir /data --chain /genesis.json
+      --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545
+      --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0
+      --log-level INFO
+
+networks:
+  tpixlab:
+    driver: bridge

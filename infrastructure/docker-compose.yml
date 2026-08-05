@@ -57,9 +57,14 @@ services:
       - validator1-data:/data
       - ./genesis.json:/genesis/genesis.json:ro
     ports:
-      - "8545:8545"    # JSON-RPC (public)
-      - "10000:10000"  # gRPC (admin)
-      - "10001:10001"  # libp2p (P2P)
+      # ⚠️ แก้ 2026-08-05 (SECURITY-AUDIT ข้อ I1) — เดิมสองพอร์ตแรกผูก 0.0.0.0
+      #    gRPC 10000 คือช่องแอดมิน: สั่ง `ibft propose` เพิ่ม/ถอด validator,
+      #    `peers add/remove` ได้ทั้งหมด บนเครื่องเดียวหลังไฟร์วอลล์ยังพอทน
+      #    แต่วินาทีที่ย้ายขึ้น VPS ที่มี public IP = ช่องยึดเชน
+      #    JSON-RPC 8545 ก็ไม่ควรโผล่ตรงๆ — ให้ผ่าน rpc-lb (nginx) เท่านั้น
+      - "127.0.0.1:8545:8545"    # JSON-RPC — เข้าถึงผ่าน rpc-lb เท่านั้น
+      - "127.0.0.1:10000:10000"  # gRPC (admin) — ในเครื่องเท่านั้น
+      - "10001:10001"            # libp2p (P2P) — ต้องเปิดออกเน็ต
 
   # ─── Validator 2 ─────────────────────────────────────────
   validator-2:

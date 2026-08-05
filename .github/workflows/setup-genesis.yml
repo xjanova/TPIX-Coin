@@ -61,6 +61,23 @@ jobs:
           echo "Alloc accounts:"
           jq '.genesis.alloc // .alloc | keys | length' genesis.json
 
+      # ── ด่านที่ขาดไปและทำให้ genesis พังหลุดเข้า repo (เพิ่ม 2026-08-05) ──────────
+      # jq ข้างบนตรวจแค่ "เป็น JSON ที่อ่านออกไหม" — genesis ที่ validator set ว่างเปล่า
+      # ผ่านทุกข้อข้างบนได้สบาย แล้วถูก auto-commit กลับเข้า repo (ดู step "Commit updated
+      # genesis.json" ด้านล่าง) นั่นคือที่มาของ genesis.json ปัจจุบันที่ extraData ยาว
+      # 82 ตัวอักษร = ไม่มี validator เลย → เชนค้างบล็อก 0 มา 8 ครั้ง
+      #
+      # genesis-verify.py ถอด RLP ของ extraData แล้วนับ validator จริง — exit 1 ถ้าว่าง
+      # อย่าถอดขั้นนี้ออก ไม่ว่าจะรีบแค่ไหน
+      - name: Verify IBFT validator set (บล็อกไม่ให้ genesis เสียหลุดเข้า repo)
+        working-directory: infrastructure
+        run: |
+          python3 scripts/genesis-verify.py genesis.json \
+            --validators 4 \
+            --chain-id 4289 \
+            --total-supply 7000000000 \
+            --validator-type bls
+
       - name: Display validator summary
         working-directory: infrastructure
         run: |

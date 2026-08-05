@@ -29,7 +29,7 @@ describe("TPIXBondingCurve", function () {
     const MIGRATION_USDT = ethers.parseUnits("1000000", 6);            // $1M
     const MIGRATION_TPIX = ethers.parseEther("50000000");              // 50M TPIX
 
-    const LIQUIDITY_WALLET = "0x3da3776e0AB0F442c181aa031f47FA83696859AF";
+    const LIQUIDITY_WALLET = "0x2644A740A06e0401D21F8B4A840400fFe8dB42A9";
 
     async function deployFixture() {
         const [owner, relayer, alice, bob, charlie, dave] = await ethers.getSigners();
@@ -292,6 +292,152 @@ describe("TPIXBondingCurve", function () {
             const tooMuch = ethers.parseUnits("999999", 6);
             await expect(curve.connect(alice).sell(tpixHeld, tooMuch))
                 .to.be.revertedWith("BC: slippage");
+        });
+    });
+
+    // =========================================================================
+    // Reserve drain guard — ช่องโหว่ C1 ที่อุดเมื่อ 2026-08-05
+    //
+    // เดิม sell() ตรวจแค่ `tpixIn <= totalSold` ซึ่งเป็นตัวนับรวมทั้งสัญญา
+    // ไม่ผูกกับผู้เรียก → ใครถือ TPIX ที่ได้มาโดยไม่ผ่าน curve (กระเป๋าคลัง genesis
+    // ถือรวม 6.96 พันล้าน) ก็ขายเข้า curve ดูด USDT ของนักลงทุนจริงออกได้
+    // ตอนนี้ต้องผ่าน `redeemable[msg.sender]` ด้วย
+    // =========================================================================
+
+    describe("reserve drain guard (redeemable)", function () {
+        // ให้ mallory ถือ WTPIX โดยไม่ได้ซื้อผ่าน curve — เลียนแบบกระเป๋าคลัง/airdrop
+        async function fundOutsider(wtpix, owner, mallory, amount) {
+            await setBalance(owner.address, ethers.parseEther("200000000"));
+            await wtpix.connect(owner).deposit({ value: amount });
+            await wtpix.connect(owner).transfer(mallory.address, amount);
+        }
+
+        it("DRAIN: คนที่ไม่เคยซื้อ ขายเข้า curve ไม่ได้", async function () {
+            const { curve, usdt, wtpix, owner, alice, dave } = await loadFixture(deployFixture);
+            const curveAddr = await curve.getAddress();
+
+            // นักลงทุนจริงซื้อไปก้อนใหญ่ → totalSold สูง + USDT กองอยู่ในสัญญา
+            const usdtIn = ethers.parseUnits("100000", 6);
+            await usdt.connect(alice).approve(curveAddr, usdtIn);
+            await curve.connect(alice).buy(usdtIn, 0);
+
+            const totalSold = await curve.totalSold();
+            const reserveBefore = await usdt.balanceOf(curveAddr);
+            expect(totalSold).to.be.gt(0);
+            expect(reserveBefore).to.be.gt(0);
+
+            // dave ถือ WTPIX เท่ากับ totalSold แต่ไม่เคยซื้อผ่าน curve
+            await fundOutsider(wtpix, owner, dave, totalSold);
+            await wtpix.connect(dave).approve(curveAddr, totalSold);
+            expect(await curve.redeemable(dave.address)).to.equal(0);
+
+            // เดิมผ่านได้เพราะ tpixIn <= totalSold — ตอนนี้ต้องถูกปฏิเสธ
+            await expect(curve.connect(dave).sell(totalSold, 0))
+                .to.be.revertedWith("BC: exceeds purchased");
+
+            // USDT ในสัญญาต้องไม่ลดลงแม้แต่หน่วยเดียว
+            expect(await usdt.balanceOf(curveAddr)).to.equal(reserveBefore);
+        });
+
+        it("ขายเกินจำนวนที่ตัวเองซื้อไม่ได้ แม้จะยังไม่เกิน totalSold", async function () {
+            const { curve, usdt, wtpix, owner, alice, bob } = await loadFixture(deployFixture);
+            const curveAddr = await curve.getAddress();
+
+            // bob ซื้อก้อนใหญ่เพื่อดัน totalSold, alice ซื้อก้อนเล็ก
+            const big = ethers.parseUnits("100000", 6);
+            await usdt.connect(bob).approve(curveAddr, big);
+            await curve.connect(bob).buy(big, 0);
+
+            const small = ethers.parseUnits("1000", 6);
+            await usdt.connect(alice).approve(curveAddr, small);
+            await curve.connect(alice).buy(small, 0);
+
+            const aliceRedeemable = await curve.redeemable(alice.address);
+            const overshoot = aliceRedeemable + 1n;
+            expect(overshoot).to.be.lt(await curve.totalSold()); // ยังไม่เกินตัวนับรวม
+
+            // เติม WTPIX ให้ alice พอจ่าย เพื่อพิสูจน์ว่าไม่ได้ revert เพราะยอดไม่พอ
+            await fundOutsider(wtpix, owner, alice, overshoot);
+            await wtpix.connect(alice).approve(curveAddr, overshoot);
+
+            await expect(curve.connect(alice).sell(overshoot, 0))
+                .to.be.revertedWith("BC: exceeds purchased");
+        });
+
+        it("ขายคืนเท่าที่ซื้อได้ปกติ และ redeemable ลดลงถูกต้อง", async function () {
+            const { curve, usdt, wtpix, alice } = await loadFixture(deployFixture);
+            const curveAddr = await curve.getAddress();
+
+            const usdtIn = ethers.parseUnits("1000", 6);
+            await usdt.connect(alice).approve(curveAddr, usdtIn);
+            await curve.connect(alice).buy(usdtIn, 0);
+
+            const owned = await curve.redeemable(alice.address);
+            const half = owned / 2n;
+
+            await wtpix.connect(alice).approve(curveAddr, owned);
+            await curve.connect(alice).sell(half, 0);
+
+            expect(await curve.redeemable(alice.address)).to.equal(owned - half);
+            expect(await curve.bought(alice.address)).to.equal(owned); // lifetime ไม่ลด
+        });
+
+        it("CAP BYPASS: ซื้อชน cap → ขายคืน → ซื้อใหม่ ยังชน cap เดิม", async function () {
+            const { curve, usdt, wtpix, relayer, alice } = await loadFixture(deployFixture);
+            const curveAddr = await curve.getAddress();
+
+            // ซื้อจนเกือบชน maxBuyPerWallet
+            const cap = await curve.maxBuyPerWallet();
+            let spent = 0n;
+            const chunk = ethers.parseUnits("50000", 6);
+            for (let i = 0; i < 20; i++) {
+                if ((await curve.bought(alice.address)) >= (cap * 90n) / 100n) break;
+                await usdt.connect(relayer).bridgeMint(alice.address, chunk, txHash(500 + i));
+                await usdt.connect(alice).approve(curveAddr, chunk);
+                try {
+                    await curve.connect(alice).buy(chunk, 0);
+                    spent += chunk;
+                } catch { break; }
+            }
+            const boughtLifetime = await curve.bought(alice.address);
+            expect(boughtLifetime).to.be.gt(0);
+
+            // ขายคืนทั้งหมด — bought[] ต้องไม่ถูก reset
+            const owned = await curve.redeemable(alice.address);
+            await wtpix.connect(alice).approve(curveAddr, owned);
+            await curve.connect(alice).sell(owned, 0);
+
+            expect(await curve.redeemable(alice.address)).to.equal(0);
+            expect(await curve.bought(alice.address)).to.equal(boughtLifetime);
+            expect(spent).to.be.gt(0);
+        });
+
+        it("emergencySell ก็ผูกกับ redeemable เหมือนกัน (ไม่ใช่ช่องหลบด่าน)", async function () {
+            const { curve, usdt, wtpix, owner, alice, dave } = await loadFixture(deployFixture);
+            const curveAddr = await curve.getAddress();
+
+            const usdtIn = ethers.parseUnits("100000", 6);
+            await usdt.connect(alice).approve(curveAddr, usdtIn);
+            await curve.connect(alice).buy(usdtIn, 0);
+
+            const totalSold = await curve.totalSold();
+            await fundOutsider(wtpix, owner, dave, totalSold);
+            await wtpix.connect(dave).approve(curveAddr, totalSold);
+
+            // pause แล้วรอเกิน MAX_PAUSE_DURATION เพื่อเปิดทาง emergencySell
+            await curve.connect(owner).pause();
+            await time.increase(31 * 24 * 60 * 60);
+
+            const reserveBefore = await usdt.balanceOf(curveAddr);
+            await expect(curve.connect(dave).emergencySell(totalSold))
+                .to.be.revertedWith("BC: exceeds purchased");
+            expect(await usdt.balanceOf(curveAddr)).to.equal(reserveBefore);
+
+            // เจ้าของตัวจริงยังถอนได้ตามปกติ
+            const aliceOwned = await curve.redeemable(alice.address);
+            await wtpix.connect(alice).approve(curveAddr, aliceOwned);
+            await curve.connect(alice).emergencySell(aliceOwned);
+            expect(await curve.redeemable(alice.address)).to.equal(0);
         });
     });
 

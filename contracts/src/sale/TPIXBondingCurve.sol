@@ -97,7 +97,20 @@ contract TPIXBondingCurve is Ownable2Step, ReentrancyGuard, Pausable {
     bool public migrated;
 
     /// @notice Buyer history สำหรับ analytics + airdrop + wallet cap enforcement
+    /// @dev ตัวนี้ "ไม่เคยลด" แม้ผู้ใช้ขายคืน — จึงใช้คุม maxBuyPerWallet ได้จริง
+    ///      ถ้าลดค่าตัวนี้ตอนขาย จะเปิดช่อง cap bypass: ซื้อชน cap → ขายคืน → ซื้อใหม่วนไม่จำกัด
     mapping(address => uint256) public bought;
+
+    /// @notice TPIX ที่ผู้ใช้แต่ละคน "ขายคืน curve ได้" — เพิ่มตอนซื้อ ลดตอนขาย
+    /// @dev แยกจาก `bought` เพราะสองตัวนี้ทำหน้าที่ต่างกัน (ดู comment ของ bought)
+    ///
+    ///      เหตุที่ต้องมี (ช่องโหว่ที่อุดเมื่อ 2026-08-05):
+    ///      เดิม sell() ตรวจแค่ `tpixIn <= totalSold` ซึ่งเป็นตัวนับ "รวมทั้งสัญญา"
+    ///      ไม่ผูกกับผู้เรียกเลย → ใครถือ TPIX ที่ได้มาโดยไม่ผ่าน curve (กระเป๋าคลัง
+    ///      genesis ถือรวม 6.96 พันล้าน) ก็ขายเข้า curve ได้ตามราคาปัจจุบัน
+    ///      = ดูด USDT ของนักลงทุนที่ซื้อจริงออกไป โดยไม่เคยจ่ายเงินซื้อ
+    ///      ไม่ต้องมีสิทธิ์พิเศษ ไม่ต้อง reentrancy แค่เรียกฟังก์ชันสาธารณะ
+    mapping(address => uint256) public redeemable;
 
     /// @notice Timestamp เมื่อ threshold ถึงครั้งแรก (เริ่ม MIGRATION_DELAY countdown)
     uint256 public thresholdReachedAt;
@@ -260,7 +273,8 @@ contract TPIXBondingCurve is Ownable2Step, ReentrancyGuard, Pausable {
         // CEI: state ก่อน external interaction
         totalSold += tpixOut;
         totalRaised += usdtIn;
-        bought[msg.sender] += tpixOut;
+        bought[msg.sender] += tpixOut;       // lifetime — คุม cap ไม่เคยลด
+        redeemable[msg.sender] += tpixOut;   // สิทธิ์ขายคืน — ลดตอน sell/emergencySell
 
         // Auto-start migration countdown ครั้งแรกที่ threshold ถึง
         bool reachedNow = thresholdReachedAt == 0 &&
@@ -293,6 +307,9 @@ contract TPIXBondingCurve is Ownable2Step, ReentrancyGuard, Pausable {
     {
         require(!migrated, "BC: migrated");
         require(tpixIn > 0 && tpixIn <= totalSold, "BC: invalid in");
+        // ขายคืนได้เฉพาะจำนวนที่ตัวเองซื้อผ่าน curve มา — กันคนถือ TPIX จากที่อื่น
+        // (กระเป๋าคลัง / airdrop / ซื้อต่อจากคนอื่น) มาดูด USDT ของนักลงทุนจริงออก
+        require(tpixIn <= redeemable[msg.sender], "BC: exceeds purchased");
 
         uint256 fee;
         (usdtOut, fee) = quoteSell(tpixIn);
@@ -300,7 +317,9 @@ contract TPIXBondingCurve is Ownable2Step, ReentrancyGuard, Pausable {
 
         // CEI: state ก่อน external interaction
         totalSold -= tpixIn;
+        redeemable[msg.sender] -= tpixIn;
         // totalRaised stays — fee accumulates as protocol revenue
+        // bought[] ไม่ลด — cap ต้องนับตลอดอายุ ไม่ให้ reset ด้วยการขายคืน
 
         // External interactions ตอนท้าย
         tpix.safeTransferFrom(msg.sender, address(this), tpixIn);
@@ -320,6 +339,8 @@ contract TPIXBondingCurve is Ownable2Step, ReentrancyGuard, Pausable {
         require(pausedAt > 0 && block.timestamp >= pausedAt + MAX_PAUSE_DURATION, "BC: pause too short");
         require(!migrated, "BC: migrated");
         require(tpixIn > 0 && tpixIn <= totalSold, "BC: invalid in");
+        // โหมดฉุกเฉินก็ต้องผูกกับสิทธิ์ของผู้เรียกเหมือน sell() — ไม่ใช่ช่องหลบด่าน
+        require(tpixIn <= redeemable[msg.sender], "BC: exceeds purchased");
 
         // Floor price — ไม่มี exit fee ในโหมดฉุกเฉิน
         usdtOut = (tpixIn * startPrice) / 1e18;
@@ -331,6 +352,7 @@ contract TPIXBondingCurve is Ownable2Step, ReentrancyGuard, Pausable {
         require(usdtOut > 0, "BC: drained");
 
         totalSold -= tpixIn;
+        redeemable[msg.sender] -= tpixIn;
 
         tpix.safeTransferFrom(msg.sender, address(this), tpixIn);
         usdt.safeTransfer(msg.sender, usdtOut);

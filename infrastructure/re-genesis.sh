@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
+# ##############################################################################
+# ⛔ DEAD — ห้ามรัน (ปิดตาย 2026-08-05)
+# ##############################################################################
+# เหตุผลเดียวกับ scripts/path3-regenesis.sh — สร้าง genesis ที่ validator set
+# ว่างเปล่าได้โดยไม่มี error และตารางจัดสรรที่ฝังอยู่อาจเป็นชุดเก่าที่มีกระเป๋า
+# 0x3F8EB404…401A (700M TPIX ที่ไม่มีใครมี private key)
+#
+# ใช้แทน: infrastructure/scripts/build-genesis.sh + infrastructure/chain/alloc.env
+# อ่าน:   docs/REGENESIS-RUNBOOK.md
+# ##############################################################################
+echo "⛔ สคริปต์นี้ถูกปิดตายแล้ว — ใช้ scripts/build-genesis.sh แทน" >&2
+echo "   เหตุผล + ขั้นตอนใหม่: docs/REGENESIS-RUNBOOK.md" >&2
+exit 1
+
 # ─────────────────────────────────────────────────────────────
-# TPIX Chain — Re-Genesis Script
+# TPIX Chain — Re-Genesis Script  (เนื้อหาเดิม เก็บไว้อ้างอิง)
 # Stops running chain, generates new 4-validator genesis,
 # copies keys, and restarts with correct allocation.
 #

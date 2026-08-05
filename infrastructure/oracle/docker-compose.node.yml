@@ -1,0 +1,60 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  TPIX — validator เดียวต่อ 1 VPS  (แม่แบบสำหรับ Oracle Cloud / VPS ทั่วไป)
+# ══════════════════════════════════════════════════════════════════════════════
+#  ค่าตัวแปรอ่านจาก .env ข้างไฟล์นี้ (bootstrap-node.sh สร้างให้)
+#    NODE_INDEX   = 1..4
+#    PUBLIC_IP    = IP สาธารณะของ VPS ตัวนี้
+#    EDGE_IMAGE   = 0xpolygon/polygon-edge:0.9.0
+#    SEAL         = "--seal" สำหรับ validator / "" สำหรับ RPC full node
+#
+#  ต่างจาก docker-compose.yml เดิมตรงไหน (ทั้งหมดคือเรื่องความปลอดภัย):
+#
+#   1. gRPC 10000 ผูก 127.0.0.1 เท่านั้น   ← ของเดิมเปิด 0.0.0.0
+#      gRPC คือช่องแอดมิน สั่ง ibft propose / peers add ได้
+#      ถ้าเปิดออกเน็ตพร้อม public IP = ใครก็เสนอเพิ่ม-ถอด validator ได้
+#   2. JSON-RPC 8545 ผูก 127.0.0.1 เท่านั้น — validator ไม่ควรเป็น RPC สาธารณะ
+#      ให้ RPC ไปอยู่ที่โหนดแยกที่ไม่มี --seal และไม่มีคีย์ validator
+#   3. libp2p 10001 เปิดออกเน็ต (จำเป็น) แต่ต้องล็อกด้วย firewall ให้เฉพาะ IP เพื่อน
+#   4. --nat $PUBLIC_IP — ไม่มีตัวนี้ โหนดจะโฆษณา IP ภายใน container ให้เพื่อน
+#      แล้วไม่มีใครต่อกลับมาได้
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+  tpix-node:
+    image: ${EDGE_IMAGE:-0xpolygon/polygon-edge:0.9.0}
+    container_name: tpix-node-${NODE_INDEX}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - ./data:/data
+      - ./genesis.json:/genesis.json:ro
+    ports:
+      - "127.0.0.1:8545:8545"     # JSON-RPC — ในเครื่องเท่านั้น
+      - "127.0.0.1:10000:10000"   # gRPC admin — ในเครื่องเท่านั้น
+      - "10001:10001"             # libp2p — ต้องเปิดออกเน็ต + จำกัดด้วย firewall
+    command: >
+      server
+      --data-dir /data
+      --chain /genesis.json
+      --grpc-address 0.0.0.0:10000
+      --libp2p 0.0.0.0:10001
+      --jsonrpc 0.0.0.0:8545
+      --nat ${PUBLIC_IP}
+      ${SEAL}
+      --max-slots 4096
+      --block-gas-target 20000000
+      --price-limit 0
+      --max-enqueued 1024
+      --log-level INFO
+    healthcheck:
+      test: ["CMD-SHELL", "polygon-edge status --grpc-address 127.0.0.1:10000 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    mem_limit: 4g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
