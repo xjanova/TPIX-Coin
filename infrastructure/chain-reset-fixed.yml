@@ -1,3 +1,12 @@
+# ##############################################################################
+# DEAD - do not run (closed 2026-08-06)
+# ##############################################################################
+# Carries the PRE-2026-05-04 allocation table, including
+# 0x3F8EB404...401A - 700M TPIX at an address with no known private key.
+# Use infrastructure/scripts/build-genesis.sh + infrastructure/chain/alloc.env
+# See docs/REGENESIS-RUNBOOK.md
+# ##############################################################################
+
 name: Reset TPIX Chain (Emergency)
 on:
   workflow_dispatch:

@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# ##############################################################################
+# DEAD - do not run (closed 2026-08-06)
+# ##############################################################################
+# Same reason as re-genesis.sh and path3-regenesis.sh: this file carries the
+# PRE-2026-05-04 allocation table, including 0x3F8EB404...401A - 700M TPIX at
+# an address nobody holds the private key for. Running it mints the whole
+# treasury to wallets that cannot sign.
+#
+# Use instead: infrastructure/scripts/build-genesis.sh + infrastructure/chain/alloc.env
+# Read:        docs/REGENESIS-RUNBOOK.md
+# ##############################################################################
+echo "DEAD: use scripts/build-genesis.sh instead - see docs/REGENESIS-RUNBOOK.md" >&2
+exit 1
+
 # ─────────────────────────────────────────────────────────────
 # TPIX Chain — Full Genesis Setup Script
 # Generates 4 validator keys, builds genesis.json with IBFT2,

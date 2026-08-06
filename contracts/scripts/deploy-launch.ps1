@@ -18,7 +18,7 @@
 #
 # Prerequisites:
 #   - npx hardhat compile  (must run successfully first)
-#   - You have your Token Sale wallet (0x3F8EB4046F5C79fd0D67C7547B5830cB2Cfb401A) private key handy
+#   - You have your Token Sale wallet (0x4BcC1844Ad9E8587f7005f092928a5D14C30F463) private key handy
 
 $ErrorActionPreference = 'Stop'
 
@@ -35,7 +35,7 @@ if (-not (Test-Path .\hardhat.config.js)) {
 
 # ─── Step 1: prompt for key (hidden)
 Write-Host "Step 1/3: enter Token Sale wallet private key" -ForegroundColor Yellow
-Write-Host "  Expected wallet: 0x3F8EB4046F5C79fd0D67C7547B5830cB2Cfb401A"
+Write-Host "  Expected wallet: 0x4BcC1844Ad9E8587f7005f092928a5D14C30F463"
 Write-Host "  Format: 0x + 64 hex chars (66 chars total)"
 Write-Host "  (Input is hidden, not stored anywhere)"
 Write-Host ""
