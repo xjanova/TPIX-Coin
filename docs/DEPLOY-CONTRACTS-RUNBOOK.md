@@ -106,7 +106,12 @@ npx hardhat run scripts/deploy-dex.js --network tpix
 
 ระบบจ่ายเงินจากคลัง (ชั้นคลังบน tpix.online) พร้อมแล้วแต่ยังปิดอยู่ ต้อง:
 
-1. วาง keystore ที่ `/etc/tpix/hot-wallet.keystore.json` (สิทธิ์ 600)
+1. วาง keystore ที่ `/home/admin/.tpix/hot-wallet.keystore.json` (โฟลเดอร์ 700 ไฟล์ 600)
+
+   > ห้ามวางที่ `/etc/tpix/` — PHP ฝั่งเว็บของเซิร์ฟเวอร์ DirectAdmin จำกัด
+   > `open_basedir` ไว้ที่ `/home/admin/` จึงอ่านไม่ได้เลย และเคยทำให้หน้าคลัง
+   > เป็น 500 ทั้งหน้ามาแล้ว · `/home/admin/.tpix/` ปลอดภัยเท่ากันเพราะอยู่นอก
+   > `public_html`
 2. `.env`: `TPIX_HOT_WALLET_PASS=…`
 3. `.env`: `TPIX_TREASURY_PAYOUTS_ENABLED=true`
 4. โอนเงินจากคลังเข้ากระเป๋าร้อน (เสนอ 10–20M TPIX)
