@@ -165,14 +165,24 @@ while IFS= read -r line; do
   PREMINE_ARGS+=(--premine "${addr}:${amt}000000000000000000")
   TOTAL=$((TOTAL + amt))
   printf "  %-46s %18s\n" "$addr" "$(printf "%'d" "$amt")"
-done < <(grep -E '^ALLOC_[A-Z_]+=' "$ALLOC_ENV")
+# [A-Z0-9_] ไม่ใช่ [A-Z_] — ชื่อแบบ ALLOC_VALIDATOR_1_STAKE มีตัวเลขอยู่ด้วย
+# ถ้าไม่รับตัวเลข บรรทัดนั้นจะถูกข้ามเงียบๆ แล้วยอดรวมจะขาดไปโดยไม่มีใครเห็น
+done < <(grep -E '^ALLOC_[A-Z0-9_]+=' "$ALLOC_ENV")
 
-for i in $(seq 1 "$VALIDATOR_COUNT"); do
-  idx=$((i-1))
-  PREMINE_ARGS+=(--premine "${ADDRS[$idx]}:${VALIDATOR_PREMINE}000000000000000000")
-  TOTAL=$((TOTAL + VALIDATOR_PREMINE))
-  printf "  %-46s %18s  (validator-%d)\n" "${ADDRS[$idx]}" "$(printf "%'d" "$VALIDATOR_PREMINE")" "$i"
-done
+# VALIDATOR_PREMINE=0 หมายถึงเงินค้ำ validator ถูกระบุเป็นบรรทัด ALLOC_* ใน
+# alloc.env แล้ว (ที่อยู่ HD wallet) จึงไม่ต้องเติมให้ address ของคีย์ consensus
+# อีก — ถ้าเติมซ้ำยอดรวมจะเกิน TOTAL_SUPPLY แล้วสคริปต์จะหยุดเองที่ด่านล่าง
+if [[ "$VALIDATOR_PREMINE" -gt 0 ]]; then
+  for i in $(seq 1 "$VALIDATOR_COUNT"); do
+    idx=$((i-1))
+    PREMINE_ARGS+=(--premine "${ADDRS[$idx]}:${VALIDATOR_PREMINE}000000000000000000")
+    TOTAL=$((TOTAL + VALIDATOR_PREMINE))
+    printf "  %-46s %18s  (validator-%d consensus addr)\n" "${ADDRS[$idx]}" "$(printf "%'d" "$VALIDATOR_PREMINE")" "$i"
+  done
+else
+  echo "  (VALIDATOR_PREMINE=0 — เงินค้ำ validator อยู่ในบรรทัด ALLOC_* ข้างบนแล้ว"
+  echo "   คีย์ consensus ไม่ถือเงิน มีหน้าที่เซ็นบล็อกอย่างเดียว)"
+fi
 printf "  %-46s %18s\n" "" "=================="
 printf "  %-46s %18s\n" "รวม" "$(printf "%'d" "$TOTAL")"
 

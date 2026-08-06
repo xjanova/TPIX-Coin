@@ -68,7 +68,9 @@ function askHidden(prompt) {
 function parseAllocEnv(file) {
   const out = [];
   for (const raw of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const m = raw.match(/^ALLOC_([A-Z_]+)\s*=\s*"?([^":]+):(\d+)"?/);
+    // [A-Z0-9_] not [A-Z_]: ALLOC_VALIDATOR_1_STAKE carries a digit, and a
+    // prefix pattern that rejects digits drops the line without a word.
+    const m = raw.match(/^ALLOC_([A-Z0-9_]+)\s*=\s*"?([^":]+):(\d+)"?/);
     if (m) out.push({ slug: m[1], address: m[2].trim(), amount: BigInt(m[3]) });
   }
   return out;
