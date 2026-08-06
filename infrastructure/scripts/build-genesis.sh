@@ -17,10 +17,25 @@
 #     → ตัวนี้อ่านจาก chain/alloc.env ที่เดียว
 #
 #  ใช้:
-#    ./build-genesis.sh --out /path/genesis.json --node-ips "1.2.3.4,5.6.7.8,..." \
-#                       [--keys-dir /path/keys] [--lab]
+#    ./build-genesis.sh --out /path/genesis.json [--keys-dir /path/keys] <โหมด>
 #
-#    --lab  = โหมดทดลองในเครื่อง ใช้ /dns4/<ชื่อ container> แทน IP สาธารณะ
+#  เลือกโหมดตาม topology จริง (ดู infrastructure/TOPOLOGY):
+#
+#    --node-ips "1.2.3.4,5.6.7.8,..."   distributed — validator คนละเครื่อง
+#                                        bootnodes = /ip4/<IP สาธารณะ>
+#                                        มีด่านยืนยันด้วยมือ + บังคับ IP ต้อง routable
+#
+#    --single-host                       validator ทั้ง 4 เป็น container บนโฮสต์เดียว
+#                                        bootnodes = /dns4/<ชื่อ container>
+#                                        มีด่านยืนยันด้วยมือ (เงินจริง)
+#
+#    --lab                               ซ้อมบนเครื่องทิ้ง — เหมือน single-host
+#                                        แต่ข้ามด่านยืนยัน และ meta ระบุ lab_mode=1
+#
+#  ทั้งสามโหมดใช้ chain/alloc.env ชุดเดียวกันเสมอ — ไม่มีตารางจัดสรรสำรอง
+#
+#  ถ้าไม่มี TTY (รันผ่าน SSH automation) โหมดที่มีด่านยืนยันต้องตั้ง
+#  ALLOC_CONFIRMED=YES + ALLOC_CONFIRMED_BY='<ชื่อ>' ซึ่งจะถูกบันทึกลงไฟล์ .meta
 #
 #  ต้องมี: docker, python3
 # ══════════════════════════════════════════════════════════════════════════════
@@ -35,16 +50,39 @@ OUT=""
 NODE_IPS=""
 KEYS_DIR=""
 LAB_MODE=0
+SINGLE_HOST=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --out)       OUT="$2"; shift 2 ;;
-    --node-ips)  NODE_IPS="$2"; shift 2 ;;
-    --keys-dir)  KEYS_DIR="$2"; shift 2 ;;
-    --lab)       LAB_MODE=1; shift ;;
+    --out)          OUT="$2"; shift 2 ;;
+    --node-ips)     NODE_IPS="$2"; shift 2 ;;
+    --keys-dir)     KEYS_DIR="$2"; shift 2 ;;
+    --lab)          LAB_MODE=1; shift ;;
+    --single-host)  SINGLE_HOST=1; shift ;;
     *) echo "ไม่รู้จัก option: $1" >&2; exit 2 ;;
   esac
 done
+
+# --single-host = production, but every validator is a container on ONE docker
+# bridge. Bootnodes must then be /dns4/<container>, same as --lab: four
+# /ip4/<same-host>/tcp/10001 entries cannot all be right, because only one
+# container can publish 10001 on that host.
+#
+# It is NOT --lab though. Real allocation, real money, so it keeps the manual
+# confirmation gate that --lab skips. Using --lab to mint production balances
+# would stamp lab_mode=1 into the meta file and quietly drop that gate.
+[[ "$LAB_MODE" -eq 1 && "$SINGLE_HOST" -eq 1 ]] && \
+  { echo "--lab กับ --single-host ใช้พร้อมกันไม่ได้" >&2; exit 2; }
+[[ "$SINGLE_HOST" -eq 1 && -n "$NODE_IPS" ]] && \
+  { echo "--single-host ไม่ใช้ --node-ips (bootnodes เป็นชื่อ container ไม่ใช่ IP)" >&2; exit 2; }
+
+# Bootnodes addressed by container DNS rather than public IP.
+DNS_BOOTNODES=0
+[[ "$LAB_MODE" -eq 1 || "$SINGLE_HOST" -eq 1 ]] && DNS_BOOTNODES=1
+
+TOPOLOGY_MODE=distributed
+[[ "$LAB_MODE"    -eq 1 ]] && TOPOLOGY_MODE=lab
+[[ "$SINGLE_HOST" -eq 1 ]] && TOPOLOGY_MODE=single-host
 
 die() { echo -e "\n❌ $*\n" >&2; exit 1; }
 say() { echo -e "\n▸ $*"; }
@@ -94,7 +132,7 @@ done
 # ── 2. ประกอบ bootnodes ────────────────────────────────────────────────────────
 say "ขั้นที่ 2 — bootnodes"
 declare -a BOOT_ARGS
-if [[ "$LAB_MODE" -eq 1 ]]; then
+if [[ "$DNS_BOOTNODES" -eq 1 ]]; then
   for i in $(seq 1 "$VALIDATOR_COUNT"); do
     idx=$((i-1))
     BOOT_ARGS+=(--bootnode "/dns4/tpix-validator-$i/tcp/10001/p2p/${NODEIDS[$idx]}")
@@ -142,12 +180,29 @@ printf "  %-46s %18s\n" "รวม" "$(printf "%'d" "$TOTAL")"
   die "ยอดรวมไม่ตรง: ได้ $TOTAL แต่ TOTAL_SUPPLY=$TOTAL_SUPPLY — แก้ alloc.env ก่อน"
 
 # ── 4. ยืนยันด้วยมือ (โหมดจริงเท่านั้น) ─────────────────────────────────────────
+CONFIRM_SOURCE="n/a (lab)"
 if [[ "$LAB_MODE" -eq 0 ]]; then
   echo
   echo "  ตารางข้างบนจะกลายเป็นยอดเหรียญจริงบนเชนใหม่ และแก้ไม่ได้อีกหลังจากนี้"
   echo "  ยืนยันว่าคุณ 'ปลดล็อกได้จริง' ทุกกระเป๋าในรายการ (เคยลอง decrypt แล้ว)"
-  read -r -p "  พิมพ์ YES เพื่อดำเนินการต่อ: " CONFIRM
-  [[ "$CONFIRM" == "YES" ]] || die "ยกเลิกโดยผู้ใช้"
+  if [[ -t 0 ]]; then
+    read -r -p "  พิมพ์ YES เพื่อดำเนินการต่อ: " CONFIRM
+    [[ "$CONFIRM" == "YES" ]] || die "ยกเลิกโดยผู้ใช้"
+    CONFIRM_SOURCE="tty by ${SUDO_USER:-$USER}"
+  else
+    # No TTY (ran over SSH automation / CI). The gate exists so a human states
+    # out loud that they have actually decrypted these wallets, so do not just
+    # let it pass - demand a deliberate, auditable opt-in and record it in the
+    # meta file next to the genesis hash.
+    [[ "${ALLOC_CONFIRMED:-}" == "YES" ]] || die \
+"ไม่มี TTY ให้ยืนยันด้วยมือ และไม่ได้ตั้ง ALLOC_CONFIRMED=YES
+
+     ด่านนี้ไม่ใช่พิธีกรรม — 6,960,000,000 TPIX จะถูกล็อกถาวรถ้ากระเป๋าใดเปิดไม่ได้
+     ทดสอบ decrypt ให้ครบทั้ง 6 ใบก่อน แล้วค่อยรันใหม่ด้วย:
+         ALLOC_CONFIRMED=YES ALLOC_CONFIRMED_BY='<ชื่อคุณ>' $0 ..."
+    CONFIRM_SOURCE="env ALLOC_CONFIRMED by ${ALLOC_CONFIRMED_BY:-unnamed}"
+    echo "  → ยืนยันผ่าน ALLOC_CONFIRMED=YES (${ALLOC_CONFIRMED_BY:-ไม่ระบุชื่อ})"
+  fi
 fi
 
 # ── 5. สร้าง genesis ───────────────────────────────────────────────────────────
@@ -182,7 +237,9 @@ say "ขั้นที่ 5 — ตรวจ genesis ก่อนปล่อ�
 VERIFY_FLAGS=(--validators "$VALIDATOR_COUNT" --chain-id "$CHAIN_ID"
               --total-supply "$TOTAL_SUPPLY" --validator-type bls
               --expect-alloc "$ALLOC_ENV")
-[[ "$LAB_MODE" -eq 0 ]] && VERIFY_FLAGS+=(--require-public-bootnodes)
+# Only demand routable bootnode IPs when the nodes really are on separate
+# hosts. Under --single-host they are container names by design.
+[[ "$DNS_BOOTNODES" -eq 0 ]] && VERIFY_FLAGS+=(--require-public-bootnodes)
 
 if ! python3 "$VERIFY_PY" "$TMPDIR_G/genesis.json" "${VERIFY_FLAGS[@]}"; then
   cp "$TMPDIR_G/genesis.json" /tmp/genesis.REJECTED.json
@@ -201,6 +258,8 @@ chain_id=$CHAIN_ID
 validators=$VALIDATOR_COUNT
 total_supply=$TOTAL_SUPPLY
 lab_mode=$LAB_MODE
+topology=$TOPOLOGY_MODE
+alloc_confirmed_via=$CONFIRM_SOURCE
 alloc_env_sha256=$(sha256sum "$ALLOC_ENV" | cut -d' ' -f1)
 EOF
 
