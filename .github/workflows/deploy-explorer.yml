@@ -30,6 +30,32 @@ jobs:
         with:
           expects: single-host
 
+      - name: Read expected chain host
+        id: chain-host
+        uses: ./.github/actions/chain-host
+
+      # ── ด่านนำร่อง — ต้องมาก่อน scp (เพิ่ม 2026-08-06) ────────────────────────
+      # workflow นี้อัปโหลดไฟล์ก่อนแล้วค่อย ssh ถ้าไม่ดักตรงนี้ ไฟล์จะไปลงเครื่องผิด
+      # แล้วขั้น deploy จะ `mkdir -p $HOME/tpix-infrastructure` + `docker compose up -d`
+      # = สร้างเชน/explorer เก่าขึ้นมาใหม่บนเว็บเซิร์ฟเวอร์ที่เพิ่งถอนออกไป
+      # (ถอนเมื่อ 6 ส.ค. 2026 — ดู infrastructure/CHAIN_HOST)
+      - name: Assert SSH lands on the chain host
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 1m
+          script: |
+            EXPECT_HOST="${{ steps.chain-host.outputs.host }}"
+            if [ "$(hostname)" != "$EXPECT_HOST" ]; then
+              echo "::error::SSH มาโผล่เครื่อง '$(hostname)' แต่เชนอยู่ที่ '$EXPECT_HOST' — หยุดก่อนอัปโหลดไฟล์"
+              echo "แก้ secrets.SSH_HOST หรือ infrastructure/CHAIN_HOST ให้ตรงกันก่อน"
+              exit 1
+            fi
+            echo "ปลายทางถูกเครื่อง: $(hostname)"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -53,6 +79,13 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 15m
           script: |
+            # ── ด่านชั้นสอง — เผื่อมีคนสลับลำดับ step แล้วด่านนำร่องหลุด ──────────────
+            EXPECT_HOST="${{ steps.chain-host.outputs.host }}"
+            if [ "$(hostname)" != "$EXPECT_HOST" ]; then
+              echo "::error::SSH มาโผล่เครื่อง '$(hostname)' แต่เชนอยู่ที่ '$EXPECT_HOST' — หยุดทันที"
+              exit 1
+            fi
+
             echo "=== TPIX Explorer Deploy ==="
 
             INFRA="$HOME/tpix-infrastructure"

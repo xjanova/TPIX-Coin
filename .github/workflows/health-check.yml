@@ -34,6 +34,10 @@ jobs:
         with:
           expects: single-host
 
+      - name: Read expected chain host
+        id: chain-host
+        uses: ./.github/actions/chain-host
+
       - name: Check chain health and auto-restart if stalled
         uses: appleboy/ssh-action@v1
         with:
@@ -43,6 +47,16 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 3m
           script: |
+            # ── ด่านเช็คว่า SSH มาโผล่เครื่องถูกตัวไหม (เพิ่ม 2026-08-06) ────────────
+            # ดู infrastructure/CHAIN_HOST — workflow นี้ auto-restart ได้เอง ถ้าไปโดน
+            # เครื่องเก่าจะเท่ากับปลุกเชนเก่าขึ้นมาซ้อน chainId 4289 กับเชนจริง
+            EXPECT_HOST="${{ steps.chain-host.outputs.host }}"
+            if [ "$(hostname)" != "$EXPECT_HOST" ]; then
+              echo "::error::SSH มาโผล่เครื่อง '$(hostname)' แต่เชนอยู่ที่ '$EXPECT_HOST' — หยุดทันที"
+              echo "แก้ secrets.SSH_HOST หรือ infrastructure/CHAIN_HOST ให้ตรงกันก่อน"
+              exit 1
+            fi
+
             echo "=== TPIX Health Check — $(date) ==="
 
             # Get current block

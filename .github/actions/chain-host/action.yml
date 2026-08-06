@@ -1,0 +1,35 @@
+name: Read expected chain host
+description: >
+  อ่าน hostname ของเครื่องที่เชนอยู่จาก infrastructure/CHAIN_HOST แล้วส่งออกเป็น output
+  ให้ SSH script เอาไปเทียบกับ `hostname` ปลายทาง — กัน workflow ไปสั่งงานเครื่องผิด
+
+outputs:
+  host:
+    description: 'hostname ของเครื่องที่เชนอยู่ (บรรทัดแรกที่ไม่ใช่คอมเมนต์ใน infrastructure/CHAIN_HOST)'
+    value: ${{ steps.read.outputs.host }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read infrastructure/CHAIN_HOST
+      id: read
+      shell: bash
+      run: |
+        set -euo pipefail
+        FILE="infrastructure/CHAIN_HOST"
+
+        # fail-closed: ไม่มีไฟล์ = ไม่รู้ว่าเชนอยู่เครื่องไหน = ไม่ทำอะไรเลย
+        if [ ! -f "$FILE" ]; then
+          echo "::error::ไม่พบ $FILE — หยุดไว้ก่อนโดยเจตนา (fail-closed)"
+          echo "workflow นี้สั่งงานเชนผ่าน SSH และต้องรู้ก่อนว่าเชนอยู่เครื่องไหน"
+          exit 1
+        fi
+
+        HOST="$(grep -vE '^\s*(#|$)' "$FILE" | head -1 | tr -d '[:space:]')"
+        if [ -z "$HOST" ]; then
+          echo "::error::$FILE ไม่มีค่า — บรรทัดแรกต้องเป็น hostname ของเครื่องที่เชนอยู่"
+          exit 1
+        fi
+
+        echo "host=$HOST" >> "$GITHUB_OUTPUT"
+        echo "เครื่องที่เชนอยู่ (ตามไฟล์) : $HOST"

@@ -26,6 +26,10 @@ jobs:
         with:
           expects: single-host
 
+      - name: Read expected chain host
+        id: chain-host
+        uses: ./.github/actions/chain-host
+
       - name: Backup, patch compose, rolling restart
         uses: appleboy/ssh-action@v1
         with:
@@ -36,6 +40,16 @@ jobs:
           command_timeout: 10m
           script: |
             set -e
+
+            # ── ด่านเช็คว่า SSH มาโผล่เครื่องถูกตัวไหม (เพิ่ม 2026-08-06) ────────────
+            # ดู infrastructure/CHAIN_HOST — กัน secrets.SSH_HOST ที่ยังชี้เครื่องเก่า
+            EXPECT_HOST="${{ steps.chain-host.outputs.host }}"
+            if [ "$(hostname)" != "$EXPECT_HOST" ]; then
+              echo "::error::SSH มาโผล่เครื่อง '$(hostname)' แต่เชนอยู่ที่ '$EXPECT_HOST' — หยุดทันที"
+              echo "แก้ secrets.SSH_HOST หรือ infrastructure/CHAIN_HOST ให้ตรงกันก่อน"
+              exit 1
+            fi
+
             INFRA="$HOME/tpix-infrastructure"
             cd "$INFRA"
 

@@ -36,6 +36,10 @@ jobs:
         with:
           expects: single-host
 
+      - name: Read expected chain host
+        id: chain-host
+        uses: ./.github/actions/chain-host
+
       - name: Restart validators via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -45,6 +49,16 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 5m
           script: |
+            # ── ด่านเช็คว่า SSH มาโผล่เครื่องถูกตัวไหม (เพิ่ม 2026-08-06) ────────────
+            # ดู infrastructure/CHAIN_HOST — ถ้าไปโดนเครื่องเก่า `docker compose up -d`
+            # จะปลุกเชนเก่าขึ้นมาซ้อน chainId 4289 กับเชนจริง
+            EXPECT_HOST="${{ steps.chain-host.outputs.host }}"
+            if [ "$(hostname)" != "$EXPECT_HOST" ]; then
+              echo "::error::SSH มาโผล่เครื่อง '$(hostname)' แต่เชนอยู่ที่ '$EXPECT_HOST' — หยุดทันที"
+              echo "แก้ secrets.SSH_HOST หรือ infrastructure/CHAIN_HOST ให้ตรงกันก่อน"
+              exit 1
+            fi
+
             echo "=== TPIX Chain Restart — $(date) ==="
 
             INFRA="$HOME/tpix-infrastructure"
