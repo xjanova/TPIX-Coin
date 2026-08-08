@@ -1,0 +1,29 @@
+[
+  {
+    "title": "TPIX Chain",
+    "links": [
+      { "text": "เว็บหลัก · Main site", "url": "https://tpix.online" },
+      { "text": "ไวท์เปเปอร์ · Whitepaper", "url": "https://tpix.online/whitepaper" },
+      { "text": "RPC Endpoint", "url": "https://rpc1.tpix.online" }
+    ]
+  },
+  {
+    "title": "เครื่องมือ · Tools",
+    "links": [
+      { "text": "ตัวกรองขั้นสูง · Advanced filter", "url": "https://explorer.tpix.online/advanced-filter" },
+      { "text": "สถิติเชน · Chain stats", "url": "https://explorer.tpix.online/stats" },
+      { "text": "ยืนยันสัญญา · Verify contract", "url": "https://explorer.tpix.online/contract-verification" },
+      { "text": "API docs", "url": "https://explorer.tpix.online/api-docs" },
+      { "text": "GraphQL", "url": "https://explorer.tpix.online/graphiql" }
+    ]
+  },
+  {
+    "title": "ระบบนิเวศ · Ecosystem",
+    "links": [
+      { "text": "ซื้อขาย · Trade", "url": "https://tpix.online/trading" },
+      { "text": "Swap", "url": "https://tpix.online/swap" },
+      { "text": "Masternode", "url": "https://tpix.online/masternode" },
+      { "text": "Token Sale", "url": "https://tpix.online/token-sale" }
+    ]
+  }
+]

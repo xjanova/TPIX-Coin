@@ -228,6 +228,25 @@ services:
 
   # (sig-provider ถูกถอดออก — ดูเหตุผลเต็มในคอมเมนต์ที่ blockscout-backend)
 
+  # วาดผังโครงสร้างสัญญา (sol2uml) — ใช้คู่กับ sc-verifier ข้างบน
+  # พอสัญญาถูกยืนยันซอร์สแล้ว หน้า contract จะมีแท็บวาดผังความสัมพันธ์ให้ดู
+  # ไม่มีบริการนี้ = แท็บนั้นไม่โผล่เลย
+  blockscout-visualizer:
+    image: ghcr.io/blockscout/visualizer@sha256:ffce88a765b0466824175cc8fed6e6b31d682310a96933b98451aefdfffecdc7
+    container_name: blockscout-visualizer
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      VISUALIZER__SERVER__GRPC__ENABLED: "false"
+      VISUALIZER__SERVER__HTTP__ADDR: 0.0.0.0:8050
+      VISUALIZER__METRICS__ENABLED: "false"
+      RUST_LOG: info
+    ports: ["127.0.0.1:8154:8050"]
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+    networks: [tpix]
+
   # กราฟและสถิติ — หน้า /stats ของ explorer ตอบ 404 มาตลอดเพราะขาดตัวนี้
   # ใช้ postgres ตัวเดิม แต่แยกฐานข้อมูล `stats` (CREATE_DATABASE สร้างให้เอง)
   blockscout-stats:
@@ -316,6 +335,32 @@ services:
       # IBFT2 เป็น PoA ไม่ใช่ PoW — ตั้งค่านี้แล้วหน้าเว็บเรียก "Validator"
       # แทน "Miner" ซึ่งตรงกับสิ่งที่ผู้ใช้เห็นจริงมากกว่า
       NEXT_PUBLIC_NETWORK_VERIFICATION_TYPE: "validation"
+
+      # ── ของที่ Blockscout ทำได้อยู่แล้วแต่ไม่เคยเปิด (ตรวจแล้ว 2026-08-08) ──
+      # หน้า /advanced-filter ทำงานได้เต็มมาตลอด (backend ตอบ 200) แต่ไม่มีลิงก์
+      # ในเมนู ผู้ใช้จึงหาไม่เจอ — ค่านี้คุมแค่การโผล่ในเมนูเท่านั้น
+      NEXT_PUBLIC_ADVANCED_FILTER_ENABLED: "true"
+      # รองรับส่วนขยายเบราว์เซอร์ MetaSuites (ฟรี ไม่ต้องต่อบริการอะไร)
+      NEXT_PUBLIC_METASUITES_ENABLED: "true"
+      # ใส่ข้อมูลจริงของหน้านั้นๆ ลง meta tag — ตอนแชร์ลิงก์ที่อยู่/ธุรกรรมใน
+      # LINE/Facebook/X จะขึ้นยอดและรายละเอียด ไม่ใช่ข้อความเดียวกันหมดทุกหน้า
+      NEXT_PUBLIC_SEO_ENHANCED_DATA_ENABLED: "true"
+      NEXT_PUBLIC_OG_ENHANCED_DATA_ENABLED: "true"
+      NEXT_PUBLIC_OG_DESCRIPTION: "TPIX Chain block explorer — ตรวจสอบบล็อก ธุรกรรม และกระเป๋าบนเชน TPIX (chain ID 4289) ได้แบบสาธารณะตลอดเวลา"
+      # แถบหน้าแรกใช้สีแบรนด์ TPIX แทนสีเริ่มต้นของ Blockscout
+      NEXT_PUBLIC_HOMEPAGE_PLATE_BACKGROUND: "linear-gradient(136deg, rgb(6,182,212) 0%, rgb(14,116,144) 50%, rgb(15,23,42) 100%)"
+      NEXT_PUBLIC_HOMEPAGE_PLATE_TEXT_COLOR: "white"
+      # ปุ่ม "เปิดใน Remix" บนหน้าสัญญาที่ยืนยันซอร์สแล้ว
+      # {hash} กับ {domain} เป็นตัวแทนที่ Blockscout เติมให้เอง
+      NEXT_PUBLIC_CONTRACT_CODE_IDES: '[{"title":"Remix IDE","url":"https://remix.ethereum.org/?address={hash}&blockscout={domain}","icon_url":"https://tpix.online/images/tpix-logo-512.png"}]'
+      # ลิงก์เพิ่มในเมนู — ผูก explorer เข้ากับ ecosystem ที่เหลือ
+      NEXT_PUBLIC_OTHER_LINKS: '[{"text":"TPIX Chain","url":"https://tpix.online"},{"text":"Whitepaper","url":"https://tpix.online/whitepaper"},{"text":"RPC Endpoint","url":"https://rpc1.tpix.online"}]'
+      # ลิงก์ท้ายเว็บ — ไฟล์ JSON เสิร์ฟจาก nginx เครื่องเดียวกัน (ดู nginx-explorer.conf)
+      # frontend ดาวน์โหลดไฟล์นี้ตอนบูต ถ้าโหลดไม่ได้จะข้ามไปเฉยๆ ไม่ทำให้ล้ม
+      NEXT_PUBLIC_FOOTER_LINKS: "https://explorer.tpix.online/tpix-footer-links.json"
+      # ผังโครงสร้างสัญญา — เส้นทางเดียวกับ stats คือ path บนโดเมนเดิม
+      NEXT_PUBLIC_VISUALIZE_API_HOST: "https://explorer.tpix.online"
+      NEXT_PUBLIC_VISUALIZE_API_BASE_PATH: "/visualize-api"
       # แก๊สเป็นศูนย์ทั้งเชน (--price-limit 0) ตัวติดตามราคาแก๊สจึงโชว์ค่าว่าง
       # ตลอดกาล ปิดทิ้งดีกว่าให้ผู้ใช้เห็นช่องที่ไม่มีวันมีข้อมูล
       NEXT_PUBLIC_GAS_TRACKER_ENABLED: "false"
