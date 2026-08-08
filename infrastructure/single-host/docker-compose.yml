@@ -348,8 +348,10 @@ services:
       NEXT_PUBLIC_OG_ENHANCED_DATA_ENABLED: "true"
       NEXT_PUBLIC_OG_DESCRIPTION: "TPIX Chain block explorer — ตรวจสอบบล็อก ธุรกรรม และกระเป๋าบนเชน TPIX (chain ID 4289) ได้แบบสาธารณะตลอดเวลา"
       # แถบหน้าแรกใช้สีแบรนด์ TPIX แทนสีเริ่มต้นของ Blockscout
-      NEXT_PUBLIC_HOMEPAGE_PLATE_BACKGROUND: "linear-gradient(136deg, rgb(6,182,212) 0%, rgb(14,116,144) 50%, rgb(15,23,42) 100%)"
-      NEXT_PUBLIC_HOMEPAGE_PLATE_TEXT_COLOR: "white"
+      # ใช้ HERO_BANNER_CONFIG ไม่ใช่ HOMEPAGE_PLATE_* — ตัวหลัง deprecated แล้ว
+      # (ตัว validator ของ v1.38.0 เตือนตรงๆ ว่าจะถูกถอดออกในรุ่นถัดไป)
+      # ค่าเป็น array เพื่อรองรับธีมสว่าง/มืดแยกกัน ที่นี่ใส่ค่าเดียวใช้ทั้งสองธีม
+      NEXT_PUBLIC_HOMEPAGE_HERO_BANNER_CONFIG: '{"background":["linear-gradient(136deg, rgb(6,182,212) 0%, rgb(14,116,144) 50%, rgb(15,23,42) 100%)"],"text_color":["white"]}'
       # ปุ่ม "เปิดใน Remix" บนหน้าสัญญาที่ยืนยันซอร์สแล้ว
       # {hash} กับ {domain} เป็นตัวแทนที่ Blockscout เติมให้เอง
       NEXT_PUBLIC_CONTRACT_CODE_IDES: '[{"title":"Remix IDE","url":"https://remix.ethereum.org/?address={hash}&blockscout={domain}","icon_url":"https://tpix.online/images/tpix-logo-512.png"}]'
