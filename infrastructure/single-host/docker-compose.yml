@@ -162,10 +162,19 @@ services:
       MICROSERVICE_SC_VERIFIER_ENABLED: "true"
       MICROSERVICE_SC_VERIFIER_URL: http://blockscout-sc-verifier:8050
       MICROSERVICE_SC_VERIFIER_TYPE: sc_verifier
-      # แปลง 4-byte selector เป็นชื่อเมธอด — ทำให้อ่าน input ของธุรกรรมที่เรียก
-      # สัญญาซึ่งยังไม่ได้ยืนยันซอร์สออก (ไม่งั้นเห็นเป็น hex ดิบ)
-      MICROSERVICE_SIG_PROVIDER_ENABLED: "true"
-      MICROSERVICE_SIG_PROVIDER_URL: http://blockscout-sig-provider:8050
+      #
+      # ❌ ไม่เปิด sig-provider — ทดสอบแล้วใช้ไม่ได้จริง (2026-08-08)
+      #    image ล่าสุดของ upstream ยังเป็นรุ่น ส.ค. 2024 ที่ฝัง sig.eth.samczsun.com
+      #    ไว้เป็นแหล่งข้อมูล ซึ่ง**โดเมนตายไปแล้ว** ผลคือทุก request ค้างรอ DNS 22 วินาที
+      #    แล้วค่อยล้มเหลว — หน้าใดที่เรียกมันจะอืดทั้งหน้า
+      #    ลองชี้ไป openchain.xyz แทน (เร็วขึ้นเหลือ 1 วิ) แต่คนละรูปแบบ API จึงได้ 404
+      #    และแม้บังคับแหล่ง 4byte.directory ตรงๆ ก็ยังคืนค่าว่างสำหรับ 0xa9059cbb
+      #    (transfer ซึ่งเป็น selector ที่ดังที่สุด) → ตัวบริการเสียจริง ไม่ใช่ตั้งค่าผิด
+      #
+      #    ประโยชน์ที่เสียไปมีน้อยมาก: มันช่วยเดาชื่อเมธอดของสัญญาที่**ยังไม่ยืนยันซอร์ส**
+      #    เท่านั้น ส่วนสัญญาของ TPIX เองจะถูกยืนยันผ่าน sc-verifier ข้างบนซึ่งให้ ABI
+      #    เต็มอยู่แล้ว → ถอดออกดีกว่าเก็บของที่หน่วงแล้วไม่ได้อะไร
+      #    ถ้าวันหนึ่ง upstream ออก image ใหม่ ค่อยกลับมาพิจารณา
 
       # เปิดแล้ว 2026-08-08 — ทดสอบบนเชนจริงแล้วว่า polygon-edge 0.9.0 ตอบ
       # debug_traceBlockByNumber + callTracer ได้ (เดิมปิดไว้เพราะเข้าใจว่าไม่รองรับ)
@@ -217,19 +226,7 @@ services:
       options: { max-size: "20m", max-file: "3" }
     networks: [tpix]
 
-  # แปลง 4-byte selector → ชื่อเมธอด (ฐาน 4byte/openchain)
-  blockscout-sig-provider:
-    image: ghcr.io/blockscout/sig-provider@sha256:450062a602257817bd38309ba4ad048039d244cdd0ce3e1e1d4103e069db66ab  # v1.1.1
-    container_name: blockscout-sig-provider
-    restart: unless-stopped
-    mem_limit: 256m
-    environment:
-      SIG_PROVIDER__SERVER__HTTP__ADDR: 0.0.0.0:8050
-      RUST_LOG: info
-    logging:
-      driver: json-file
-      options: { max-size: "20m", max-file: "3" }
-    networks: [tpix]
+  # (sig-provider ถูกถอดออก — ดูเหตุผลเต็มในคอมเมนต์ที่ blockscout-backend)
 
   # กราฟและสถิติ — หน้า /stats ของ explorer ตอบ 404 มาตลอดเพราะขาดตัวนี้
   # ใช้ postgres ตัวเดิม แต่แยกฐานข้อมูล `stats` (CREATE_DATABASE สร้างให้เอง)
