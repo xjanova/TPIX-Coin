@@ -280,10 +280,14 @@ services:
       NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: "TPIX"
       NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: "18"
       NEXT_PUBLIC_IS_TESTNET: "false"
+      # LOGO = โลโก้แนวนอน (ใช้ตอนแถบหัวกางเต็ม) · ICON = ไอคอนจัตุรัส (ตอนแถบหุบ/จอมือถือ)
+      # ⚠️ สองอย่างนี้ต้องเป็นคนละรูป — เดิมตั้งเป็นไฟล์เดียวกันทั้งคู่ ผลคือรูปแนวนอน
+      # อัตราส่วน 2.36:1 ถูกยัดลงช่องจัตุรัส 30×30 ที่ overflow:hidden แล้วบีบเหลือ
+      # 30×60 กลายเป็นโลโก้ผอมสูงอ่านไม่ออก (ยืนยันจากเว็บจริง 2026-08-08)
       NEXT_PUBLIC_NETWORK_LOGO: "https://tpix.online/images/logotpixexplorer.webp"
       NEXT_PUBLIC_NETWORK_LOGO_DARK: "https://tpix.online/images/logotpixexplorer.webp"
-      NEXT_PUBLIC_NETWORK_ICON: "https://tpix.online/images/logotpixexplorer.webp"
-      NEXT_PUBLIC_NETWORK_ICON_DARK: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_ICON: "https://tpix.online/images/tpix-logo-512.png"
+      NEXT_PUBLIC_NETWORK_ICON_DARK: "https://tpix.online/images/tpix-logo-512.png"
       NEXT_PUBLIC_COLOR_THEME_DEFAULT: "dark"
       NEXT_PUBLIC_HOMEPAGE_CHARTS: "['daily_txs']"
       NEXT_PUBLIC_WEB3_WALLETS: "['metamask']"

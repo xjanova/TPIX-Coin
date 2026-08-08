@@ -9,7 +9,9 @@
  *   - เบราว์เซอร์แคชไม่ได้ ต้องโหลดใหม่ทุกหน้า
  *
  * ทำอะไร
- *   1. เปลี่ยนโลโก้ + ลบเครดิต Blockscout ออกจาก footer
+ *   1. ลบเครดิต Blockscout ออกจาก footer
+ *      (โลโก้ไม่ทำที่นี่แล้ว — ตั้งผ่าน NEXT_PUBLIC_NETWORK_LOGO/_ICON ใน compose
+ *       เหตุผลอยู่ที่ฟังก์ชัน branding() ด้านล่าง)
  *   2. เพิ่มแถบการ์ด "กระเป๋าคลัง" บนหน้าแรก แยกจาก Top accounts
  *
  * ทำไมต้องดึงยอดจาก RPC เอง ไม่ใช้ API ของ Blockscout
@@ -22,7 +24,6 @@
   'use strict';
 
   var RPC = 'https://rpc1.tpix.online';
-  var LOGO = 'https://tpix.online/images/logotpixexplorer.webp';
   var TOTAL_SUPPLY = 7000000000;
 
   /* ที่อยู่มาจาก infrastructure/chain/alloc.env ซึ่งเป็นชุดเดียวกับที่ใช้สร้าง
@@ -141,15 +142,16 @@
 
   /* ── branding ──────────────────────────────────────────────────────────── */
 
+  /* ไม่ยุ่งกับโลโก้ที่นี่แล้ว — ปล่อยให้ NEXT_PUBLIC_NETWORK_LOGO/_ICON ทำงาน
+   *
+   * โค้ดเดิมยัดโลโก้แนวนอนลงทุก <img> ในแถบหัวแล้วบังคับ height:60px width:auto
+   * ปัญหาคือแถบหัวมีสองช่องคนละแบบ: ช่องโลโก้แนวนอน กับช่องไอคอน**จัตุรัส** 30×30
+   * ที่ overflow:hidden — พอโดนบังคับสูง 60px ในกล่อง 30px รูปจึงถูกบีบเหลือ 30×60
+   * กลายเป็นโลโก้ผอมสูงผิดสัดส่วนจนอ่านไม่ออก (เจอจริง 2026-08-08)
+   *
+   * ตอนนี้ compose ตั้ง LOGO เป็นรูปแนวนอน และ ICON เป็น tpix-logo-512.png (จัตุรัส)
+   * แยกกันถูกช่องแล้ว Blockscout จัดขนาดเองได้ถูกต้องกว่าการไปฝืนด้วย inline style */
   function branding() {
-    document.querySelectorAll("header a[href='/'] img, nav a[href='/'] img").forEach(function (img) {
-      if (img.src !== LOGO) { img.src = LOGO; img.style.height = '60px'; img.style.width = 'auto'; img.style.maxHeight = 'none'; }
-    });
-    document.querySelectorAll("header a[href='/'] svg, nav a[href='/'] svg").forEach(function (svg) {
-      var img = document.createElement('img');
-      img.src = LOGO; img.alt = 'TPIX Explorer'; img.style.height = '60px'; img.style.width = 'auto';
-      svg.parentNode.replaceChild(img, svg);
-    });
     document.querySelectorAll("a[href*='blockscout.com']").forEach(function (a) {
       if (a.closest('footer') || a.closest("[class*='footer']")) {
         a.href = 'https://xman4289.com';
