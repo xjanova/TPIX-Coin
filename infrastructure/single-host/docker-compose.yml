@@ -249,6 +249,12 @@ services:
       STATS__SERVER__HTTP__ADDR: 0.0.0.0:8050
       STATS__METRICS__ENABLED: "false"
       RUST_LOG: info
+    volumes:
+      # charts.json ฝัง "native_coin_symbol": "ETH" มาใน image และไม่มี env ให้ override
+      # ถ้าไม่ทับ หน้า /stats จะเขียน "Transactions fees (24h) 0 ETH" กับ
+      # "Number of ETH transfers" ทั้งที่เชนนี้ใช้ TPIX
+      # สร้างไฟล์นี้ด้วย sync-stats-charts.sh (ต้องรันใหม่ทุกครั้งที่เปลี่ยน digest)
+      - /opt/tpix/blockscout/stats-charts.json:/app/config/blockscout_instance/charts.json:ro
     ports: ["127.0.0.1:8153:8050"]
     logging:
       driver: json-file
