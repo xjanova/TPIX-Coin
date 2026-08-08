@@ -155,7 +155,23 @@ services:
       ECTO_USE_SSL: "false"
       API_V2_ENABLED: "true"
       POOL_SIZE: "20"
-      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+
+      # ── บริการเสริม (microservices) ────────────────────────────────────────
+      # ยืนยันซอร์สโค้ดสัญญา — ถ้าไม่เปิด หน้า contract จะมีแค่ปุ่มที่กดแล้วพัง
+      # และผู้ใช้เห็นแต่ bytecode ตรวจสอบไม่ได้ว่าสัญญาทำอะไร
+      MICROSERVICE_SC_VERIFIER_ENABLED: "true"
+      MICROSERVICE_SC_VERIFIER_URL: http://blockscout-sc-verifier:8050
+      MICROSERVICE_SC_VERIFIER_TYPE: sc_verifier
+      # แปลง 4-byte selector เป็นชื่อเมธอด — ทำให้อ่าน input ของธุรกรรมที่เรียก
+      # สัญญาซึ่งยังไม่ได้ยืนยันซอร์สออก (ไม่งั้นเห็นเป็น hex ดิบ)
+      MICROSERVICE_SIG_PROVIDER_ENABLED: "true"
+      MICROSERVICE_SIG_PROVIDER_URL: http://blockscout-sig-provider:8050
+
+      # เปิดแล้ว 2026-08-08 — ทดสอบบนเชนจริงแล้วว่า polygon-edge 0.9.0 ตอบ
+      # debug_traceBlockByNumber + callTracer ได้ (เดิมปิดไว้เพราะเข้าใจว่าไม่รองรับ)
+      # ต้องเปิดก่อนขึ้นสัญญา DEX/masternode ไม่งั้นการโอนที่เกิดจากสัญญาเรียกสัญญา
+      # จะไม่โผล่ในหน้า address เลย — ยอดขยับแต่หาที่มาไม่เจอ
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "false"
       INDEXER_DISABLE_BLOCK_REWARD_FETCHER: "true"
       INDEXER_DISABLE_WITHDRAWALS_FETCHER: "true"
       INDEXER_COIN_BALANCES_BATCH_SIZE: "50"
@@ -169,6 +185,74 @@ services:
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "3" }
+    networks: [tpix]
+
+  # ── บริการเสริมของ Blockscout ───────────────────────────────────────────────
+  # ปักหมุดด้วย digest ไม่ใช่ :latest — ทั้งสามตัวไม่มี tag แบบ semver ให้ใช้
+  # (ค่า version อยู่ใน label เท่านั้น) ถ้าใช้ latest วันหนึ่ง restart แล้วได้
+  # รุ่นใหม่ที่ schema ไม่เข้ากัน จะพังโดยไม่มีใครสั่งอะไรเลย
+  # อัปเดตเวอร์ชัน = pull latest ใหม่ แล้วเอา digest มาแปะที่นี่
+
+  # ยืนยันซอร์สโค้ดสัญญา (Solidity) — สำคัญก่อนขึ้น NodeRegistry/Router/TokenSale
+  blockscout-sc-verifier:
+    image: ghcr.io/blockscout/smart-contract-verifier@sha256:c9e4e022ba2b1cc24fe70e581d835e873c6c374545b3a0fd209e16ff03f93d78  # v1.10.6
+    container_name: blockscout-sc-verifier
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      SMART_CONTRACT_VERIFIER__SERVER__HTTP__ADDR: 0.0.0.0:8050
+      SMART_CONTRACT_VERIFIER__SOLIDITY__ENABLED: "true"
+      SMART_CONTRACT_VERIFIER__SOLIDITY__COMPILERS_DIR: /compilers
+      SMART_CONTRACT_VERIFIER__SOLIDITY__REFRESH_VERSIONS_SCHEDULE: "0 0 * * * * *"
+      SMART_CONTRACT_VERIFIER__VYPER__ENABLED: "false"
+      # Sourcify เป็นฐานข้อมูลกลางที่ไม่รู้จัก chain 4289 — เปิดไว้ก็ได้แต่ 404 เปล่าๆ
+      SMART_CONTRACT_VERIFIER__SOURCIFY__ENABLED: "false"
+      SMART_CONTRACT_VERIFIER__METRICS__ENABLED: "false"
+      RUST_LOG: info
+    volumes:
+      # เก็บ solc ที่โหลดมาไว้ ไม่งั้น restart ทีโหลดคอมไพเลอร์ใหม่ทุกเวอร์ชัน
+      - sc-verifier-compilers:/compilers
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+    networks: [tpix]
+
+  # แปลง 4-byte selector → ชื่อเมธอด (ฐาน 4byte/openchain)
+  blockscout-sig-provider:
+    image: ghcr.io/blockscout/sig-provider@sha256:450062a602257817bd38309ba4ad048039d244cdd0ce3e1e1d4103e069db66ab  # v1.1.1
+    container_name: blockscout-sig-provider
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      SIG_PROVIDER__SERVER__HTTP__ADDR: 0.0.0.0:8050
+      RUST_LOG: info
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+    networks: [tpix]
+
+  # กราฟและสถิติ — หน้า /stats ของ explorer ตอบ 404 มาตลอดเพราะขาดตัวนี้
+  # ใช้ postgres ตัวเดิม แต่แยกฐานข้อมูล `stats` (CREATE_DATABASE สร้างให้เอง)
+  blockscout-stats:
+    image: ghcr.io/blockscout/stats@sha256:1091cacba9287b6930575fac2aa3512dec3a8e81de58316ca63a6c20e1ddc457  # v2.17.0
+    container_name: blockscout-stats
+    restart: unless-stopped
+    mem_limit: 512m
+    depends_on:
+      blockscout-db: { condition: service_healthy }
+    environment:
+      STATS__DB_URL: postgresql://${BS_USER}:${BS_PASS}@blockscout-db:5432/stats
+      STATS__BLOCKSCOUT_DB_URL: postgresql://${BS_USER}:${BS_PASS}@blockscout-db:5432/${BS_DB}
+      STATS__BLOCKSCOUT_API_URL: http://blockscout-backend:4000
+      STATS__CREATE_DATABASE: "true"
+      STATS__RUN_MIGRATIONS: "true"
+      STATS__SERVER__HTTP__ADDR: 0.0.0.0:8050
+      STATS__METRICS__ENABLED: "false"
+      RUST_LOG: info
+    ports: ["127.0.0.1:8153:8050"]
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
     networks: [tpix]
 
   blockscout-frontend:
@@ -203,6 +287,33 @@ services:
       NEXT_PUBLIC_PROMOTE_BLOCKSCOUT_IN_TITLE: "false"
       NEXT_PUBLIC_AD_BANNER_PROVIDER: "none"
       NEXT_PUBLIC_AD_TEXT_PROVIDER: "none"
+
+      # ── favicon ────────────────────────────────────────────────────────────
+      # ไม่มี prefix NEXT_PUBLIC โดยตั้งใจ — favicon_generator.sh อ่านตัวนี้ตอนบูต
+      # ถ้าไม่ตั้ง มัน fallback ไป NEXT_PUBLIC_NETWORK_ICON ซึ่งเป็น .webp
+      # ตัวสร้าง favicon อ่าน webp ไม่ได้ → พังเงียบ → /favicon.ico ตอบ 404
+      # และแท็บเบราว์เซอร์ไม่มีไอคอน (ยืนยันจากเว็บจริง 2026-08-08)
+      # ต้องเป็น PNG/JPG/SVG เท่านั้น
+      FAVICON_MASTER_URL: "https://tpix.online/images/tpix-logo-512.png"
+      # รูปที่ขึ้นตอนแชร์ลิงก์ใน LINE/Facebook/X — ไม่ตั้ง = ได้โลโก้ Blockscout
+      NEXT_PUBLIC_OG_IMAGE_URL: "https://tpix.online/images/tpix-logo-512.png"
+
+      # ── หน้า /stats (กราฟ) ─────────────────────────────────────────────────
+      # ใช้ path บนโดเมนเดิม ไม่แยก subdomain — เลี่ยงงาน DNS + ใบรับรองใหม่
+      # และเป็น same-origin เลยไม่ต้องยุ่งกับ CORS ด้วย
+      # nginx ส่ง /stats-api/ → 127.0.0.1:8153 (ดู nginx-explorer.conf)
+      NEXT_PUBLIC_STATS_API_HOST: "https://explorer.tpix.online"
+      NEXT_PUBLIC_STATS_API_BASE_PATH: "/stats-api"
+
+      # ── ให้ตรงกับความจริงของเชนนี้ ─────────────────────────────────────────
+      # IBFT2 เป็น PoA ไม่ใช่ PoW — ตั้งค่านี้แล้วหน้าเว็บเรียก "Validator"
+      # แทน "Miner" ซึ่งตรงกับสิ่งที่ผู้ใช้เห็นจริงมากกว่า
+      NEXT_PUBLIC_NETWORK_VERIFICATION_TYPE: "validation"
+      # แก๊สเป็นศูนย์ทั้งเชน (--price-limit 0) ตัวติดตามราคาแก๊สจึงโชว์ค่าว่าง
+      # ตลอดกาล ปิดทิ้งดีกว่าให้ผู้ใช้เห็นช่องที่ไม่มีวันมีข้อมูล
+      NEXT_PUBLIC_GAS_TRACKER_ENABLED: "false"
+      NEXT_PUBLIC_NETWORK_CURRENCY_WEI_NAME: "wei"
+      NEXT_PUBLIC_HOMEPAGE_STATS: "['total_blocks','average_block_time','total_txs','wallet_addresses']"
     ports: ["127.0.0.1:3100:3000"]
     logging:
       driver: json-file
@@ -211,6 +322,7 @@ services:
 
 volumes:
   blockscout-db-data:
+  sc-verifier-compilers:
 
 networks:
   tpix:
