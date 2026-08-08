@@ -1,0 +1,217 @@
+# TPIX Chain — production, single-host (validator 1-4 + Blockscout)
+#
+# ไฟล์ต้นฉบับ (canonical) — สำเนาที่ใช้จริงอยู่ที่ /opt/tpix/docker-compose.yml
+# วิธี apply บนเครื่องที่เชนวิ่งอยู่ (ห้าม down ทั้งวง — เชนจะหยุด):
+#   cd ~/TPIX-Coin && git pull
+#   sudo cp /opt/tpix/docker-compose.yml /opt/tpix/docker-compose.yml.bak-$(date +%Y%m%d-%H%M%S)
+#   sudo cp infrastructure/single-host/docker-compose.yml /opt/tpix/docker-compose.yml
+#   sudo bash infrastructure/single-host/apply-rolling.sh
+#
+# ห้ามเปลี่ยนชื่อ container: genesis.json อ้าง peer ด้วยชื่อผ่าน
+# /dns4/tpix-validator-N/tcp/10001/p2p/<id> เปลี่ยนชื่อเมื่อไหร่ โหนดจะสตาร์ทขึ้น
+# ดูปกติทุกอย่าง แต่ไม่รวมตัวเป็น mesh และเชนจะค้างที่บล็อก 0 อย่างเงียบๆ
+#
+# libp2p 10001 ไม่ publish ออกโฮสต์โดยตั้งใจ — validator ทั้ง 4 คุยกันบน docker
+# bridge ภายในอยู่แล้ว และ docker แทรกกฎ iptables ก่อน ufw ดังนั้นพอร์ตที่
+# publish แบบ 0.0.0.0 จะทะลุไฟร์วอลล์ออกเน็ตทั้งที่ ufw บอก deny
+# วันที่แยก validator ออกคนละเครื่องค่อยเปิด แล้วจำกัดด้วย source IP
+#
+# JSON-RPC/gRPC ผูก 127.0.0.1 เท่านั้น — ทางเข้าสาธารณะคือ nginx บนโฮสต์
+# gRPC 10000 คือช่องแอดมิน สั่ง ibft propose เพิ่ม-ถอด validator ได้ ห้ามโผล่เน็ต
+
+name: tpix
+
+x-validator: &validator
+  image: 0xpolygon/polygon-edge:0.9.0
+  restart: always
+  mem_limit: 2g
+  environment:
+    # กัน GC pause ยาวจนพลาดรอบ propose — ต้นเหตุ stall 2026-04-13 (เชนเก่า)
+    # และ 2026-08-08 (เชนนี้): proposer สะดุดครั้งเดียว → IBFT round escalation
+    # แบบ exponential backoff → เชนแช่แข็งถาวรจนกว่าจะ restart
+    # ค่าตั้งตามสเปกเครื่อง 16 core / 8GB (อย่าลอกค่าเชนเก่าที่เป็นเครื่อง 24 core):
+    #   GOGC=50        — GC ถี่ขึ้น heap เล็กลง pause สั้นลง
+    #   GOMEMLIMIT     — ต่ำกว่า mem_limit 400MiB กัน OOM kill ก่อน GC ทัน
+    #   GOMAXPROCS=4   — 4 validator × 4 = 16 พอดีคอร์ ไม่แย่งกันเอง
+    GOGC: "50"
+    GOMEMLIMIT: "1600MiB"
+    GOMAXPROCS: "4"
+  logging:
+    driver: json-file
+    options: { max-size: "50m", max-file: "5" }
+  # healthcheck ทุกตัว (เดิมมีแค่ validator-1) — watchdog + rolling apply
+  # ใช้สถานะนี้ตัดสินว่าโหนดพร้อมก่อนแตะตัวถัดไป
+  healthcheck:
+    test: ["CMD-SHELL", "polygon-edge status --grpc-address 127.0.0.1:10000 > /dev/null 2>&1"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 60s
+  networks: [tpix]
+
+x-cmd: &cmd >
+  server --data-dir /data --chain /genesis.json
+  --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545
+  --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0
+  --log-level INFO
+
+services:
+  tpix-validator-1:
+    <<: *validator
+    container_name: tpix-validator-1
+    command: *cmd
+    ports: ["127.0.0.1:8545:8545", "127.0.0.1:10000:10000"]
+    volumes:
+      - /opt/tpix/chain/data/validator-1:/data
+      - /opt/tpix/chain/genesis.json:/genesis.json:ro
+
+  tpix-validator-2:
+    <<: *validator
+    container_name: tpix-validator-2
+    command: *cmd
+    ports: ["127.0.0.1:8546:8545", "127.0.0.1:10010:10000"]
+    volumes:
+      - /opt/tpix/chain/data/validator-2:/data
+      - /opt/tpix/chain/genesis.json:/genesis.json:ro
+
+  tpix-validator-3:
+    <<: *validator
+    container_name: tpix-validator-3
+    command: *cmd
+    ports: ["127.0.0.1:8547:8545", "127.0.0.1:10020:10000"]
+    volumes:
+      - /opt/tpix/chain/data/validator-3:/data
+      - /opt/tpix/chain/genesis.json:/genesis.json:ro
+
+  tpix-validator-4:
+    <<: *validator
+    container_name: tpix-validator-4
+    command: *cmd
+    ports: ["127.0.0.1:8548:8545", "127.0.0.1:10030:10000"]
+    volumes:
+      - /opt/tpix/chain/data/validator-4:/data
+      - /opt/tpix/chain/genesis.json:/genesis.json:ro
+
+  # ── Explorer ────────────────────────────────────────────────────────────────
+  # อยู่ compose ไฟล์เดียวกับ validator โดยตั้งใจ: backend ต้องคุยกับ
+  # tpix-validator-1:8545 ผ่านชื่อ container ซึ่งใช้ได้เฉพาะเมื่ออยู่ network เดียวกัน
+  # และ depends_on service_healthy ข้ามไฟล์ compose ไม่ได้
+  blockscout-db:
+    image: postgres:16-alpine
+    container_name: blockscout-db
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      POSTGRES_DB: ${BS_DB}
+      POSTGRES_USER: ${BS_USER}
+      POSTGRES_PASSWORD: ${BS_PASS:?BS_PASS หายไปจาก /opt/tpix/.env}
+    volumes:
+      - blockscout-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BS_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+    networks: [tpix]
+
+  blockscout-backend:
+    image: blockscout/blockscout:6.10.1
+    container_name: blockscout-backend
+    restart: unless-stopped
+    mem_limit: 2g
+    depends_on:
+      blockscout-db: { condition: service_healthy }
+      tpix-validator-1: { condition: service_healthy }
+    command: sh -c "bin/blockscout eval 'Elixir.Explorer.ReleaseTasks.create_and_migrate()' && bin/blockscout start"
+    volumes:
+      # Blockscout ค้นพบ address จาก block/transaction เท่านั้น
+      # กระเป๋าที่ได้เงินตั้งแต่ genesis ไม่เคยมีธุรกรรม จึงไม่ถูก index เลย
+      # ผล: explorer บอกว่ากระเป๋าคลังไม่มีตัวตน ยอด 0 ทั้งที่ RPC ยืนยันว่ามี 1.4B
+      # CHAIN_SPEC_PATH ทำให้มันอ่าน alloc จาก genesis แล้วสร้าง balance ตั้งต้นให้
+      # polygon-edge วาง alloc ไว้ใต้คีย์ "genesis" และสะกด chainID (I ใหญ่)
+      # Blockscout อ่านสเปกแบบ geth ที่ alloc อยู่ระดับบนสุด ชี้ไฟล์จริงให้มัน
+      # จึงหา alloc ไม่เจอ และไม่ error ด้วย — ยอดกระเป๋าคลังหายไปเงียบๆ
+      - /opt/tpix/chain/genesis.blockscout.json:/genesis-spec.json:ro
+    environment:
+      CHAIN_SPEC_PATH: /genesis-spec.json
+      MIX_ENV: prod
+      DATABASE_URL: postgresql://${BS_USER}:${BS_PASS}@blockscout-db:5432/${BS_DB}
+      SECRET_KEY_BASE: ${BS_SECRET_KEY_BASE:?BS_SECRET_KEY_BASE หายไปจาก /opt/tpix/.env}
+      ETHEREUM_JSONRPC_VARIANT: geth
+      ETHEREUM_JSONRPC_HTTP_URL: http://tpix-validator-1:8545
+      ETHEREUM_JSONRPC_WS_URL: ws://tpix-validator-1:8545/ws
+      ETHEREUM_JSONRPC_TRACE_URL: http://tpix-validator-1:8545
+      ETHEREUM_JSONRPC_HTTP_TIMEOUT: "30"
+      CHAIN_ID: "4289"
+      NETWORK: "TPIX Chain"
+      SUBNETWORK: "Mainnet"
+      COIN: "TPIX"
+      COIN_NAME: "Thaiprompt Index"
+      BLOCK_TRANSFORMER: base
+      PORT: "4000"
+      ECTO_USE_SSL: "false"
+      API_V2_ENABLED: "true"
+      POOL_SIZE: "20"
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+      INDEXER_DISABLE_BLOCK_REWARD_FETCHER: "true"
+      INDEXER_DISABLE_WITHDRAWALS_FETCHER: "true"
+      INDEXER_COIN_BALANCES_BATCH_SIZE: "50"
+      COIN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
+      TOKEN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
+      TXS_STATS_ENABLED: "true"
+      SHOW_TXS_CHART: "true"
+      SHOW_PRICE_CHART: "false"
+      DISABLE_EXCHANGE_RATES: "true"
+    ports: ["127.0.0.1:4000:4000"]
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "3" }
+    networks: [tpix]
+
+  blockscout-frontend:
+    image: ghcr.io/blockscout/frontend:v1.38.0
+    container_name: blockscout-frontend
+    restart: unless-stopped
+    mem_limit: 768m
+    depends_on: [blockscout-backend]
+    environment:
+      NEXT_PUBLIC_API_HOST: explorer.tpix.online
+      NEXT_PUBLIC_API_PORT: "443"
+      NEXT_PUBLIC_API_PROTOCOL: https
+      NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL: wss
+      NEXT_PUBLIC_APP_HOST: explorer.tpix.online
+      NEXT_PUBLIC_APP_PROTOCOL: https
+      NEXT_PUBLIC_APP_PORT: "443"
+      NEXT_PUBLIC_NETWORK_NAME: "TPIX Chain"
+      NEXT_PUBLIC_NETWORK_SHORT_NAME: "TPIX"
+      NEXT_PUBLIC_NETWORK_ID: "4289"
+      NEXT_PUBLIC_NETWORK_RPC_URL: "https://rpc1.tpix.online"
+      NEXT_PUBLIC_NETWORK_CURRENCY_NAME: "TPIX"
+      NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: "TPIX"
+      NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: "18"
+      NEXT_PUBLIC_IS_TESTNET: "false"
+      NEXT_PUBLIC_NETWORK_LOGO: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_LOGO_DARK: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_ICON: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_ICON_DARK: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_COLOR_THEME_DEFAULT: "dark"
+      NEXT_PUBLIC_HOMEPAGE_CHARTS: "['daily_txs']"
+      NEXT_PUBLIC_WEB3_WALLETS: "['metamask']"
+      NEXT_PUBLIC_PROMOTE_BLOCKSCOUT_IN_TITLE: "false"
+      NEXT_PUBLIC_AD_BANNER_PROVIDER: "none"
+      NEXT_PUBLIC_AD_TEXT_PROVIDER: "none"
+    ports: ["127.0.0.1:3100:3000"]
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+    networks: [tpix]
+
+volumes:
+  blockscout-db-data:
+
+networks:
+  tpix:
+    driver: bridge

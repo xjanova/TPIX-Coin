@@ -14,6 +14,11 @@
 #   TPIX_INFRA_DIR=/home/admin/tpix-infrastructure (default)
 #   HC_PING_URL=https://hc-ping.com/<uuid>          (optional — dead-man-switch)
 #   NTFY_TOPIC=https://ntfy.sh/tpix-alerts-xxx      (optional — push on critical)
+#   TPIX_ALERT_URL=https://tpix.online/api/infra    (optional — คาดแดงหลังบ้าน tpix.online)
+#   TPIX_ALERT_TOKEN=<token>                        (คู่กับ TPIX_ALERT_URL — ค่าเดียวกับ
+#                                                    TPIX_INFRA_ALERT_TOKEN ใน .env ฝั่งเว็บ)
+#   TPIX_NODE_NAME=chain-1                          (ชื่อ node ที่โชว์ในหลังบ้าน; default hostname
+#                                                    — ตอนขยายหลายเครื่อง ตั้งไม่ให้ซ้ำกัน)
 #
 # Developed by Xman Studio
 # ============================================================
@@ -41,6 +46,12 @@ VALIDATORS=(tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4)
 HC_PING_URL="${HC_PING_URL:-}"
 NTFY_TOPIC="${NTFY_TOPIC:-}"
 
+# หลังบ้าน tpix.online — heartbeat + คาดแดง (empty = skip)
+ALERT_URL="${TPIX_ALERT_URL:-}"
+ALERT_TOKEN="${TPIX_ALERT_TOKEN:-}"
+NODE_NAME="${TPIX_NODE_NAME:-$(hostname)}"
+LAST_BLOCK_DEC=0
+
 # ─── Logging — เขียน log file ในตัว, print to terminal เฉพาะตอน interactive ───
 timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
 log() {
@@ -67,6 +78,30 @@ ntfy_push() {
         -H "Tags: warning,tpix" \
         -d "$body" \
         "$NTFY_TOPIC" -o /dev/null 2>/dev/null || true
+}
+
+# ─── หลังบ้าน tpix.online — heartbeat + คาดแดง (no-op if URL/token not set) ───
+# สำคัญ: ต้องส่ง User-Agent (-A) เสมอ — Cloudflare WAF บล็อก request ไม่มี UA เป็น 403
+# ทุกตัวเป็น best-effort (|| true) — ระบบแจ้งเตือนล่มต้องไม่ทำให้ watchdog ล่มตาม
+backend_post() {
+    [ -n "$ALERT_URL" ] && [ -n "$ALERT_TOKEN" ] || return 0
+    curl -fsS -m 10 -A "tpix-watchdog/1.0 (${NODE_NAME})" \
+        -H "Authorization: Bearer ${ALERT_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "$2" "${ALERT_URL}$1" -o /dev/null 2>/dev/null || true
+}
+
+# heartbeat = "ทุก check ผ่าน" — ฝั่งหลังบ้านใช้ auto-resolve เหตุร้ายของ node นี้
+# และใช้จับกรณีทั้งเครื่องดับ: heartbeat ขาดเกิน 3 นาที → ฝั่งเว็บขึ้นคาดแดงเอง
+backend_heartbeat() {
+    backend_post "/heartbeat" "{\"node\":\"${NODE_NAME}\",\"block\":${1:-0}}"
+}
+
+# ยิงเหตุเข้าคาดแดง — key ซ้ำฝั่งหลังบ้านจะรวมเป็นรายการเดียว (นับ occurrences)
+backend_alert() {
+    local key="$1" sev="$2" msg="$3"
+    msg=${msg//\\/\\\\}; msg=${msg//\"/\\\"}
+    backend_post "/alert" "{\"node\":\"${NODE_NAME}\",\"key\":\"${key}\",\"severity\":\"${sev}\",\"message\":\"${msg}\"}"
 }
 
 # ─── Compose file auto-detect ───
@@ -106,6 +141,7 @@ check_restart_limit() {
         if [ "$count" -ge "$MAX_RESTART_PER_HOUR" ]; then
             log "CRITICAL: Restarted $count times in last hour. Manual intervention required."
             ntfy_push "TPIX chain CRITICAL" "Watchdog blocked: ${count} restarts in last hour. Check infrastructure manually."
+            backend_alert "chain_restart_blocked" "critical" "Watchdog restart ${count} ครั้งใน 1 ชม.แล้วยังไม่หาย — หยุด auto-restart รอคนเข้าไปดู"
             return 1
         fi
     else
@@ -167,6 +203,7 @@ check_block_progress() {
     dec1=$(hex_to_dec "$block1")
     dec2=$(hex_to_dec "$block2")
     diff=$((dec2 - dec1))
+    LAST_BLOCK_DEC=$dec2
 
     if [ "$diff" -le 0 ]; then
         log "ERROR: Blocks not progressing — $dec1 → $dec2 (diff=$diff in ${BLOCK_PROGRESS_WAIT}s)"
@@ -199,6 +236,7 @@ check_memory() {
 restart_chain() {
     local reason="$1" compose_file
     log "RESTARTING chain — reason: $reason"
+    backend_alert "chain_stalled" "critical" "เชนสะดุด (${reason}) — watchdog กำลัง restart validator ทั้งวง"
 
     check_restart_limit || return 1
     increment_restart_counter
@@ -235,12 +273,16 @@ restart_chain() {
     if [ -z "$block_after" ]; then
         log "RESTART FAILED: RPC still not responding"
         ntfy_push "TPIX chain DOWN" "Watchdog restart failed: RPC unreachable after restart. Reason was: $reason"
+        backend_alert "chain_down" "critical" "Restart แล้ว RPC ยังไม่ตอบ — เชนล่ม ต้องมีคนเข้าไปดูด่วน (สาเหตุแรก: ${reason})"
         return 1
     fi
 
     dec_after=$(hex_to_dec "$block_after")
     log "RESTART OK: RPC responding, block $dec_after"
     ntfy_push "TPIX chain restarted" "Watchdog recovered chain. Reason: $reason. Now at block $dec_after."
+    # warning ค้างไว้ให้แอดมินกดรับทราบ — ส่วน chain_stalled (critical) จะถูก
+    # auto-resolve ด้วย heartbeat รอบถัดไปเมื่อทุก check กลับมาผ่าน
+    backend_alert "chain_restarted" "warning" "Watchdog กู้เชนสำเร็จ (สาเหตุ: ${reason}) — ตอนนี้อยู่บล็อก ${dec_after}"
     return 0
 }
 
@@ -282,8 +324,9 @@ main() {
         exit 0
     fi
 
-    # All checks passed — heartbeat
+    # All checks passed — heartbeat (healthchecks.io + หลังบ้าน tpix.online)
     hc_ping
+    backend_heartbeat "$LAST_BLOCK_DEC"
 }
 
 main "$@"

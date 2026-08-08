@@ -95,6 +95,7 @@ fi
 ensure_env_key "TPIX_RPC_URL" "http://127.0.0.1:8545"
 ensure_env_key "TPIX_MAX_RESTART_PER_HOUR" "3"
 ensure_env_key "TPIX_MEM_WARN_PCT" "85"
+ensure_env_key "TPIX_NODE_NAME" "$(hostname)"
 
 # Optional integrations — add commented placeholders if neither is set
 if ! grep -qE "^(HC_PING_URL|# HC_PING_URL)=" "$ENV_FILE"; then
@@ -108,6 +109,17 @@ if ! grep -qE "^(HC_PING_URL|# HC_PING_URL)=" "$ENV_FILE"; then
 # NTFY_TOPIC=https://ntfy.sh/tpix-alerts-xxx
 EOF
     log "  + healthchecks.io + ntfy placeholders"
+fi
+
+if ! grep -qE "^(TPIX_ALERT_URL|# TPIX_ALERT_URL)=" "$ENV_FILE"; then
+    cat >> "$ENV_FILE" <<'EOF'
+
+# คาดแดงหลังบ้าน tpix.online — ตั้งครบทั้งคู่ถึงจะยิง heartbeat + alert
+# token ต้องตรงกับ TPIX_INFRA_ALERT_TOKEN ใน .env ของ tpix.online
+# TPIX_ALERT_URL=https://tpix.online/api/infra
+# TPIX_ALERT_TOKEN=<token>
+EOF
+    log "  + tpix.online backend alert placeholders"
 fi
 
 chmod 0644 "$ENV_FILE"
