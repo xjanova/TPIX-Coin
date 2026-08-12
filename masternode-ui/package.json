@@ -10,6 +10,7 @@
     "dev": "cross-env NODE_ENV=development electron .",
     "build": "electron-builder --win",
     "build:portable": "electron-builder --win portable",
+    "verify:chain": "node scripts/verify-chain.js",
     "postinstall": "electron-rebuild"
   },
   "build": {
@@ -52,12 +53,20 @@
     "files": [
       "electron/**/*",
       "src/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "chain/**/*"
     ],
     "extraResources": [
       {
         "from": "bin/",
         "to": "bin/",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "chain/",
+        "to": "chain/",
         "filter": [
           "**/*"
         ]

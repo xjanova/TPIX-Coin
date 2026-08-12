@@ -12,6 +12,7 @@ const WalletManager = require('./wallet-manager');
 const TransactionManager = require('./transaction-manager');
 const IdentityManager = require('./identity-manager');
 const AppUpdater = require('./auto-updater');
+const chainHealth = require('./chain-health');
 
 let mainWindow = null;
 let tray = null;
@@ -121,6 +122,12 @@ function sanitizeError(err) {
         'Name cannot be empty', 'Name too long', 'not found',
         'rate limit', 'circuit breaker', 'RPC timeout',
         'Insufficient', 'Amount must be', 'Invalid mnemonic',
+        // ข้อความวินิจฉัยเรื่องเชน — ต้องถึงตาผู้ใช้ ไม่งั้นทุกอาการกลายเป็น
+        // "Operation failed" เหมือนกันหมด แล้วแยกไม่ออกว่าโดน WAF บล็อก
+        // ชี้ผิดเชน หรือเชนล่มจริง (บทเรียนจาก 403 ที่หาสาเหตุอยู่หลายเดือน)
+        // ทั้งหมดนี้เปิดเผยแค่ชื่อโฮสต์สาธารณะกับรหัส HTTP ไม่มีข้อมูลลับ
+        'RPC ตอบ', 'RPC unreachable', 'RPC endpoint',
+        'ติดต่อเชนไม่ได้', 'genesis',
     ];
     for (const pattern of safePatterns) {
         if (msg.includes(pattern)) return msg;
@@ -624,6 +631,26 @@ function setupIPC() {
     ipcMain.handle('rpc:getNetworkStats', async () => nodeManager.getNetworkStats());
     ipcMain.handle('rpc:getBlockNumber', async () => nodeManager.getBlockNumber());
     ipcMain.handle('rpc:getPeerCount', async () => nodeManager.getPeerCount());
+
+    // ตรวจสุขภาพเชนแบบละเอียด — วัดจังหวะบล็อกจริง จับเชนค้าง และเช็คว่าชี้ถูกเชนไหม
+    //
+    // โมดูล chain-health มีมาตั้งแต่ 5 ส.ค. 69 แต่ไม่เคยถูกต่อสายมาถึงหน้าจอเลย
+    // (ไม่มี ipc handler ไม่มีปุ่ม) ผู้ใช้จึงเห็นแค่ไฟเขียว/แดงจาก isProducing
+    // ซึ่งบอกได้แค่ "บล็อกล่าสุดใหม่กว่า 30 วิไหม" ไม่เห็นว่า validator หายไปกี่ตัว
+    ipcMain.handle('chain:health', async (_, sampleSize) => {
+        try {
+            const size = Math.min(Math.max(Number(sampleSize) || 20, 5), 100);
+
+            return await chainHealth.assess(size);
+        } catch (err) {
+            return {
+                checkedAt: Date.now(),
+                ok: false,
+                severity: 'critical',
+                messages: [{ level: 'critical', text: sanitizeError(err) }],
+            };
+        }
+    });
 
     // System
     ipcMain.handle('system:getMetrics', () => nodeManager.getSystemMetrics());

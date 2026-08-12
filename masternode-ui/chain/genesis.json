@@ -1,0 +1,105 @@
+{
+  "name": "tpix-chain",
+  "genesis": {
+    "nonce": "0x0000000000000000",
+    "timestamp": "0x0",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000c7c080c28080c080",
+    "gasLimit": "0x1312d00",
+    "difficulty": "0x1",
+    "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "alloc": {
+      "0xf54c0deE404ec728a03b467cba7bBA171CC77dad": {
+        "balance": "0x4860d8812f0b38878000000"
+      },
+      "0x6E176Bf5Aa39Fb4217E0ebd00E14B67aDfFaf440": {
+        "balance": "0x5867a95bf5cdb496e000000"
+      },
+      "0x87e62D9e0C2aF15d634D3301Dd2D4DA57972052d": {
+        "balance": "0x24306c4097859c43c000000"
+      },
+      "0x4BcC1844Ad9E8587f7005f092928a5D14C30F463": {
+        "balance": "0x24306c4097859c43c000000"
+      },
+      "0x2644A740A06e0401D21F8B4A840400fFe8dB42A9": {
+        "balance": "0x3648a260e3486a65a000000"
+      },
+      "0x6dECa2E185CF37e7c838fE5Ae6897aED025c9921": {
+        "balance": "0x4860d8812f0b38878000000"
+      },
+      "0x24CD5d5A6B5EcC6520c76f5427DB06F81BcC61C5": {
+        "balance": "0x84595161401484a000000"
+      },
+      "0x394418d33641D967C3553e45Af0646d565F51Ba7": {
+        "balance": "0x84595161401484a000000"
+      },
+      "0x9D6Fc1cf3C17b495057356B95e995834248993F0": {
+        "balance": "0x84595161401484a000000"
+      },
+      "0xec91028198E8cC55B284c018aBB4B2A87c6f3F12": {
+        "balance": "0x84595161401484a000000"
+      }
+    },
+    "number": "0x0",
+    "gasUsed": "0x70000",
+    "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "baseFee": "0x0",
+    "baseFeeEM": "0x0",
+    "baseFeeChangeDenom": "0x0"
+  },
+  "params": {
+    "forks": {
+      "EIP150": {
+        "block": 0
+      },
+      "EIP155": {
+        "block": 0
+      },
+      "EIP158": {
+        "block": 0
+      },
+      "byzantium": {
+        "block": 0
+      },
+      "constantinople": {
+        "block": 0
+      },
+      "homestead": {
+        "block": 0
+      },
+      "istanbul": {
+        "block": 0
+      },
+      "londonfix": {
+        "block": 0
+      },
+      "petersburg": {
+        "block": 0
+      },
+      "quorumcalcalignment": {
+        "block": 0
+      },
+      "txHashWithType": {
+        "block": 0
+      }
+    },
+    "chainID": 4289,
+    "engine": {
+      "ibft": {
+        "blockTime": 2000000000,
+        "epochSize": 100000,
+        "type": "PoA",
+        "validator_type": "bls"
+      }
+    },
+    "blockGasTarget": 0,
+    "burnContract": null,
+    "burnContractDestinationAddress": "0x0000000000000000000000000000000000000000"
+  },
+  "bootnodes": [
+    "/ip4/123.253.62.252/tcp/10001/p2p/16Uiu2HAmJydWNunXWHXSTRxUuJmvUnLY5NdvGekJMnqtTJGkr3bu",
+    "/ip4/123.253.62.252/tcp/10002/p2p/16Uiu2HAmAgLzspeuCsWBqJVTPwesBexcLhbNnqnLTmSzMVaFScsb",
+    "/ip4/123.253.62.252/tcp/10003/p2p/16Uiu2HAm7QCB32o3zxiKEpEjP76fo2pTnRJxoEQtH6gxJZttgePs",
+    "/ip4/123.253.62.252/tcp/10004/p2p/16Uiu2HAmPBwJRdU2WsQ7rUxt3Jk1VU8eGynCwYoXP3Wrbx1hNLJm"
+  ]
+}

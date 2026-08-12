@@ -62,6 +62,8 @@
 
                 <!-- ========== DASHBOARD ========== -->
                 <div v-if="activeTab === 'dashboard'" class="page">
+                    <!-- ภาพพื้นหลังจาง ๆ — ตกแต่งอย่างเดียว ไม่รับคลิก ไม่บังตัวเลข -->
+                    <div class="page-art" style="background-image: url('art/hero-dashboard.webp')" aria-hidden="true"></div>
                     <h1 class="page-title">{{ i18n.tabs.dashboard }}</h1>
 
                     <!-- Stats Grid -->
@@ -69,6 +71,8 @@
                         <div class="stat-card">
                             <div class="stat-label">{{ i18n.dash.nodeStatus }}</div>
                             <div class="stat-value" :class="'status-' + nodeStatus">{{ statusLabel }}</div>
+                            <!-- บอกตามจริงว่ากำลังเฝ้าดูเชน ไม่ได้ผลิตบล็อกเอง -->
+                            <div v-if="nodeModeLabel" class="stat-label" style="margin-top:4px; opacity:.75;">{{ nodeModeLabel }}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">{{ i18n.dash.blockHeight }}</div>
@@ -77,7 +81,8 @@
                         <div class="stat-card">
                             <div class="stat-label">{{ i18n.dash.blockAge }}</div>
                             <div class="stat-value" :class="network.isProducing ? 'text-green' : 'text-red'">
-                                {{ network.blockAge >= 0 ? formatDuration(network.blockAge) : 'N/A' }}
+                                <!-- อายุติดลบ = นาฬิกาเครื่องช้ากว่าเชน ปัดเป็น 0 ไม่ใช่ N/A -->
+                                {{ network.blockTime ? formatDuration(Math.max(0, network.blockAge)) : 'N/A' }}
                             </div>
                         </div>
                         <div class="stat-card">
@@ -94,13 +99,38 @@
                         </div>
                     </div>
 
-                    <!-- Chain Health -->
-                    <div class="alert" :class="network.isProducing ? 'alert-success' : 'alert-danger'">
-                        <span class="alert-icon">{{ network.isProducing ? '&#10003;' : '&#9888;' }}</span>
-                        <div>
-                            <div class="alert-title">{{ network.isProducing ? i18n.dash.chainHealthy : i18n.dash.chainStopped }}</div>
-                            <div class="alert-text">{{ network.isProducing ? i18n.dash.chainHealthyDesc : i18n.dash.chainStoppedDesc }}</div>
+                    <!-- Chain Health — รายงานจาก chain-health.js ไม่ใช่แค่ไฟเขียว/แดง -->
+                    <div class="alert" :class="chainHealthClass">
+                        <span class="alert-icon">
+                            {{ !chainHealth ? '&#8987;' : (chainHealth.severity === 'ok' ? '&#10003;' : '&#9888;') }}
+                        </span>
+                        <div style="flex:1; min-width:0;">
+                            <div class="alert-title">{{ chainHealthTitle }}</div>
+
+                            <!-- ยังไม่มีรายงาน: ใช้ข้อความเดิมที่อิง isProducing ไปก่อน -->
+                            <div class="alert-text" v-if="!chainHealth">
+                                {{ chainHealthLoading ? i18n.dash.healthChecking
+                                   : (network.isProducing ? i18n.dash.chainHealthyDesc : i18n.dash.chainStoppedDesc) }}
+                            </div>
+
+                            <template v-else>
+                                <div class="alert-text" v-for="(m, i) in chainHealth.messages" :key="i">
+                                    {{ m.text }}
+                                </div>
+                                <div class="alert-text" style="opacity:.7; margin-top:6px; font-size:12px;">
+                                    {{ i18n.dash.healthCheckedAt }}: {{ new Date(chainHealth.checkedAt).toLocaleTimeString() }}
+                                    <template v-if="network.rpcEndpoint">
+                                        &middot; {{ i18n.dash.healthEndpoint }}: {{ network.rpcEndpoint }}
+                                    </template>
+                                    <template v-if="chainHealth.clientVersion">
+                                        &middot; {{ chainHealth.clientVersion }}
+                                    </template>
+                                </div>
+                            </template>
                         </div>
+                        <button @click="refreshChainHealth" class="btn btn-ghost btn-sm" :disabled="chainHealthLoading">
+                            {{ chainHealthLoading ? '&#8987;' : '&#8635;' }} {{ i18n.dash.healthRecheck }}
+                        </button>
                     </div>
 
                     <!-- Live Block Production Animation -->
@@ -185,7 +215,14 @@
 
                 <!-- ========== SETUP WIZARD (Run a Node) ========== -->
                 <div v-if="activeTab === 'setup'" class="page">
-                    <h1 class="page-title">{{ i18n.tabs.setup }}</h1>
+                    <div class="page-hero">
+                        <img class="page-hero__img" src="art/hero-setup.webp" alt="" aria-hidden="true">
+                        <div class="page-hero__veil"></div>
+                        <div class="page-hero__body">
+                            <div class="page-hero__title">{{ i18n.tabs.setup }}</div>
+                            <div class="page-hero__sub">{{ i18n.setup.heroSub }}</div>
+                        </div>
+                    </div>
 
                     <!-- Step indicator -->
                     <div class="steps">
@@ -203,6 +240,10 @@
                             <div v-for="tier in tiers" :key="tier.id"
                                 :class="['tier-card', { selected: config.tier === tier.id }]"
                                 @click="config.tier = tier.id">
+                                <!-- ภาพประจำระดับโหนด — ยิ่งระดับสูง ภาพยิ่งใหญ่โต -->
+                                <div class="tier-art">
+                                    <img :src="'art/tier-' + tier.id + '.webp'" alt="" aria-hidden="true">
+                                </div>
                                 <div class="tier-badge" :class="'tier-' + tier.id">{{ tier.name }}</div>
                                 <div class="tier-stake">{{ formatNumber(tier.stake) }} TPIX</div>
                                 <div class="tier-apy">{{ tier.apy }}</div>
@@ -351,7 +392,7 @@
 
                     <!-- No wallets yet -->
                     <div v-if="!walletAddress" class="setup-card">
-                        <div class="setup-icon">&#128274;</div>
+                        <img class="empty-art" src="art/empty-wallet.webp" alt="" aria-hidden="true">
                         <h2 class="setup-title">{{ i18n.wallet.setupTitle }}</h2>
                         <p class="setup-desc">{{ i18n.wallet.setupDesc }}</p>
                         <div class="setup-actions">
@@ -1195,7 +1236,14 @@
 
                 <!-- ========== ABOUT ========== -->
                 <div v-if="activeTab === 'about'" class="page">
-                    <h1 class="page-title">{{ i18n.tabs.about }}</h1>
+                    <div class="page-hero">
+                        <img class="page-hero__img" src="art/hero-about.webp" alt="" aria-hidden="true">
+                        <div class="page-hero__veil"></div>
+                        <div class="page-hero__body">
+                            <div class="page-hero__title">{{ i18n.tabs.about }}</div>
+                            <div class="page-hero__sub">{{ i18n.about.heroSub }}</div>
+                        </div>
+                    </div>
 
                     <div class="about-card glass-card">
                         <div class="about-logo">

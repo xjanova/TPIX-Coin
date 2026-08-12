@@ -40,9 +40,16 @@ const LANG = {
             memory: 'Memory',
             blockProduction: 'Block Production',
             live: 'LIVE',
+            healthChecking: 'Checking chain health…',
+            healthWarn: 'Chain needs attention',
+            healthCritical: 'Chain problem detected',
+            healthCheckedAt: 'Last checked',
+            healthRecheck: 'Re-check',
+            healthEndpoint: 'RPC endpoint',
         },
         setup: {
             steps: ['Choose Tier', 'Wallet', 'Configure & Run'],
+            heroSub: 'Stake TPIX, run a node, and help secure the chain. Three steps: pick a tier, set up a wallet, launch.',
             chooseTierDesc: 'Choose a node tier based on how much TPIX you want to stake. Higher tiers earn more rewards and help secure the network.',
             estimatedReward: 'Estimated Rewards',
             month: 'month',
@@ -108,6 +115,7 @@ const LANG = {
         },
         about: {
             description: 'About',
+            heroSub: 'A desktop node for the TPIX Chain — wallet, staking and explorer in one window.',
             descText: 'TPIX Master Node is a desktop application for running validator nodes on the TPIX Chain. It helps secure and decentralize the network while earning TPIX rewards.',
             developer: 'Developer',
             studio: 'Studio',
@@ -348,6 +356,12 @@ const LANG = {
             chainHealthyDesc: 'กำลังผลิตบล็อกทุก 2 วินาที',
             chainStopped: 'เชนหยุดทำงาน!',
             chainStoppedDesc: 'การผลิตบล็อกหยุดแล้ว ผู้ตรวจสอบอาจออฟไลน์ ต้องการ master node เพิ่ม!',
+            healthChecking: 'กำลังตรวจสุขภาพเชน…',
+            healthWarn: 'เชนมีจุดที่ต้องดู',
+            healthCritical: 'เชนมีปัญหา',
+            healthCheckedAt: 'ตรวจล่าสุด',
+            healthRecheck: 'ตรวจใหม่',
+            healthEndpoint: 'ปลายทาง RPC',
             startNode: 'เริ่มโหนด',
             stopNode: 'หยุดโหนด',
             refresh: 'รีเฟรช',
@@ -357,6 +371,7 @@ const LANG = {
         },
         setup: {
             steps: ['เลือกระดับ', 'กระเป๋าเงิน', 'ตั้งค่า & เริ่มรัน'],
+            heroSub: 'วาง TPIX ค้ำ แล้วรันโหนดช่วยดูแลเชน มีสามขั้น: เลือกระดับ · เตรียมกระเป๋า · เปิดโหนด',
             chooseTierDesc: 'เลือกระดับโหนดตามจำนวน TPIX ที่ต้องการ stake ระดับสูงกว่าจะได้รับรางวัลมากกว่าและช่วยเพิ่มความปลอดภัยของเครือข่าย',
             estimatedReward: 'รางวัลโดยประมาณ',
             month: 'เดือน',
@@ -422,6 +437,7 @@ const LANG = {
         },
         about: {
             description: 'เกี่ยวกับ',
+            heroSub: 'โหนดบนเดสก์ท็อปสำหรับ TPIX Chain — กระเป๋า สเตก และสำรวจบล็อก จบในหน้าต่างเดียว',
             descText: 'TPIX Master Node คือแอปพลิเคชันเดสก์ท็อปสำหรับรัน validator node บน TPIX Chain ช่วยรักษาความปลอดภัยและกระจายอำนาจของเครือข่าย พร้อมรับรางวัล TPIX',
             developer: 'ผู้พัฒนา',
             studio: 'สตูดิโอ',
@@ -741,7 +757,7 @@ const app = createApp({
             {
                 title: lang.value === 'th' ? 'เครื่องมือ Blockchain' : 'Blockchain Tools',
                 links: [
-                    { icon: '⛓️', name: 'TPIX RPC', desc: 'https://rpc.tpix.online', url: 'https://rpc.tpix.online' },
+                    { icon: '⛓️', name: 'TPIX RPC', desc: 'https://rpc1.tpix.online', url: 'https://rpc1.tpix.online' },
                     { icon: '💰', name: 'Token Factory', desc: lang.value === 'th' ? 'สร้างเหรียญบน TPIX Chain' : 'Create tokens on TPIX Chain', url: 'https://tpix.online/token-factory' },
                     { icon: '🌱', name: 'Carbon Credits', desc: lang.value === 'th' ? 'ระบบ Carbon Credit' : 'Carbon Credit system', url: 'https://tpix.online/carbon-credit' },
                     { icon: '🔗', name: 'Bridge', desc: 'BSC ↔ TPIX Chain', url: 'https://tpix.online/bridge' },
@@ -758,6 +774,12 @@ const app = createApp({
         });
         const metrics = ref(null);
         const logs = ref([]);
+
+        // ─── Chain Health ─────────────────────────
+        // รายงานจาก chain-health.js — ละเอียดกว่าไฟเขียว/แดงของ isProducing
+        // บอกได้ว่าเชนค้าง, บล็อกช้ากว่าที่ควร, validator หายไปกี่ตัว, ชี้ผิดเชนไหม
+        const chainHealth = ref(null);
+        const chainHealthLoading = ref(false);
 
         // ─── Block Animation State ───────────────
         const liveBlocks = ref([]);
@@ -798,7 +820,7 @@ const app = createApp({
         }
         const config = reactive({
             nodeName: '', tier: 'light', walletAddress: '', rewardWallet: '',
-            rpcUrl: 'https://rpc.tpix.online', p2pPort: 30303, maxPeers: 50,
+            rpcUrl: 'https://rpc1.tpix.online', p2pPort: 30303, maxPeers: 50,
         });
 
         // ─── Wallet State ─────────────────────────
@@ -945,8 +967,17 @@ const app = createApp({
 
         const statusLabel = computed(() => i18n.value.status[nodeStatus.value] || nodeStatus.value);
 
+        // โหมดการทำงานจริง — 'monitoring' คือเฝ้าดูเชนผ่าน RPC ไม่ได้ผลิตบล็อกเอง
+        // ต้องแยกให้เห็น ไม่งั้นผู้ใช้เข้าใจว่าตัวเองรัน validator อยู่ทั้งที่ไม่ได้รัน
+        const nodeMode = ref('idle');
+        const nodeModeLabel = computed(() => {
+            if (nodeMode.value !== 'monitoring') return '';
+
+            return lang.value === 'th' ? 'โหมดเฝ้าดูเชน' : 'Monitoring only';
+        });
+
         // ─── Intervals ────────────────────────────
-        let networkInterval, metricsInterval, uptimeInterval;
+        let networkInterval, metricsInterval, uptimeInterval, healthInterval;
 
         // ─── Actions ──────────────────────────────
         async function startNode() {
@@ -987,6 +1018,48 @@ const app = createApp({
                 if (stats) network.value = stats;
             } catch {}
         }
+
+        /**
+         * ตรวจสุขภาพเชนแบบละเอียด
+         *
+         * กินเวลาราว 2-3 วินาที (ดึงบล็อกย้อนหลังมาวัดจังหวะ) จึงไม่เรียกถี่เท่า
+         * refreshNetwork และกันไม่ให้ยิงซ้อนกันด้วย chainHealthLoading
+         */
+        async function refreshChainHealth() {
+            if (chainHealthLoading.value) return;
+            if (!window.tpix.chain || !window.tpix.chain.health) return; // preview mode ไม่มีสะพานนี้
+
+            chainHealthLoading.value = true;
+            try {
+                const report = await window.tpix.chain.health(20);
+                if (report) chainHealth.value = report;
+            } catch {
+                // ปล่อยรายงานเดิมค้างไว้ ดีกว่าล้างทิ้งจนหน้าจอว่างเปล่า
+            } finally {
+                chainHealthLoading.value = false;
+            }
+        }
+
+        /** ข้อความสรุปสั้นๆ สำหรับหัวการ์ดสุขภาพเชน */
+        const chainHealthTitle = computed(() => {
+            const h = chainHealth.value;
+            if (!h) return network.value.isProducing ? i18n.value.dash.chainHealthy : i18n.value.dash.chainStopped;
+            if (h.severity === 'ok') return i18n.value.dash.chainHealthy;
+            if (h.severity === 'warn') return i18n.value.dash.healthWarn;
+            if (h.severity === 'critical') return i18n.value.dash.healthCritical;
+
+            return i18n.value.dash.healthChecking;
+        });
+
+        /** คลาส alert ตามระดับความรุนแรง */
+        const chainHealthClass = computed(() => {
+            const sev = chainHealth.value ? chainHealth.value.severity : null;
+            if (sev === 'critical') return 'alert-danger';
+            if (sev === 'warn') return 'alert-warning';
+            if (sev === 'ok') return 'alert-success';
+
+            return network.value.isProducing ? 'alert-success' : 'alert-danger';
+        });
         async function refreshMetrics() {
             try { const m = await window.tpix.system.getMetrics(); if (m) metrics.value = m; } catch {}
         }
@@ -1953,12 +2026,16 @@ const app = createApp({
             await refreshNetwork();
             await refreshMetrics();
             await loadLogs();
-            try { const s = await window.tpix.node.status(); if (s) { nodeStatus.value = s.status; nodeUptime.value = s.uptime || 0; } } catch {}
+            try { const s = await window.tpix.node.status(); if (s) { nodeStatus.value = s.status; nodeUptime.value = s.uptime || 0; if (s.mode) nodeMode.value = s.mode; } } catch {}
             networkInterval = setInterval(refreshNetwork, 15000);
+            // ตรวจสุขภาพเชนหลังจอขึ้นแล้ว (ไม่ await — ไม่ให้หน่วงการเปิดแอป)
+            // แล้วตรวจซ้ำทุก 2 นาที เพราะแต่ละรอบยิง RPC ~22 ครั้ง
+            refreshChainHealth();
+            healthInterval = setInterval(refreshChainHealth, 120000);
             startBlockAnim();
             metricsInterval = setInterval(refreshMetrics, 5000);
             uptimeInterval = setInterval(() => { if (nodeStatus.value === 'running' || nodeStatus.value === 'syncing') nodeUptime.value++; }, 1000);
-            window.tpix.node.onStatusUpdate(d => { if (d.status) nodeStatus.value = d.status; if (d.network) network.value = d.network; });
+            window.tpix.node.onStatusUpdate(d => { if (d.status) nodeStatus.value = d.status; if (d.mode) nodeMode.value = d.mode; if (d.network) network.value = d.network; });
             window.tpix.node.onLog(e => { logs.value.push(e); if (logs.value.length > 500) logs.value.shift(); });
             window.tpix.node.onMetrics(m => { metrics.value = m; });
             // Update events
@@ -1977,6 +2054,7 @@ const app = createApp({
         });
         onUnmounted(() => {
             clearInterval(networkInterval); clearInterval(metricsInterval); clearInterval(uptimeInterval);
+            clearInterval(healthInterval);
             stopBlockAnim();
             if (gasEstimateTimer) clearTimeout(gasEstimateTimer);
             stopQRScan();
@@ -2018,7 +2096,7 @@ const app = createApp({
             appVersion, lang, i18n, toggleLang,
             activeTab, tabs, setupStep,
             tiers, selectedTier, linkGroups,
-            nodeStatus, statusLabel, nodeUptime,
+            nodeStatus, statusLabel, nodeUptime, nodeMode, nodeModeLabel,
             network, metrics, logs, config, liveBlocks,
             walletAddress, walletBalance, walletLoading,
             newWalletData, showPrivateKey, showImportModal, importKeyInput, importError, exportedKey,
@@ -2042,6 +2120,8 @@ const app = createApp({
             loadIdentityStatus, saveSecurityQuestions, saveRecoveryKey,
             registerGPSLocation, removeGPSLocation,
             viewMnemonic, recoverFromSeed,
+            // Chain health
+            chainHealth, chainHealthLoading, chainHealthTitle, chainHealthClass, refreshChainHealth,
             // Actions
             startNode, stopNode, launchNode, refreshNetwork, refreshMetrics,
             loadWallet, createWallet, importWallet, refreshBalance, showExportKey,

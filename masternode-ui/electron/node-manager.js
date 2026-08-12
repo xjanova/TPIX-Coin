@@ -9,13 +9,17 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const https = require('https');
-const http = require('http');
 const EventEmitter = require('events');
-const { BROWSER_UA } = require('./rpc-client');
+const {
+    rpcCall: sharedRpcCall,
+    setEndpoint,
+    getEndpoint,
+    TPIX_RPC,
+    LEGACY_DEFAULTS,
+} = require('./rpc-client');
+const { decodeValidators } = require('./ibft-extra');
 const chainHealth = require('./chain-health');
 
-const TPIX_RPC = 'https://rpc.tpix.online';
 const CHAIN_ID = 4289;
 
 // blockTime ที่ genesis ตั้งไว้ — ใช้เป็น "ค่าสำรองสุดท้าย" เท่านั้น ห้ามใช้คำนวณตรงๆ
@@ -29,6 +33,12 @@ const CHAIN_ID = 4289;
 // ตอนนี้ใช้ chainHealth.measuredBlockTime() ที่วัดจากเชนจริง (median ของช่องว่าง
 // บล็อก เพื่อไม่ให้ round timeout ที่เป็น outlier ลากค่าเพี้ยน)
 const BLOCK_TIME_FALLBACK = 2; // seconds
+
+/**
+ * บล็อกล่าสุดเก่ากว่ากี่วินาทีถึงเรียกว่า "เชนหยุดออกบล็อก"
+ * 30 วิ = ~15 บล็อกที่ควรจะออกมาแล้ว มากพอไม่ให้ไฟกะพริบตอนเน็ตสะดุด
+ */
+const STALL_SECONDS = 30;
 
 // Tier definitions — stake in TPIX, APY as decimal
 const TIER_CONFIG = {
@@ -44,6 +54,7 @@ class NodeManager extends EventEmitter {
         this.db = db; // TpixDatabase instance for reward tracking
         this.process = null;
         this.status = 'stopped'; // stopped, starting, running, syncing, error
+        this.mode = 'idle';      // idle | monitoring (เฝ้าดูผ่าน RPC) | node (รันโหนดจริง)
         this.config = null;
         this.logs = [];
         this.maxLogs = 500;
@@ -75,6 +86,32 @@ class NodeManager extends EventEmitter {
             this.config = null;
         }
 
+        if (this.config) {
+            // ── ย้ายค่าเริ่มต้นเก่าที่ค้างอยู่ในเครื่องผู้ใช้ ────────────────────────
+            //
+            // ผู้ใช้ที่เคยเปิดแอปมาก่อนจะมี rpcUrl เก่าฝังอยู่ใน ~/.tpix-node/config.json
+            // แค่แก้ค่าคงที่ในโค้ดจึงไม่พอ — คนเก่ายังยิงไปปลายทางเดิมที่มี WAF ขวาง
+            // ย้ายเฉพาะกรณีที่ค่าเดิม "เท่ากับค่าเริ่มต้นเก่าเป๊ะ" เพื่อไม่ทับค่าที่ผู้ใช้ตั้งเอง
+            const saved = String(this.config.rpcUrl || '').trim().replace(/\/+$/, '');
+            if (!saved || LEGACY_DEFAULTS.some(u => u.replace(/\/+$/, '') === saved)) {
+                this.config.rpcUrl = TPIX_RPC;
+                this._configMigrated = true;
+            }
+
+            if (Number(this.config.chainId) !== CHAIN_ID) {
+                this.config.chainId = CHAIN_ID;
+                this._configMigrated = true;
+            }
+
+            if (this._configMigrated) {
+                try {
+                    fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+                } catch {
+                    // เขียนไม่ได้ก็ยังใช้ค่าใหม่ในหน่วยความจำต่อไปได้
+                }
+            }
+        }
+
         if (!this.config) {
             this.config = {
                 nodeName: `tpix-node-${Math.random().toString(36).slice(2, 8)}`,
@@ -92,6 +129,9 @@ class NodeManager extends EventEmitter {
                 bootnodes: [],
             };
         }
+
+        // ปลายทางที่ผู้ใช้ตั้งไว้ต้องเป็นตัวเดียวกับที่ทั้งแอปใช้ (กระเป๋า/ธุรกรรม/explorer)
+        setEndpoint(this.config.rpcUrl);
     }
 
     saveConfig(newConfig) {
@@ -105,6 +145,7 @@ class NodeManager extends EventEmitter {
             }
         }
         fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+        setEndpoint(this.config.rpcUrl);
     }
 
     getConfig() {
@@ -113,6 +154,137 @@ class NodeManager extends EventEmitter {
 
     getDataDir() {
         return this.dataDir;
+    }
+
+    // ─── Preflight ก่อนเริ่มโหนดจริง ────────────────────────────
+
+    /**
+     * เข้าโหมดเฝ้าดูเชน — อ่านสถานะผ่าน RPC ได้ครบ แต่ไม่ได้ผลิตบล็อก
+     *
+     * ของเดิมตั้ง `this.status = 'monitoring'` แล้วเรียก setStatus('running') ทับทันที
+     * ค่าที่ตั้งไว้จึงหายไปเฉยๆ หน้าจอเลยแยกไม่ออกว่ากำลัง "เฝ้าดู" หรือ "รันโหนดจริง"
+     * ตอนนี้เก็บไว้คนละช่อง (mode) แล้วส่งออกไปกับ getStatus() ให้ UI บอกความจริงได้
+     */
+    enterMonitoringMode() {
+        this.mode = 'monitoring';
+        this.setStatus('running');
+        this.startMonitoring();
+    }
+
+    /** ที่อยู่ของ genesis.json ที่ติดมากับตัวแอป (dev / หลัง build) */
+    findBundledGenesis() {
+        const candidates = [
+            path.join(__dirname, '..', 'chain', 'genesis.json'),
+            path.join(process.resourcesPath || '', 'chain', 'genesis.json'),
+        ];
+
+        for (const p of candidates) {
+            try {
+                if (fs.existsSync(p)) return p;
+            } catch {}
+        }
+
+        return null;
+    }
+
+    /**
+     * ทำให้มี genesis.json อยู่ใน data dir แน่ๆ — ถ้าไม่มีก็คัดจากที่ติดมากับแอป
+     *
+     * @returns {string|null} พาธของ genesis.json ที่ใช้ได้ หรือ null ถ้าไม่มีเลย
+     */
+    ensureGenesis() {
+        const target = path.join(this.dataDir, 'genesis.json');
+
+        if (fs.existsSync(target)) {
+            // ไฟล์ที่ค้างอยู่อาจเป็นของเชนเก่าก่อน regenesis — เช็ค chainID ให้ตรงก่อนใช้
+            try {
+                const g = JSON.parse(fs.readFileSync(target, 'utf-8'));
+                const id = g && g.params && Number(g.params.chainID);
+                if (id && id !== CHAIN_ID) {
+                    const backup = target + '.old-chain-' + id;
+                    fs.renameSync(target, backup);
+                    this.addLog('warn',
+                        `genesis.json ที่มีอยู่เป็นของเชน ${id} ไม่ใช่ ${CHAIN_ID} — `
+                        + `ย้ายไปเก็บไว้ที่ ${path.basename(backup)} แล้วใช้ของใหม่แทน`);
+                } else {
+                    return target;
+                }
+            } catch {
+                this.addLog('warn', 'genesis.json ที่มีอยู่อ่านไม่ออก — จะเขียนทับด้วยของที่ติดมากับแอป');
+            }
+        }
+
+        const bundled = this.findBundledGenesis();
+        if (!bundled) return null;
+
+        try {
+            fs.copyFileSync(bundled, target);
+            this.addLog('info', 'คัดลอก genesis.json ที่ติดมากับแอปไปไว้ที่ ' + target);
+
+            return target;
+        } catch (err) {
+            this.addLog('error', 'คัดลอก genesis.json ไม่สำเร็จ: ' + err.message);
+
+            return null;
+        }
+    }
+
+    /** อ่านรายชื่อ bootnode ที่จะใช้ — ของที่ผู้ใช้ตั้งเองมาก่อน ไม่มีค่อยเอาจาก genesis */
+    resolveBootnodes(genesisPath) {
+        if (Array.isArray(this.config.bootnodes) && this.config.bootnodes.length > 0) {
+            return this.config.bootnodes;
+        }
+
+        try {
+            const g = JSON.parse(fs.readFileSync(genesisPath, 'utf-8'));
+
+            return Array.isArray(g.bootnodes) ? g.bootnodes : [];
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * ลองต่อ TCP ไปยัง bootnode แต่ละตัว
+     *
+     * multiaddr ที่รองรับ: /ip4/HOST/tcp/PORT/p2p/ID และ /dns4/HOST/tcp/PORT/p2p/ID
+     * ตัวที่ชี้ชื่อ container ภายใน docker (เช่น /ip4/tpix-validator-1/...) จะต่อไม่ติด
+     * จากเครื่องผู้ใช้อยู่แล้ว — ซึ่งเป็นประเด็นที่ต้องรู้ ไม่ใช่ซ่อนไว้
+     */
+    async probeBootnodes(genesisPath, timeoutMs = 4000) {
+        const net = require('net');
+        const list = this.resolveBootnodes(genesisPath);
+
+        // ยิงพร้อมกันทุกตัว — แต่ละตัวไม่เกี่ยวกัน ถ้าไล่ทีละตัวแล้วทุกตัวหมดเวลา
+        // ผู้ใช้ต้องนั่งรอ (จำนวน bootnode × timeout) วินาทีหลังกดปุ่มเริ่มโหนด
+        const results = await Promise.all(list.map(async (addr) => {
+            const m = /^\/(?:ip4|ip6|dns4|dns6|dns)\/([^/]+)\/tcp\/(\d+)/.exec(String(addr));
+            if (!m) {
+                return { addr, ok: false, error: 'รูปแบบ multiaddr ไม่ถูกต้อง' };
+            }
+
+            const host = m[1];
+            const port = Number(m[2]);
+            const ok = await new Promise((resolve) => {
+                const sock = new net.Socket();
+                let done = false;
+                const finish = (val) => {
+                    if (done) return;
+                    done = true;
+                    try { sock.destroy(); } catch {}
+                    resolve(val);
+                };
+                sock.setTimeout(timeoutMs);
+                sock.once('connect', () => finish(true));
+                sock.once('timeout', () => finish(false));
+                sock.once('error', () => finish(false));
+                try { sock.connect(port, host); } catch { finish(false); }
+            });
+
+            return { addr, host, port, ok, error: ok ? null : 'ต่อไม่ติดภายใน ' + timeoutMs + 'ms' };
+        }));
+
+        return { reachable: results.some(r => r.ok), results };
     }
 
     // ─── Node Lifecycle ────────────────────────────────────────
@@ -138,21 +310,45 @@ class NodeManager extends EventEmitter {
         const binPath = this.findBinary();
 
         if (!binPath) {
-            this.addLog('warn', 'Polygon Edge binary not found — running in monitoring mode only.');
-            this.addLog('info', 'The node will monitor the TPIX Chain via RPC but cannot produce blocks.');
-            this.status = 'monitoring';
-            this.setStatus('running');
-            this.startMonitoring();
+            this.addLog('warn', 'ไม่พบไฟล์ polygon-edge — จะทำงานเป็นโหมดเฝ้าดูเชนอย่างเดียว');
+            this.addLog('info', 'โหมดนี้อ่านสถานะเชนผ่าน RPC ได้ครบ แต่ไม่ได้ผลิตบล็อกเอง');
+            this.enterMonitoringMode();
             return;
         }
 
-        // Ensure genesis.json exists
-        const genesisPath = path.join(this.dataDir, 'genesis.json');
-        if (!fs.existsSync(genesisPath)) {
-            this.addLog('error', 'genesis.json not found. Please download it from tpix.online or place it in: ' + this.dataDir);
+        // ── genesis.json — ติดมากับตัวแอปแล้ว ไม่ต้องให้ผู้ใช้ไปหาโหลดเอง ──────────
+        //
+        // ของเดิมบอกว่า "ดาวน์โหลดจาก tpix.online" ซึ่ง**ไม่มีไฟล์นั้นอยู่จริง**
+        // (ตรวจ 2026-08-11: /genesis.json → 404) ผู้ใช้จึงติดตายตรงนี้ 100%
+        const genesisPath = this.ensureGenesis();
+        if (!genesisPath) {
+            this.addLog('error',
+                'ไม่พบ genesis.json ทั้งในเครื่องและในตัวแอป — วางไฟล์ไว้ที่ ' + this.dataDir + ' แล้วลองใหม่');
             this.setStatus('error');
             return;
         }
+
+        // ── ต่อเข้าเครือข่าย P2P ได้จริงไหม ────────────────────────────────────────
+        //
+        // ถ้า bootnode ต่อไม่ติด โหนดจะขึ้นมาแล้วนั่งเงียบไม่ sync อะไรเลย
+        // ผู้ใช้เห็นสถานะ "running" แต่บล็อกไม่ขยับ แล้วเข้าใจว่าแอปพัง
+        // เช็คก่อนดีกว่า แล้วบอกความจริงถ้าเข้าไม่ได้
+        const probe = await this.probeBootnodes(genesisPath);
+        if (!probe.reachable) {
+            this.addLog('warn',
+                `ต่อ bootnode ไม่ได้สักตัว (ลอง ${probe.results.length} ที่) — `
+                + 'พอร์ต P2P ของเชนยังไม่ได้เปิดให้เครื่องนอกเข้า');
+            probe.results.forEach(r => this.addLog('info', `  ${r.host}:${r.port} → ${r.error || 'ต่อไม่ได้'}`));
+            this.addLog('warn',
+                'เริ่มโหนดตอนนี้จะได้โหนดที่ไม่ sync กับใครเลย จึงเปลี่ยนเป็นโหมดเฝ้าดูเชนแทน');
+            this.addLog('info',
+                'ให้ผู้ดูแลเชนเปิดพอร์ต 10001-10004 ที่ firewall แล้วสั่ง polygon-edge ด้วย '
+                + '--nat <ไอพีสาธารณะ> เพื่อให้โหนดจากข้างนอกเข้าร่วมได้');
+            this.enterMonitoringMode();
+            return;
+        }
+
+        this.addLog('info', `ต่อ bootnode ได้ ${probe.results.filter(r => r.ok).length} ตัว — เริ่มโหนดจริง`);
 
         // Initialize node secrets/key if not done yet
         const chainDataDir = path.join(this.dataDir, 'chain-data');
@@ -174,7 +370,8 @@ class NodeManager extends EventEmitter {
         }
 
         // Build command args for polygon-edge
-        const args = this.buildArgs();
+        const args = this.buildArgs(this.resolveBootnodes(genesisPath));
+        this.mode = 'node';
         this.addLog('info', `Binary: ${binPath}`);
         this.addLog('info', `Args: ${args.join(' ')}`);
 
@@ -272,6 +469,7 @@ class NodeManager extends EventEmitter {
             });
         }
 
+        this.mode = 'idle';
         this.setStatus('stopped');
         this._stopping = false;
     }
@@ -302,7 +500,7 @@ class NodeManager extends EventEmitter {
         return null;
     }
 
-    buildArgs() {
+    buildArgs(bootnodes) {
         const args = ['server'];
 
         args.push('--data-dir', path.join(this.dataDir, 'chain-data'));
@@ -319,11 +517,14 @@ class NodeManager extends EventEmitter {
             args.push('--seal');
         }
 
-        if (this.config.bootnodes && this.config.bootnodes.length > 0) {
-            this.config.bootnodes.forEach((bn) => {
-                args.push('--bootnode', bn);
-            });
-        }
+        // ถ้าไม่ส่งมา ให้ใช้ของที่ผู้ใช้ตั้งไว้ — ส่วนของ genesis ผู้เรียกจะเตรียมมาให้
+        const list = (bootnodes && bootnodes.length > 0)
+            ? bootnodes
+            : (this.config.bootnodes || []);
+
+        list.forEach((bn) => {
+            args.push('--bootnode', bn);
+        });
 
         return args;
     }
@@ -520,68 +721,17 @@ class NodeManager extends EventEmitter {
 
     // ─── RPC Communication ─────────────────────────────────────
 
-    async rpcCall(method, params = []) {
-        const rpcUrl = this.config.rpcUrl || TPIX_RPC;
-
-        return new Promise((resolve, reject) => {
-            const url = new URL(rpcUrl);
-            const isHttps = url.protocol === 'https:';
-            const client = isHttps ? https : http;
-
-            const body = JSON.stringify({
-                jsonrpc: '2.0',
-                method,
-                params,
-                id: Date.now(),
-            });
-
-            const req = client.request(
-                {
-                    hostname: url.hostname,
-                    port: url.port || (isHttps ? 443 : 80),
-                    path: url.pathname,
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(body),
-                        // Cloudflare WAF blocks UA-less requests with a 403 — see rpc-client.js
-                        'User-Agent': BROWSER_UA,
-                        Accept: 'application/json, text/plain, */*',
-                    },
-                    timeout: 10000,
-                },
-                (res) => {
-                    let data = '';
-                    res.on('data', (chunk) => (data += chunk));
-                    res.on('end', () => {
-                        if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
-                            return reject(new Error(
-                                `RPC endpoint returned HTTP ${res.statusCode} ` +
-                                `(request blocked at the edge or node unreachable)`
-                            ));
-                        }
-                        try {
-                            const json = JSON.parse(data);
-                            if (json.error) {
-                                reject(new Error(json.error.message));
-                            } else {
-                                resolve(json.result);
-                            }
-                        } catch (e) {
-                            reject(new Error('Invalid JSON response (non-JSON body)'));
-                        }
-                    });
-                }
-            );
-
-            req.on('error', reject);
-            req.on('timeout', () => {
-                req.destroy();
-                reject(new Error('RPC timeout'));
-            });
-            req.write(body);
-            req.end();
-        });
+    /**
+     * ยิง JSON-RPC ผ่านชั้นขนส่งกลาง (rpc-client.js)
+     *
+     * เดิมไฟล์นี้มีตัวยิง HTTP เป็นของตัวเองอีกชุด แล้วสองชุดค่อยๆ เพี้ยนจากกัน
+     * จนกลายเป็นบั๊กจริง: ชุดนี้ import `BROWSER_UA` จาก rpc-client แต่ rpc-client
+     * ดันไม่ได้ export ออกมา → header เป็น undefined → Node โยน
+     * ERR_HTTP_INVALID_HEADER_VALUE ทุกครั้งที่เรียก แปลว่าแดชบอร์ดอ่านเชนไม่ได้เลย
+     * ตอนนี้เหลือทางเดียว ทั้งแอปใช้ UA/rate limit/circuit breaker/failover ชุดเดียวกัน
+     */
+    async rpcCall(method, params = [], timeout = 10000) {
+        return sharedRpcCall(method, params, timeout);
     }
 
     async getBlockNumber() {
@@ -616,47 +766,16 @@ class NodeManager extends EventEmitter {
             const block = await this.rpcCall('eth_getBlockByNumber', [blockHex, false]);
             const blockTime = block ? parseInt(block.timestamp, 16) : 0;
             const blockAge = blockTime ? Math.floor(Date.now() / 1000) - blockTime : 0;
-            const isProducing = blockAge < 30;
 
-            // Extract validators from IBFT2 extraData using proper RLP decode
-            // Layout: [0:32] vanity + RLP([validators[], proposerSeal, committedSeals[]])
-            // Each validator entry can be either a bare address or a list [address, blsKey]
-            let validators = [];
-            if (block && block.extraData && block.extraData.length > 66) {
-                try {
-                    const buf = Buffer.from(block.extraData.slice(2), 'hex');
-                    // RLP decoder: returns { dataStart, dataLen, totalLen }
-                    const rlp = (b, p) => {
-                        const x = b[p];
-                        if (x <= 0x7f) return { ds: p, dl: 1, tl: 1 };
-                        if (x <= 0xb7) { const l = x - 0x80; return { ds: p+1, dl: l, tl: 1+l }; }
-                        if (x <= 0xbf) { const n = x-0xb7; let l=0; for(let i=0;i<n;i++) l=l*256+b[p+1+i]; return { ds: p+1+n, dl: l, tl: 1+n+l }; }
-                        if (x <= 0xf7) { const l = x - 0xc0; return { ds: p+1, dl: l, tl: 1+l }; }
-                        const n = x-0xf7; let l=0; for(let i=0;i<n;i++) l=l*256+b[p+1+i]; return { ds: p+1+n, dl: l, tl: 1+n+l };
-                    };
-                    const isList = (b, p) => b[p] >= 0xc0;
+            // เชนตั้งไว้ 2 วิ/บล็อก — เผื่อไว้ 15 บล็อกก่อนจะเรียกว่า "หยุดออกบล็อก"
+            // (ถ้าค้างจริงแบบ 8 ส.ค. 69 ที่ round ไต่ขึ้นเรื่อยๆ ค่านี้จะพุ่งเป็นชั่วโมง)
+            //
+            // ห้ามใส่เงื่อนไข `blockAge >= 0` — นาฬิกาเครื่องผู้ใช้ช้ากว่าเชนแค่วินาทีเดียว
+            // อายุก็ติดลบแล้ว ซึ่งแปลว่าเชน "ใหม่กว่าที่เราคิด" ไม่ใช่เชนหยุด
+            const isProducing = blockTime > 0 && blockAge < STALL_SECONDS;
 
-                    // Outer list → first element = validators list
-                    const outer = rlp(buf, 32);
-                    const valList = rlp(buf, outer.ds);
-                    let pos = valList.ds;
-                    const valEnd = valList.ds + valList.dl;
-                    while (pos < valEnd) {
-                        const item = rlp(buf, pos);
-                        if (isList(buf, pos)) {
-                            // Validator entry = [address, blsKey] — extract first item
-                            const inner = rlp(buf, item.ds);
-                            if (inner.dl === 20) {
-                                validators.push('0x' + buf.slice(inner.ds, inner.ds + 20).toString('hex'));
-                            }
-                        } else if (item.dl === 20) {
-                            // Bare address (simpler IBFT format)
-                            validators.push('0x' + buf.slice(item.ds, item.ds + 20).toString('hex'));
-                        }
-                        pos += item.tl;
-                    }
-                } catch {}
-            }
+            // รายชื่อ validator อ่านจาก extraData — เชนนี้ไม่มีเมธอด ibft_* ให้เรียก
+            const validators = decodeValidators(block && block.extraData);
 
             return {
                 blockNumber,
@@ -667,6 +786,7 @@ class NodeManager extends EventEmitter {
                 chainId: parseInt(chainId, 10),
                 validators,
                 validatorCount: validators.length,
+                rpcEndpoint: getEndpoint(),
             };
         } catch (err) {
             return {
@@ -677,6 +797,7 @@ class NodeManager extends EventEmitter {
                 chainId: CHAIN_ID,
                 validators: [],
                 validatorCount: 0,
+                rpcEndpoint: getEndpoint(),
                 error: err.message,
             };
         }
@@ -687,11 +808,14 @@ class NodeManager extends EventEmitter {
     getStatus() {
         return {
             status: this.status,
+            // 'monitoring' = เฝ้าดูเชนผ่าน RPC · 'node' = รัน polygon-edge จริง
+            mode: this.mode,
             nodeName: this.config?.nodeName,
             tier: this.config?.tier,
             wallet: this.config?.walletAddress,
             uptime: this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0,
             pid: this.process?.pid || null,
+            rpcEndpoint: getEndpoint(),
         };
     }
 

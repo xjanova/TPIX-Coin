@@ -44,6 +44,11 @@ contextBridge.exposeInMainWorld('tpix', {
         getPeerCount: () => ipcRenderer.invoke('rpc:getPeerCount'),
     },
 
+    // สุขภาพเชน (วัดจังหวะบล็อกจริง + จับเชนค้าง + เช็ค chainId)
+    chain: {
+        health: (sampleSize) => ipcRenderer.invoke('chain:health', sampleSize),
+    },
+
     // System
     system: {
         getMetrics: () => ipcRenderer.invoke('system:getMetrics'),
