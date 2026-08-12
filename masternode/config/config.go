@@ -80,7 +80,7 @@ func DefaultConfig() *Config {
 		Endpoint:       "",
 		WalletAddress:  "",
 		KeystorePath:   filepath.Join(dataDir, "keystore"),
-		ChainRPC:       "https://rpc.tpix.online",
+		ChainRPC:       "https://rpc1.tpix.online",
 		ChainID:        4289,
 		RegistryAddr:   "",
 		P2PPort:        30303,

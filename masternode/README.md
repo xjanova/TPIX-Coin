@@ -194,7 +194,7 @@ node_name: "my-tpix-node"
 tier: "light"                          # validator, sentinel, light
 wallet_address: "0xYourAddress"
 
-chain_rpc: "https://rpc.tpix.online"
+chain_rpc: "https://rpc1.tpix.online"
 chain_id: 4289
 
 p2p_port: 30303
@@ -279,7 +279,7 @@ tpix-node/
 
 - **Website:** https://tpix.online
 - **Explorer:** https://explorer.tpix.online
-- **RPC:** https://rpc.tpix.online
+- **RPC:** https://rpc1.tpix.online
 - **Whitepaper:** https://tpix.online/whitepaper
 - **GitHub:** https://github.com/xjanova/TPIX-Coin
 

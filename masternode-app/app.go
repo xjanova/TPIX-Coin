@@ -227,7 +227,7 @@ func (a *App) GetConfig() NodeConfig {
 		NodeName:      a.nodeName,
 		Tier:          a.tier,
 		WalletAddress: a.walletAddress,
-		ChainRPC:      "https://rpc.tpix.online",
+		ChainRPC:      "https://rpc1.tpix.online",
 		ChainID:       4289,
 		DashboardPort: 3847,
 		P2PPort:       30303,

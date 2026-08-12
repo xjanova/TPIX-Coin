@@ -133,7 +133,7 @@ tier: "$Tier"
 wallet_address: "$Wallet"
 keystore_path: "$DATA_DIR\keystore"
 
-chain_rpc: "https://rpc.tpix.online"
+chain_rpc: "https://rpc1.tpix.online"
 chain_id: 4289
 
 p2p_port: 30303

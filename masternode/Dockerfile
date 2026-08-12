@@ -38,7 +38,7 @@ COPY --from=builder /build/tpix-node /usr/local/bin/tpix-node
 # Default environment
 ENV TPIX_TIER=light
 ENV TPIX_WALLET=""
-ENV TPIX_RPC=https://rpc.tpix.online
+ENV TPIX_RPC=https://rpc1.tpix.online
 ENV TPIX_DASHBOARD_PORT=3847
 ENV TPIX_P2P_PORT=30303
 

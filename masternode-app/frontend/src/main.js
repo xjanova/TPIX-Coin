@@ -67,7 +67,7 @@ async function loadConfig() {
         document.getElementById('cfg-name').value = cfg.node_name || '';
         document.getElementById('cfg-wallet').value = cfg.wallet_address || '';
         document.getElementById('cfg-tier').value = cfg.tier || 'Light';
-        document.getElementById('cfg-rpc').value = cfg.chain_rpc || 'https://rpc.tpix.online';
+        document.getElementById('cfg-rpc').value = cfg.chain_rpc || 'https://rpc1.tpix.online';
 
         document.getElementById('node-name-h').textContent = cfg.node_name || 'TPIX Master Node';
         document.getElementById('node-tier-sub').textContent = (cfg.tier || 'Light') + ' Node \u00b7 Chain ' + (cfg.chain_id || 4289);
