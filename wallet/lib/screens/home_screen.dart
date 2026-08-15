@@ -122,8 +122,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
 
     if (uri.scheme == 'tpixwallet') {
-      // tpixwallet://sign?... — peer-app sign request (e.g. from TPIX Trade)
-      if (uri.host == 'sign') {
+      // tpixwallet://sign / sign-typed / sign-tx — peer-app requests
+      // (เช่น TPIX Trade ขอลายเซ็น หรือขอเซ็น+ส่งธุรกรรมเทรดจริงบน BSC)
+      // หมายเหตุ: เดิมเช็คแค่ host == 'sign' ทำให้ sign-typed หลุดเงียบๆ
+      if (uri.host.startsWith('sign')) {
         if (!mounted) return;
         // Fire-and-forget — PeerSignService handles UI + callback internally
         PeerSignService().tryHandle(context, uri);

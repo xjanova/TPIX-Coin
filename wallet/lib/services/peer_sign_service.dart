@@ -10,11 +10,18 @@
 ///      with `?nonce=<n>&signature=0x...`
 ///   4. User rejects → opens callback URL with `?nonce=<n>&error=user_rejected`
 ///
+/// Also handles `tpixwallet://sign-tx?...` — peer app ขอให้ "เซ็น + broadcast
+/// ธุรกรรม" บนเชน EVM (เช่น TPIX Trade เทรดจริงบน BSC): แสดงรายละเอียด
+/// ธุรกรรมให้ตรวจ → ยืนยัน → เซ็นด้วย key ของกระเป๋า → ส่งขึ้นเชน →
+/// callback กลับพร้อม `?txhash=0x...`
+///
 /// Security:
 ///   - Callback URL must be in allowlist (currently only tpixtrade://)
 ///   - Wallet must be unlocked (signed in with passcode/biometric) — otherwise reject
 ///   - Message preview shown to user — they can see what they're signing
 ///   - Nonce echoed back unmodified — prevents response spoofing
+///   - sign-tx: เชนต้องอยู่ในลิสต์ที่รองรับ + to ต้องเป็น address รูปแบบถูกต้อง
+///     + แสดงเครือข่าย/ปลายทาง/จำนวน/ขนาด data ให้ผู้ใช้เห็นก่อนยืนยันเสมอ
 ///
 /// Developed by Xman Studio
 library;
@@ -23,11 +30,13 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:hex/hex.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../models/chain_config.dart';
 import '../providers/wallet_provider.dart';
 import 'db_service.dart';
 
@@ -57,6 +66,9 @@ class PeerSignService {
     if (uri.scheme != 'tpixwallet') return false;
     if (uri.host == 'sign-typed') {
       return _tryHandleTyped(context, uri);
+    }
+    if (uri.host == 'sign-tx') {
+      return _tryHandleTx(context, uri);
     }
     if (uri.host != 'sign') return false;
 
@@ -268,6 +280,201 @@ class PeerSignService {
     return true;
   }
 
+  /// Handle tpixwallet://sign-tx — เซ็น + broadcast ธุรกรรม EVM ให้ peer app
+  ///
+  /// tx param เป็น JSON:
+  /// `{"chainId":56,"to":"0x..","value":"0x..","data":"0x..","summary":"Buy BTC"}`
+  /// สำเร็จ → callback `?nonce=..&txhash=0x..`
+  /// ผิดพลาด → callback `?nonce=..&error=<code>`
+  Future<bool> _tryHandleTx(BuildContext context, Uri uri) async {
+    final txJson = uri.queryParameters['tx'];
+    final nonce = uri.queryParameters['nonce'];
+    final callback = uri.queryParameters['callback'];
+
+    if (txJson == null || nonce == null || callback == null) {
+      debugPrint('PeerSignService.tx: missing params');
+      return true;
+    }
+
+    final cbUri = Uri.tryParse(callback);
+    if (cbUri == null || !_allowedCallbackSchemes.contains(cbUri.scheme)) {
+      debugPrint('PeerSignService.tx: callback scheme not allowed');
+      return true;
+    }
+    if (!RegExp(r'^[a-fA-F0-9]{8,64}$').hasMatch(nonce)) {
+      debugPrint('PeerSignService.tx: invalid nonce');
+      return true;
+    }
+    if (txJson.length > 8000) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'message_too_large');
+      return true;
+    }
+
+    // ── Parse + validate โครงสร้างธุรกรรม (ข้อมูลจากภายนอก = ไม่เชื่อจนกว่าตรวจ) ──
+    Map<String, dynamic>? tx;
+    try {
+      final decoded = jsonDecode(txJson);
+      if (decoded is Map<String, dynamic>) tx = decoded;
+    } catch (_) {}
+    final chainId = tx?['chainId'];
+    final to = tx?['to'];
+    if (tx == null ||
+        chainId is! int ||
+        to is! String ||
+        !RegExp(r'^0x[a-fA-F0-9]{40}$').hasMatch(to)) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'invalid_tx');
+      return true;
+    }
+
+    // เชนต้องอยู่ในลิสต์ที่กระเป๋ารองรับ (มี RPC ของตัวเอง)
+    ChainConfig? chain;
+    for (final c in ChainConfig.all) {
+      if (c.chainId == chainId) {
+        chain = c;
+        break;
+      }
+    }
+    if (chain == null) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'unsupported_chain');
+      return true;
+    }
+
+    // value (wei hex) — optional
+    BigInt value = BigInt.zero;
+    final valueHex = tx['value'];
+    if (valueHex is String && valueHex.isNotEmpty) {
+      final cleaned = valueHex.startsWith('0x') ? valueHex.substring(2) : valueHex;
+      if (!RegExp(r'^[a-fA-F0-9]{1,64}$').hasMatch(cleaned)) {
+        await _sendCallback(cbUri, nonce: nonce, error: 'invalid_tx');
+        return true;
+      }
+      value = BigInt.parse(cleaned, radix: 16);
+    }
+
+    // data (calldata hex) — optional
+    Uint8List? data;
+    final dataHex = tx['data'];
+    if (dataHex is String && dataHex.isNotEmpty) {
+      final cleaned = dataHex.startsWith('0x') ? dataHex.substring(2) : dataHex;
+      if (cleaned.length.isOdd ||
+          cleaned.length > 6000 ||
+          !RegExp(r'^[a-fA-F0-9]*$').hasMatch(cleaned)) {
+        await _sendCallback(cbUri, nonce: nonce, error: 'invalid_tx');
+        return true;
+      }
+      data = Uint8List.fromList(HEX.decode(cleaned));
+    }
+
+    final summary = tx['summary'] is String
+        ? (tx['summary'] as String).substring(
+            0, (tx['summary'] as String).length.clamp(0, 200))
+        : null;
+
+    if (!context.mounted) return true;
+
+    // ── Preview ให้ผู้ใช้ตรวจก่อนยืนยัน ──
+    final isThai = context.read<LocaleProvider>().isThai;
+    // แสดงจำนวนแบบ 4 ตำแหน่ง: wei ~/ 1e14 → หน่วย 1e-4 → หารต่อด้วย 10000
+    final valueText = value > BigInt.zero
+        ? '${(value ~/ BigInt.from(10).pow(14)).toInt() / 10000} ${chain.symbol}'
+        : '0 ${chain.symbol}';
+    final lines = <String>[
+      if (summary != null && summary.isNotEmpty) ...[
+        '═ ${isThai ? 'รายการ' : 'Action'} ═',
+        '  $summary',
+        '',
+      ],
+      '═ ${isThai ? 'ธุรกรรม' : 'Transaction'} ═',
+      '  ${isThai ? 'เครือข่าย' : 'Network'}: ${chain.name} ($chainId)',
+      '  ${isThai ? 'ปลายทาง' : 'To'}: $to',
+      '  ${isThai ? 'จำนวน' : 'Value'}: $valueText',
+      if (data != null)
+        '  Data: ${data.length} bytes (0x${HEX.encode(data.take(4).toList())}…)',
+      '',
+      isThai
+          ? '⚠ ยืนยันแล้วธุรกรรมจะถูกส่งขึ้นเชนจริงทันที'
+          : '⚠ On confirm this transaction is broadcast on-chain immediately',
+    ];
+
+    final sourceName = _sourceAppNames[cbUri.scheme] ?? cbUri.scheme;
+    final approved = await _showConfirmDialog(
+      context,
+      sourceName: sourceName,
+      message: lines.join('\n'),
+    );
+
+    if (!context.mounted) return true;
+
+    final wallet = context.read<WalletProvider>();
+    final logMessage = jsonEncode({
+      'type': 'sign-tx',
+      'chainId': chainId,
+      'to': to,
+      'value': value.toString(),
+      'dataBytes': data?.length ?? 0,
+      if (summary != null) 'summary': summary,
+    });
+
+    if (!approved) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'user_rejected');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: logMessage,
+        status: 'rejected',
+        nonce: nonce,
+      );
+      return true;
+    }
+
+    if (!wallet.isUnlocked) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'wallet_locked');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: logMessage,
+        status: 'wallet_locked',
+        nonce: nonce,
+      );
+      return true;
+    }
+
+    // ── เซ็น + broadcast (gas ประเมินอัตโนมัติโดย web3dart — path เดียว
+    //    กับหน้า swap ของกระเป๋าเอง) ──
+    try {
+      final txHash = await wallet.sendEvmTransaction(
+        rpcUrl: chain.rpcUrl,
+        chainId: chainId,
+        toAddress: to,
+        value: value > BigInt.zero ? value : null,
+        data: data,
+      );
+      await _sendCallback(cbUri, nonce: nonce, txHash: txHash);
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: logMessage,
+        status: 'tx_sent',
+        nonce: nonce,
+      );
+    } catch (e) {
+      debugPrint('PeerSignService.tx send: ${e.runtimeType}');
+      await _sendCallback(cbUri, nonce: nonce, error: 'tx_failed');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: logMessage,
+        status: 'tx_failed',
+        nonce: nonce,
+      );
+    }
+    return true;
+  }
+
   /// Pretty-print EIP-712 typed-data for the confirmation dialog
   Future<bool> _showTypedConfirmDialog(
     BuildContext context, {
@@ -344,11 +551,13 @@ class PeerSignService {
     Uri callback, {
     required String nonce,
     String? signature,
+    String? txHash,
     String? error,
   }) async {
     final params = <String, String>{
       'nonce': nonce,
       if (signature != null) 'signature': signature,
+      if (txHash != null) 'txhash': txHash,
       if (error != null) 'error': error,
     };
     // Reuse callback's host (e.g., 'sign-result') and append our params

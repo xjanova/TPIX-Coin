@@ -1,30 +1,40 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+/// TPIX Wallet — Smoke Tests
+/// ของเดิมเป็น scaffold test อ้าง MyApp ที่ไม่มีอยู่จริง → compile error
+/// ทำให้ flutter test ของ wallet รันไม่ได้เลย — แทนด้วย test ที่มีความหมาย:
+/// ตรวจ ChainConfig registry ที่ทุกฟีเจอร์ (send/swap/peer sign-tx) พึ่งพา
+/// Developed by Xman Studio
+library;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:tpix_wallet/main.dart';
+import 'package:tpix_wallet/models/chain_config.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('ChainConfig registry', () {
+    test('มีเชนหลักครบ: TPIX + BSC', () {
+      final ids = ChainConfig.all.map((c) => c.chainId).toList();
+      expect(ids, contains(4289));
+      expect(ids, contains(56));
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('ทุกเชนมี RPC และ explorer', () {
+      for (final chain in ChainConfig.all) {
+        expect(chain.rpcUrl, startsWith('https://'),
+            reason: '${chain.name} rpcUrl');
+        expect(chain.explorerUrl, startsWith('https://'),
+            reason: '${chain.name} explorerUrl');
+      }
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('chainId ไม่ซ้ำกัน', () {
+      final ids = ChainConfig.all.map((c) => c.chainId).toList();
+      expect(ids.toSet().length, ids.length);
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('BSC พร้อมสำหรับ sign-tx จาก TPIX Trade (เทรดจริง)', () {
+      final bsc = ChainConfig.byId(56);
+      expect(bsc.chainId, 56);
+      expect(bsc.symbol, 'BNB');
+      expect(bsc.rpcUrl, isNotEmpty);
+    });
   });
 }
