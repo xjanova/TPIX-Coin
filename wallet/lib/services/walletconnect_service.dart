@@ -129,12 +129,17 @@ class WalletConnectService extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Register request handlers for each method
-    for (final method in _supportedMethods) {
-      kit.registerRequestHandler(
-        chainId: 'eip155:4289',
-        method: method,
-      );
+    // Register request handlers for ทุกเชน × ทุกเมธอด — เดิมลงทะเบียนแค่
+    // eip155:4289 ทำให้คำขอบนเชนอื่น (เช่น personal_sign/eth_sendTransaction
+    // ตอนเทรดจริงบน BSC จากเว็บผ่าน QR) ถูก SDK ปฏิเสธอัตโนมัติ
+    // โดยไม่เข้า flow ยืนยันของผู้ใช้เลย
+    for (final chain in _supportedChains) {
+      for (final method in _supportedMethods) {
+        kit.registerRequestHandler(
+          chainId: chain,
+          method: method,
+        );
+      }
     }
   }
 
