@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 /// Identifier ของธีม — ใช้สำหรับ persistence + UI picker
 enum ThemeId {
   classic('classic'),
+  liquid('liquid'),
   synthwave('synthwave'),
   terminal('terminal');
 

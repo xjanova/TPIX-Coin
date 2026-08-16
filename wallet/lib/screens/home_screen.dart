@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
@@ -27,6 +28,8 @@ import '../services/peer_sign_service.dart';
 import '../services/update_service.dart';
 import '../providers/update_provider.dart';
 import '../widgets/peer_app_card.dart';
+import '../widgets/liquid_nav_bar.dart';
+import '../widgets/qr_scanner_screen.dart';
 import 'package:app_links/app_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -43,6 +46,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _balanceScale;
   String _appVersion = '';
   StreamSubscription? _deepLinkSub;
+  // ใช้เลื่อนกลับบนสุดเมื่อกดเมนู "หน้าหลัก" ตอนอยู่หน้านี้อยู่แล้ว
+  final ScrollController _scrollCtrl = ScrollController();
 
   @override
   void initState() {
@@ -158,6 +163,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _deepLinkSub?.cancel();
     _balanceController.dispose();
     _orbController.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -166,6 +172,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final l = context.watch<LocaleProvider>();
     final c = AppColors.of(context);
     return Scaffold(
+      // ให้เนื้อหาไหลลอดใต้แถบเมนูที่ลอยอยู่ (แถบโปร่ง ไม่ใช่ทึบเต็มความกว้าง)
+      extendBody: true,
+      bottomNavigationBar: _buildNavBar(l),
       body: Consumer<WalletProvider>(
         builder: (context, wallet, _) => Container(
           decoration: c.screenBg,
@@ -174,8 +183,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               onRefresh: wallet.refreshBalance,
               color: AppTheme.primary,
               child: SingleChildScrollView(
+                controller: _scrollCtrl,
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
+                // เว้นล่างไว้ให้แถบเมนู + ปุ่มสแกนที่ยกนูน
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 132),
                 child: Column(
                   children: [
                     _buildHeader(wallet, l),
@@ -215,6 +226,117 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
       ),
+    );
+  }
+
+  // ── แถบเมนูล่าง 3D + ปุ่มสแกนกลาง ──
+
+  Widget _buildNavBar(LocaleProvider l) {
+    return LiquidNavBar(
+      currentIndex: 0, // อยู่หน้าหลักเสมอ (หน้าอื่นเปิดซ้อนขึ้นมา)
+      scanLabel: l.t('nav.scan'),
+      onScanTap: _onScanTap,
+      items: [
+        LiquidNavItem(
+          icon: Icons.home_outlined,
+          activeIcon: Icons.home_rounded,
+          label: l.t('nav.home'),
+          // อยู่หน้านี้แล้ว — เลื่อนกลับบนสุดแทน (ไม่ push ซ้ำ)
+          onTap: () => _scrollCtrl.hasClients
+              ? _scrollCtrl.animateTo(0,
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOutCubic)
+              : null,
+        ),
+        LiquidNavItem(
+          icon: Icons.receipt_long_outlined,
+          activeIcon: Icons.receipt_long_rounded,
+          label: l.t('home.history'),
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const TxHistoryScreen())),
+        ),
+        LiquidNavItem(
+          icon: Icons.swap_horiz_outlined,
+          activeIcon: Icons.swap_horiz_rounded,
+          label: l.t('home.swap'),
+          onTap: () => Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const SwapScreen())),
+        ),
+        LiquidNavItem(
+          icon: Icons.settings_outlined,
+          activeIcon: Icons.settings_rounded,
+          label: l.t('nav.settings'),
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen())),
+        ),
+      ],
+    );
+  }
+
+  /// กดปุ่มสแกนกลาง → เลือกก่อนว่าจะ "จ่าย" (สแกน QR เขา) หรือ "รับ" (โชว์ QR เรา)
+  Future<void> _onScanTap() async {
+    final l = context.read<LocaleProvider>();
+    final action = await showScanActionSheet(
+      context,
+      title: l.t('scanSheet.title'),
+      scanLabel: l.t('scanSheet.pay'),
+      scanSub: l.t('scanSheet.paySub'),
+      receiveLabel: l.t('scanSheet.receive'),
+      receiveSub: l.t('scanSheet.receiveSub'),
+    );
+    if (!mounted || action == null) return;
+
+    if (action == ScanSheetAction.showMyQr) {
+      Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const ReceiveScreen()));
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => QRScannerScreen(
+          titleKey: 'send.scanQR',
+          onScanned: (value) {
+            // ปิดสแกนเนอร์ก่อน แล้วค่อยเปิดหน้าปลายทาง (กันซ้อนหน้าค้าง)
+            Navigator.pop(context);
+            _routeScannedValue(value);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// ตัดสินใจจาก QR ที่สแกนได้ว่าเป็นการเชื่อม dApp หรือการจ่ายเงิน
+  void _routeScannedValue(String value) {
+    if (!mounted) return;
+    final trimmed = value.trim();
+
+    // WalletConnect — เชื่อมกับเว็บ/dApp (เช่น tpix.online บนคอม)
+    if (trimmed.startsWith('wc:')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DAppConnectScreen(initialUri: trimmed),
+        ),
+      );
+      return;
+    }
+
+    // ที่อยู่กระเป๋า / URI จ่ายเงิน → เปิดหน้าส่งพร้อมเติมที่อยู่ให้เลย
+    final address = WalletService.parseAddressFromQR(trimmed);
+    if (address != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SendScreen(initialAddress: address),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.read<LocaleProvider>().t('scan.invalid'))),
     );
   }
 
@@ -593,6 +715,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
+            // เหรียญเจลลี่ลอยขึ้นลง — เฉพาะธีมลิควิด (สไตล์ภาพผูกกับธีมนี้)
+            if (TpixThemeExtension.of(context).themeId == ThemeId.liquid)
+              Positioned(
+                right: 0,
+                top: -4,
+                child: AnimatedBuilder(
+                  animation: _orbController,
+                  builder: (_, child) => Transform.translate(
+                    offset: Offset(0, sin(_orbController.value * 2 * pi) * 5),
+                    child: child,
+                  ),
+                  // ขนาดพอดีมุมขวาบน — ไม่ล้ำเข้าไปทับตัวเลขยอดเงิน
+                  child: Image.asset(
+                    'assets/images/liquid_coin.png',
+                    width: 74,
+                    height: 74,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
             // Bottom-right ambient glow
             Positioned(
               right: -20,

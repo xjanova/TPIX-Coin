@@ -9,7 +9,10 @@ import '../services/wallet_service.dart';
 import '../widgets/qr_scanner_screen.dart';
 
 class SendScreen extends StatefulWidget {
-  const SendScreen({super.key});
+  /// ที่อยู่ปลายทางที่เติมมาให้ล่วงหน้า (เช่น มาจากการสแกน QR ที่หน้าหลัก)
+  final String? initialAddress;
+
+  const SendScreen({super.key, this.initialAddress});
 
   @override
   State<SendScreen> createState() => _SendScreenState();
@@ -31,6 +34,11 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
+    // เติมที่อยู่จาก QR ที่สแกนมาจากหน้าหลัก (ถ้ามี)
+    final preset = widget.initialAddress;
+    if (preset != null && preset.isNotEmpty) {
+      _addressController.text = preset;
+    }
   }
 
   @override

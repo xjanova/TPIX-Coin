@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'themes/theme_bundle.dart';
 import 'themes/classic_theme.dart';
+import 'themes/liquid_theme.dart';
 import 'themes/synthwave_theme.dart';
 import 'themes/terminal_theme.dart';
 
@@ -17,6 +18,7 @@ class ThemeProvider extends ChangeNotifier {
   // Registry ของทุกธีม — เพิ่มธีมใหม่ที่นี่
   static final List<ThemeBundle> registry = [
     ClassicTheme(),
+    LiquidTheme(),
     SynthwaveTheme(),
     TerminalTheme(),
   ];
