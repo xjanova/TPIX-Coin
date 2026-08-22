@@ -17,6 +17,11 @@ module.exports = {
     artifacts: "./artifacts",
   },
   networks: {
+    // เทสต์รันบน chainId เดียวกับของจริง เพื่อให้การเซ็น tx (EIP-155)
+    // เหมือนกับตอน deploy จริง ไม่ใช่ 31337 ที่เป็นค่าเริ่มต้น
+    hardhat: {
+      chainId: 4289,
+    },
     tpix: {
       // rpc1 ไม่ใช่ rpc — rpc.tpix.online มี Cloudflare bot rule ครอบอยู่ ตอบ 403
       // ให้ client ที่ไม่มี User-Agent แบบเบราว์เซอร์ ซึ่งรวมถึง hardhat
