@@ -1314,12 +1314,13 @@
                                 </div>
 
                                 <!-- Up to date -->
-                                <div v-else class="update-state">
+                                <div v-else-if="!updateStatus.error" class="update-state">
                                     <span class="text-green">&#10003; {{ i18n.about.upToDate }}</span>
                                 </div>
 
-                                <!-- Error -->
-                                <div v-if="updateStatus.error" class="text-red mt-2" style="font-size:12px">{{ updateStatus.error }}</div>
+                                <!-- Error — ข้อความสั้นที่แปลแล้ว ห้ามโชว์ stack trace ดิบ -->
+                                <div v-if="updateStatus.error" class="mt-2" style="font-size:12px"
+                                     :class="updateErrorMuted ? 'metric-sub' : 'text-red'">{{ updateError }}</div>
 
                                 <button @click="checkUpdate" class="btn btn-ghost btn-sm mt-2" :disabled="updateStatus.checking">
                                     &#8635; {{ i18n.about.checkNow }}

@@ -707,6 +707,7 @@ app.on('before-quit', (e) => {
 });
 
 app.on('quit', () => {
+    if (appUpdater) appUpdater.stopAutoCheck();
     if (txManager) txManager.stopAll();
     if (db) db.close();
 });

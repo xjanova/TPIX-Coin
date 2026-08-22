@@ -134,6 +134,11 @@ const LANG = {
             installRestart: 'Install & Restart',
             upToDate: 'You are up to date',
             checkNow: 'Check Now',
+            errNoFeed: 'No Windows update package has been published yet',
+            errNetwork: 'Cannot reach the update server — check your internet connection',
+            errRateLimit: 'Update server is busy — please try again in a few minutes',
+            errDevMode: 'Auto-update is disabled in this build',
+            errUnknown: 'Update check failed — please try again later',
         },
         multiWallet: {
             walletSlot: 'Wallet',
@@ -456,6 +461,11 @@ const LANG = {
             installRestart: 'ติดตั้ง & รีสตาร์ท',
             upToDate: 'เป็นเวอร์ชันล่าสุดแล้ว',
             checkNow: 'ตรวจสอบตอนนี้',
+            errNoFeed: 'ยังไม่มีแพ็กเกจอัปเดตสำหรับ Windows',
+            errNetwork: 'เชื่อมต่อเซิร์ฟเวอร์อัปเดตไม่ได้ — ตรวจสอบอินเทอร์เน็ต',
+            errRateLimit: 'เซิร์ฟเวอร์อัปเดตไม่ว่าง — ลองใหม่อีกครั้งในอีกสักครู่',
+            errDevMode: 'บิลด์นี้ปิดการอัปเดตอัตโนมัติไว้',
+            errUnknown: 'ตรวจสอบอัปเดตไม่สำเร็จ — ลองใหม่อีกครั้งภายหลัง',
         },
         multiWallet: {
             walletSlot: 'กระเป๋า',
@@ -962,8 +972,25 @@ const app = createApp({
         // ─── Update State ─────────────────────────
         const updateStatus = ref({
             checking: false, updateAvailable: false, updateDownloaded: false,
-            updateInfo: null, downloadProgress: null, error: null,
+            updateInfo: null, downloadProgress: null, error: null, errorCode: null,
         });
+
+        // ข้อความ error ของตัวอัปเดต — main process ส่งมาแค่ code ห้ามโชว์ stack trace ให้ผู้ใช้
+        const updateError = computed(() => {
+            const s = updateStatus.value || {};
+            if (!s.error) return '';
+            const t = i18n.value.about;
+            return ({
+                NO_FEED: t.errNoFeed,
+                NETWORK: t.errNetwork,
+                RATE_LIMIT: t.errRateLimit,
+                DEV_MODE: t.errDevMode,
+            })[s.errorCode] || t.errUnknown;
+        });
+
+        // NO_FEED / DEV_MODE ไม่ใช่ความผิดพลาดของผู้ใช้ — แสดงเป็นข้อความเทา ไม่ใช่สีแดง
+        const updateErrorMuted = computed(() =>
+            ['NO_FEED', 'DEV_MODE'].includes(updateStatus.value?.errorCode));
 
         const statusLabel = computed(() => i18n.value.status[nodeStatus.value] || nodeStatus.value);
 
@@ -2146,7 +2173,7 @@ const app = createApp({
             // Settings & utils
             loadConfig, saveSettings, openDataDir, openLink, loadLogs,
             formatNumber, formatDuration, formatMB, formatLogTime,
-            updateStatus, checkUpdate, downloadUpdate, installUpdate,
+            updateStatus, updateError, updateErrorMuted, checkUpdate, downloadUpdate, installUpdate,
             copyToClipboard, shortAddr, formatBytes, minimize, maximize, closeWindow,
         };
     },

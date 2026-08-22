@@ -142,3 +142,39 @@ jobs:
 
             **Developer:** Xman Studio
             **Website:** https://tpix.online
+
+      # electron-updater ของ Master Node อ่าน "latest release" ของ repo เสมอ
+      # ถ้า release ล่าสุดเป็นของ wallet อย่างเดียว → ไม่มี latest.yml → แอปเด้ง 404
+      # จึงต้องพา artifact อัปเดตของ Master Node ตัวล่าสุดตามมาทุก release
+      - name: Carry forward Master Node update assets
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NEW_TAG="v${SEMVER}"
+
+          # หา release ล่าสุด (ไม่นับตัวที่เพิ่งสร้าง) ที่มี latest.yml ของ Master Node
+          SRC_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq \
+            "[ .[]
+               | select(.draft == false and .prerelease == false)
+               | select(.tag_name != \"${NEW_TAG}\")
+               | select([.assets[].name] | index(\"latest.yml\"))
+               | .tag_name ][0] // empty")
+
+          if [ -z "$SRC_TAG" ]; then
+            echo "ไม่พบ release ของ Master Node ที่มี latest.yml — ข้ามขั้นตอนนี้"
+            exit 0
+          fi
+          echo "คัดลอก artifact อัปเดต Master Node: ${SRC_TAG} -> ${NEW_TAG}"
+
+          rm -rf mn-update && mkdir -p mn-update && cd mn-update
+          gh release download "$SRC_TAG" \
+            --pattern 'latest.yml' \
+            --pattern 'TPIX-Master-Node-Setup-*' \
+            --clobber
+
+          # latest.yml ต้องอยู่ release เดียวกับ .exe ที่มันอ้างถึง
+          # ไม่งั้น URL ที่ electron-updater ประกอบขึ้นจะชี้ผิด release แล้ว 404
+          gh release upload "$NEW_TAG" latest.yml TPIX-Master-Node-Setup-* --clobber
+          echo "อัปโหลดครบแล้ว — Master Node เช็คอัปเดตได้ตามปกติ"
