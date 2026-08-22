@@ -15,16 +15,17 @@
 6. [Tokenomics](#6-tokenomics)
 7. [Master Node System](#7-master-node-system)
 8. [Decentralized Exchange (DEX)](#8-decentralized-exchange-dex)
-9. [Token Factory](#9-token-factory)
-10. [Living Identity Recovery](#10-living-identity-recovery)
-11. [Cross-Chain Bridge](#11-cross-chain-bridge)
-12. [Ecosystem & Use Cases](#12-ecosystem--use-cases)
-13. [Carbon Credit System](#13-carbon-credit-system)
-14. [FoodPassport — Farm-to-Table Traceability](#14-foodpassport--farm-to-table-traceability)
-15. [Security Architecture](#15-security-architecture)
-16. [Roadmap](#16-roadmap)
-17. [Team & Governance](#17-team--governance)
-18. [Legal & Compliance](#18-legal--compliance)
+9. [AI TRADE — Non-Custodial Strategy Engine](#9-ai-trade--non-custodial-strategy-engine)
+10. [Token Factory](#10-token-factory)
+11. [Living Identity Recovery](#11-living-identity-recovery)
+12. [Cross-Chain Bridge](#12-cross-chain-bridge)
+13. [Ecosystem & Use Cases](#13-ecosystem--use-cases)
+14. [Carbon Credit System](#14-carbon-credit-system)
+15. [FoodPassport — Farm-to-Table Traceability](#15-foodpassport--farm-to-table-traceability)
+16. [Security Architecture](#16-security-architecture)
+17. [Roadmap](#17-roadmap)
+18. [Team & Governance](#18-team--governance)
+19. [Legal & Compliance](#19-legal--compliance)
 
 ---
 
@@ -320,7 +321,98 @@ A full-featured DEX built on Uniswap V2 AMM protocol, optimized for TPIX Chain's
 
 ---
 
-## 9. Token Factory
+## 9. AI TRADE — Non-Custodial Strategy Engine
+
+**Platform:** [tpix.online/ai-trade](https://tpix.online/ai-trade)
+
+### Why This Cannot Honestly Exist on a Centralised Exchange
+
+Automated trading assistants are common in marketing and rare in practice. The obstacle is structural, not technical:
+
+1. **Cost.** On a fee-charging chain, a strategy that evaluates the market every minute pays gas on every evaluation and every rebalance. The fee floor eliminates most short-horizon strategies before they begin.
+2. **Conflict of interest.** A centralised exchange is the counterparty to its own users. Any bot it operates sits on the wrong side of the table: it can see the order book, it holds the deposits, and its revenue rises when its users lose.
+
+TPIX Chain removes the first constraint — gas is zero, so a strategy may evaluate as often as it needs to. TPIX TRADE removes the second: it is a genuine decentralised exchange. **User coins never leave the user's wallet, and the platform never holds a private key.**
+
+That combination is what makes AI TRADE honest by construction. The platform cannot trade against the user, cannot front-run the user, and cannot profit from the user's loss — because it never takes custody and never holds the other side of the trade.
+
+### Design Principle — Explainable, Not Oracular
+
+The decision engine is a **deterministic rule ensemble, not a large language model**. This is deliberate: a decision that puts real money at risk must be reproducible and auditable. Given the same market data the engine returns the same answer, and every answer carries a written reason.
+
+An optional LLM advisor is available for commentary on historical performance. Its interface exposes **no method capable of placing a trade**.
+
+### Eight Strategies
+
+| Strategy | Code | Behaviour | Risk | Tier |
+|----------|------|-----------|------|------|
+| **Grid Trading** | `grid` | Buys when price dips inside its range, sells one grid step higher. One position at a time. | Low | Free |
+| **Smart DCA** | `dca` | Buys on a fixed schedule, and buys bigger when price is below its moving average. | Low | Free |
+| **Momentum Trend** | `momentum` | Rides trends using an EMA crossover confirmed by volume expansion. | Medium | Basic |
+| **RSI Mean Reversion** | `mean_reversion` | Buys statistical oversold and sells overbought around a rolling mean. | Medium | Pro |
+| **Volatility Breakout** | `breakout` | Enters when price closes above the Donchian channel, with an ATR-scaled stop. | High | Pro |
+| **Micro Scalper** | `scalping` | High-frequency micro trades on order-book imbalance. Needs tight spreads. | High | Pro |
+| **Spread Arbitrage** | `arbitrage` | Captures the price gap between the TPIX DEX pool and the reference CEX price. | Medium | VIP |
+| **TPIX AI Signal** | `ai_signal` | Four-view weighted ensemble (below). | Medium | VIP |
+
+Spread Arbitrage deserves a note: on any fee-charging chain the gas cost of a round trip exceeds the spread it is trying to capture. **Zero gas is what makes the strategy viable at all** — it is not a marketing feature, it is the precondition.
+
+### TPIX AI Signal — The Ensemble
+
+`ai_signal` blends four independent readings of price action, each scored from −1 to +1:
+
+| View | Weight | Question it answers |
+|------|--------|---------------------|
+| EMA trend | 30% | Which way is the market actually going? |
+| Momentum (ROC) | 25% | How much force is behind the current move? |
+| RSI mean reversion | 25% | Is price cheap or expensive against its own centre? |
+| Bollinger position | 20% | Where in its range is price sitting? |
+
+The blend is then **re-weighted by market regime**: a directional market leans on trend and momentum, a ranging market leans on mean reversion and band position. The resulting score must exceed a user-set confidence threshold (55–95%, default 65%) before the engine acts.
+
+> **Why the floor is 55% and not 50%.** At 50% the buy gate and the sell gate meet exactly, the "hold" band vanishes, and identical inputs flip the bot every tick. Measured in a ranging market, that produced **−5.6% across 201 ticks from fees alone** — without a single wrong directional call.
+
+### Risk Gate — Price and News, Combined
+
+Before any strategy acts, a risk assessment runs. It combines two independent signals:
+
+1. **Price behaviour** — the fastest detector. Markets break before the news reports it.
+2. **Market news** — explains *why*, and confirms the move is not noise.
+
+The gate takes the **higher** of the two readings, never the average — averaging lets one calm signal mask an alarming one and walks the bot into the fire. Its output is one of: full-size entry, reduced position size, pause on new entries, or forced exit of everything held.
+
+News is ingested from public RSS feeds and scored by weighted keyword, so any decision can be replayed and explained after the fact. The news filter is a per-bot switch the user controls.
+
+### Custody Model — The Part That Matters
+
+| Mode | What the system does | Who signs |
+|------|---------------------|-----------|
+| **Paper trading** (default) | Runs the full engine against **live prices** in a simulated portfolio. No funds involved. | Nobody |
+| **Live** | Records a **signal awaiting confirmation** | The user, in their own wallet |
+
+The system holds no private key in either mode. Even with live trading enabled, **AI TRADE never submits a transaction on the user's behalf** — it produces a recommendation the user executes themselves.
+
+Live trading ships disabled (`AIBOT_LIVE_ENABLED=false`) so every user can observe a strategy's real behaviour on real prices before any capital is exposed.
+
+### Operational Constraints
+
+- **One position per bot.** No pyramiding — a buy signal while already holding is converted to hold.
+- **Tiered access.** Free, Basic, Pro and VIP plans differ in strategy access and concurrent bot count.
+- **Work credits are denominated in TPIX only.** Every bot rental is direct buy-side demand for the native coin, rather than revenue leaking out of the ecosystem.
+- **Cloud execution.** Dedicated workers evaluate strategies on a fixed cadence — a browser does not need to stay open for a bot to keep running.
+- **Reproducibility harness.** `aibot:probe` fires every strategy at known market conditions and asserts decisions do not drift between runs.
+
+### Scope — What the Engine Does Not Do
+
+Stated plainly, so the boundary is not inferred from marketing: **the user selects the trading pair.** The engine decides *buy, sell or hold* on that pair; it does not scan the market and choose an asset on the user's behalf. Automatic pair selection is a roadmap item, not a shipped capability.
+
+### Why This Is a Differentiator
+
+A centralised exchange can build a faster bot. It cannot build an honest one, because it is the counterparty. AI TRADE is positioned where the incentives line up: the user keeps custody, the platform holds no other side of the trade, and the engine's only route to revenue is being worth renting again.
+
+---
+
+## 10. Token Factory
 
 Create custom tokens on TPIX Chain with zero gas fees. Full-featured 5-step wizard supporting ERC-20 and ERC-721 tokens with advanced DeFi features.
 
@@ -442,7 +534,7 @@ Example: Utility Token with Tax + Anti-Whale + Pausable
 
 ---
 
-## 10. Living Identity Recovery
+## 11. Living Identity Recovery
 
 **World's first seedless wallet recovery system** — no other blockchain wallet has this.
 
@@ -520,7 +612,7 @@ function completeRecovery() external; // After 48-hour lock
 
 ---
 
-## 11. Cross-Chain Bridge
+## 12. Cross-Chain Bridge
 
 ### TPIX Chain ↔ BSC Bridge
 
@@ -547,12 +639,13 @@ TPIX Chain                          BSC (Chain ID: 56)
 
 ---
 
-## 12. Ecosystem & Use Cases
+## 13. Ecosystem & Use Cases
 
 | Application | Description | Status |
 |-------------|-------------|--------|
 | **TPIX TRADE DEX** | AMM-based DEX with zero gas trading | Live |
 | **Token Factory** | Create custom ERC-20/ERC-721 tokens (10 types, 16+ sub-options) | Live |
+| **AI TRADE** | Non-custodial strategy engine — 8 strategies, paper trading on live prices | Live |
 | **FoodPassport** | Blockchain food traceability (farm-to-table) | Live |
 | **Carbon Credit** | On-chain carbon credit trading with IoT verification | Live |
 | **Master Node Network** | 3-tier validator system with staking rewards | Live |
@@ -566,7 +659,7 @@ TPIX Chain                          BSC (Chain ID: 56)
 
 ---
 
-## 13. Carbon Credit System
+## 14. Carbon Credit System
 
 ### Overview
 
@@ -603,7 +696,7 @@ Full documentation: [docs/CARBON-CREDIT.md](CARBON-CREDIT.md) | [tpix.online/car
 
 ---
 
-## 14. FoodPassport — Farm-to-Table Traceability
+## 15. FoodPassport — Farm-to-Table Traceability
 
 ### Overview
 
@@ -635,7 +728,7 @@ Visit: `tpix.online/food-passport/verify/{productId}`
 
 ---
 
-## 15. Security Architecture
+## 16. Security Architecture
 
 ### Smart Contract Security
 
@@ -667,7 +760,7 @@ Visit: `tpix.online/food-passport/verify/{productId}`
 
 ---
 
-## 16. Roadmap
+## 17. Roadmap
 
 ### Phase 1 — Foundation & Infrastructure (2023–2026)
 
@@ -740,7 +833,7 @@ All data points recorded on TPIX Chain, scored by AI, accessible to consumers.
 
 ---
 
-## 17. Team & Governance
+## 18. Team & Governance
 
 ### Development
 
@@ -758,7 +851,7 @@ TPIX Chain is developed by **Xman Studio** — a Thai technology studio speciali
 
 ---
 
-## 18. Legal & Compliance
+## 19. Legal & Compliance
 
 - TPIX Chain operates under Thai digital asset regulations
 - Token sale conducted in compliance with SEC Thailand guidelines
