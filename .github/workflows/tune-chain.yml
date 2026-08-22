@@ -15,7 +15,7 @@ jobs:
     steps:
       # ── ด่านกัน automation ล้าสมัยไปสั่งงานเครื่องผิด (เพิ่ม 2026-08-05) ──────────
       # workflow นี้ SSH เข้า secrets.SSH_HOST ซึ่งเป็นค่าเดี่ยว และสมมติว่า validator
-      # ทุกตัวอยู่ที่ $HOME/tpix-infrastructure บนเครื่องนั้น วันที่ย้าย validator
+      # ทุกตัวอยู่ที่ /opt/tpix บนเครื่องนั้น วันที่ย้าย validator
       # ออกไปคนละ VPS สมมติฐานนี้พัง แต่ workflow จะไม่ error — มันจะไปทำงานกับ
       # เครื่องเก่าอย่างมั่นใจ ดูรายละเอียดใน infrastructure/TOPOLOGY
       - name: Checkout repository
@@ -50,7 +50,7 @@ jobs:
               exit 1
             fi
 
-            INFRA="$HOME/tpix-infrastructure"
+            INFRA="/opt/tpix"
             cd "$INFRA"
 
             echo "=== 1. BACKUP ==="
@@ -172,7 +172,7 @@ jobs:
             for v in 1 2 3 4; do
               echo ""
               echo "--- Restarting tpix-validator-$v ---"
-              docker compose up -d tpix-validator-$v --force-recreate --no-deps
+              sudo docker compose up -d tpix-validator-$v --force-recreate --no-deps
               echo "Waiting 25s for validator-$v to sync back..."
               sleep 25
 
@@ -188,7 +188,7 @@ jobs:
                 if [ "$B_NOW" -le "$B_BEFORE" ]; then
                   echo "❌ CHAIN STALLED after validator-$v restart — rolling back!"
                   cp "docker-compose.yml.bak-$TS" docker-compose.yml
-                  docker compose up -d --force-recreate
+                  sudo docker compose up -d --force-recreate
                   sleep 20
                   exit 1
                 fi
@@ -204,12 +204,12 @@ jobs:
 
             echo ""
             echo "=== 8. VERIFY Go ENV VARS IN RUNNING CONTAINER ==="
-            docker exec tpix-validator-1 env 2>/dev/null | grep -E "GOGC|GOMEM|GOMAX" || echo "(vars not visible via env — but set at process level)"
+            sudo docker exec tpix-validator-1 env 2>/dev/null | grep -E "GOGC|GOMEM|GOMAX" || echo "(vars not visible via env — but set at process level)"
 
             echo ""
             echo "=== 9. CONTAINER MEMORY LIMITS ==="
             for v in 1 2 3 4; do
-              LIMIT=$(docker inspect tpix-validator-$v --format '{{.HostConfig.Memory}}' 2>/dev/null)
+              LIMIT=$(sudo docker inspect tpix-validator-$v --format '{{.HostConfig.Memory}}' 2>/dev/null)
               HUMAN=$((LIMIT / 1024 / 1024 / 1024))
               echo "tpix-validator-$v: mem_limit = ${HUMAN}GB"
             done

@@ -9,7 +9,7 @@ jobs:
     steps:
       # ── ด่านกัน automation ล้าสมัยไปสั่งงานเครื่องผิด (เพิ่ม 2026-08-05) ──────────
       # workflow นี้ SSH เข้า secrets.SSH_HOST ซึ่งเป็นค่าเดี่ยว และสมมติว่า validator
-      # ทุกตัวอยู่ที่ $HOME/tpix-infrastructure บนเครื่องนั้น วันที่ย้าย validator
+      # ทุกตัวอยู่ที่ /opt/tpix บนเครื่องนั้น วันที่ย้าย validator
       # ออกไปคนละ VPS สมมติฐานนี้พัง แต่ workflow จะไม่ error — มันจะไปทำงานกับ
       # เครื่องเก่าอย่างมั่นใจ ดูรายละเอียดใน infrastructure/TOPOLOGY
       - name: Checkout repository
@@ -55,15 +55,15 @@ jobs:
             echo "--- Uptime / Load ---"
             uptime
             echo "--- Docker disk ---"
-            docker system df 2>/dev/null || echo "N/A"
+            sudo docker system df 2>/dev/null || echo "N/A"
             echo "--- Docker version ---"
-            docker --version
+            sudo docker --version
 
             echo ""
             echo "=== 2. CONTAINER STATUS (docker inspect) ==="
             for v in 1 2 3 4; do
               echo "--- validator-$v ---"
-              docker inspect tpix-validator-$v 2>/dev/null | python3 -c "
+              sudo docker inspect tpix-validator-$v 2>/dev/null | python3 -c "
             import sys,json
             d=json.load(sys.stdin)[0]
             s=d['State']
@@ -82,41 +82,41 @@ jobs:
 
             echo ""
             echo "=== 3. CONTAINER UPTIME (docker ps) ==="
-            docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}' 2>/dev/null | grep -E "tpix|NAMES" || echo "N/A"
+            sudo docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}' 2>/dev/null | grep -E "tpix|NAMES" || echo "N/A"
 
             echo ""
             echo "=== 4. VALIDATOR-1 LAST 60 LOGS ==="
-            docker logs --tail 60 tpix-validator-1 2>&1 | tail -60
+            sudo docker logs --tail 60 tpix-validator-1 2>&1 | tail -60
 
             echo ""
             echo "=== 5. VALIDATORS 2-4 LAST 15 LOGS ==="
             for v in 2 3 4; do
               echo "--- validator-$v ---"
-              docker logs --tail 15 tpix-validator-$v 2>&1 | tail -15
+              sudo docker logs --tail 15 tpix-validator-$v 2>&1 | tail -15
             done
 
             echo ""
             echo "=== 6. ERROR/PANIC SCAN (all validators, last 2000 lines) ==="
             for v in 1 2 3 4; do
               echo "--- validator-$v ---"
-              docker logs --tail 2000 tpix-validator-$v 2>&1 | grep -iE "error|panic|fatal|killed|oom|timeout|disconnect|round change|WARN|ERR" | grep -viE "executed txs.*failed=0" | tail -30
+              sudo docker logs --tail 2000 tpix-validator-$v 2>&1 | grep -iE "error|panic|fatal|killed|oom|timeout|disconnect|round change|WARN|ERR" | grep -viE "executed txs.*failed=0" | tail -30
             done
 
             echo ""
             echo "=== 7. ROUND CHANGE DETECTION (consensus stall indicator) ==="
             for v in 1 2 3 4; do
               echo "--- validator-$v ---"
-              docker logs --tail 5000 tpix-validator-$v 2>&1 | grep -iE "round change|round started: round=[^0]|state change|timeout|new round" | tail -20
+              sudo docker logs --tail 5000 tpix-validator-$v 2>&1 | grep -iE "round change|round started: round=[^0]|state change|timeout|new round" | tail -20
             done
 
             echo ""
             echo "=== 8. BLOCK PRODUCTION GAP CHECK ==="
             echo "Looking for gaps > 10s between blocks in validator-1..."
-            docker logs --tail 2000 tpix-validator-1 2>&1 | grep "new block:" | awk -F'Z ' '{print $1}' | tail -50
+            sudo docker logs --tail 2000 tpix-validator-1 2>&1 | grep "new block:" | awk -F'Z ' '{print $1}' | tail -50
 
             echo ""
             echo "=== 9. DOCKER EVENTS (last 48h, raw) ==="
-            docker events --since "48h" --until "$(date -u +%Y-%m-%dT%H:%M:%S)" 2>/dev/null | grep -i tpix | tail -40 || echo "No docker events"
+            sudo docker events --since "48h" --until "$(date -u +%Y-%m-%dT%H:%M:%S)" 2>/dev/null | grep -i tpix | tail -40 || echo "No docker events"
 
             echo ""
             echo "=== 10. SYSTEM LOGS (OOM + crashes) ==="
@@ -124,7 +124,7 @@ jobs:
 
             echo ""
             echo "=== 11. DATA DIRECTORY SIZES ==="
-            INFRA="$HOME/tpix-infrastructure"
+            INFRA="/opt/tpix"
             du -sh "$INFRA"/data/validator-*/blockchain 2>/dev/null || du -sh "$INFRA"/validator-*/data 2>/dev/null || echo "Cannot find data dirs"
             ls -la "$INFRA"/ 2>/dev/null | head -20 || echo "Cannot list infra dir"
 

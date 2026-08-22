@@ -23,7 +23,7 @@ jobs:
     steps:
       # ── ด่านกัน automation ล้าสมัยไปสั่งงานเครื่องผิด (เพิ่ม 2026-08-05) ──────────
       # workflow นี้ SSH เข้า secrets.SSH_HOST ซึ่งเป็นค่าเดี่ยว และสมมติว่า validator
-      # ทุกตัวอยู่ที่ $HOME/tpix-infrastructure บนเครื่องนั้น วันที่ย้าย validator
+      # ทุกตัวอยู่ที่ /opt/tpix บนเครื่องนั้น วันที่ย้าย validator
       # ออกไปคนละ VPS สมมติฐานนี้พัง แต่ workflow จะไม่ error — มันจะไปทำงานกับ
       # เครื่องเก่าอย่างมั่นใจ ดูรายละเอียดใน infrastructure/TOPOLOGY
       - name: Checkout repository
@@ -67,15 +67,15 @@ jobs:
 
             if [ "$B1" = "0" ]; then
               echo "⚠️ RPC unavailable — checking containers..."
-              RUNNING=$(docker ps --filter "name=tpix-validator" --format '{{.Names}}' | wc -l)
+              RUNNING=$(sudo docker ps --filter "name=tpix-validator" --format '{{.Names}}' | wc -l)
               if [ "$RUNNING" -lt 4 ]; then
                 echo "🔴 Only $RUNNING/4 validators running — starting all..."
-                cd "$HOME/tpix-infrastructure"
-                docker compose up -d 2>/dev/null || docker compose -f docker-compose.yml up -d 2>/dev/null
+                cd "/opt/tpix"
+                sudo docker compose up -d 2>/dev/null || sudo docker compose -f docker-compose.yml up -d 2>/dev/null
                 sleep 15
               else
                 echo "Containers running but RPC down — restarting..."
-                docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4
+                sudo docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4
                 sleep 15
               fi
               B1=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
@@ -103,11 +103,11 @@ jobs:
 
               # Check for round escalation (consensus stall indicator)
               echo "--- Consensus state ---"
-              docker logs --tail 50 tpix-validator-1 2>&1 | grep -iE "round started: round=[^0]|round change" | tail -5
+              sudo docker logs --tail 50 tpix-validator-1 2>&1 | grep -iE "round started: round=[^0]|round change" | tail -5
 
               echo ""
               echo "🔄 Auto-restarting all validators..."
-              docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4
+              sudo docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4
 
               echo "Waiting 20s for consensus..."
               sleep 20
@@ -130,7 +130,7 @@ jobs:
               else
                 echo "❌ Chain still not producing blocks after restart!"
                 echo "Manual intervention required."
-                docker logs --tail 20 tpix-validator-1 2>&1 | tail -10
+                sudo docker logs --tail 20 tpix-validator-1 2>&1 | tail -10
                 exit 1
               fi
             else
