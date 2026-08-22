@@ -118,6 +118,9 @@ class NodeManager extends EventEmitter {
                 tier: 'light',
                 walletAddress: '',
                 rewardWallet: '', // wallet address to receive node rewards (defaults to walletAddress if empty)
+                // แอดเดรสสัญญา NodeRegistryV2 — ว่าง = ยังไม่ deploy
+                // แอปจะกลับไปใช้โหมดประมาณการในเครื่องที่ติดป้ายไว้ว่าไม่ใช่เงินจริง
+                registryAddress: '',
                 rpcUrl: TPIX_RPC,
                 chainId: CHAIN_ID,
                 p2pPort: 30303,
@@ -136,7 +139,7 @@ class NodeManager extends EventEmitter {
 
     saveConfig(newConfig) {
         // Whitelist allowed config keys to prevent injection
-        const ALLOWED = ['nodeName', 'tier', 'walletAddress', 'rewardWallet', 'rpcUrl', 'chainId', 'p2pPort', 'rpcPort', 'dashboardPort', 'maxPeers', 'autoStart', 'bootnodes'];
+        const ALLOWED = ['nodeName', 'tier', 'walletAddress', 'rewardWallet', 'registryAddress', 'rpcUrl', 'chainId', 'p2pPort', 'rpcPort', 'dashboardPort', 'maxPeers', 'autoStart', 'bootnodes'];
         if (newConfig) {
             for (const key of Object.keys(newConfig)) {
                 if (ALLOWED.includes(key)) {

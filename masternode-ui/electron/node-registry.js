@@ -13,6 +13,17 @@
 
 const { rpcCall } = require('./rpc-client');
 
+/**
+ * error ที่ตั้งใจให้ผู้ใช้อ่านตรง ๆ — main.js จะปล่อยผ่าน sanitizeError
+ * ข้อความพวกนี้ไม่มีพาธไฟล์ ไม่มี stack ไม่มีข้อมูลลับ มีแต่กติกาของสัญญา
+ */
+function userError(message, code) {
+    const e = new Error(message);
+    e.userFacing = true;
+    if (code) e.code = code;
+    return e;
+}
+
 const CHAIN_ID = 4289;
 
 // gas limit ต่อฟังก์ชัน — เชนนี้ gas = 0 แต่ยังต้องใส่ให้พอ ไม่งั้น out of gas
@@ -66,7 +77,7 @@ class NodeRegistryClient {
             return { configured: false };
         }
         if (!ethers.isAddress(addr)) {
-            throw new Error('แอดเดรสสัญญาไม่ถูกต้อง');
+            throw userError('แอดเดรสสัญญาไม่ถูกต้อง');
         }
         this.address = ethers.getAddress(addr);
         return { configured: true, address: this.address };
@@ -86,9 +97,7 @@ class NodeRegistryClient {
 
     _requireConfigured() {
         if (!this.isConfigured()) {
-            const e = new Error('ยังไม่ได้ตั้งแอดเดรสสัญญา NodeRegistry');
-            e.code = 'REGISTRY_NOT_CONFIGURED';
-            throw e;
+            throw userError('ยังไม่ได้ตั้งแอดเดรสสัญญา NodeRegistry', 'REGISTRY_NOT_CONFIGURED');
         }
     }
 
@@ -117,7 +126,7 @@ class NodeRegistryClient {
         const data = iface.encodeFunctionData(fnName, args);
         const raw = await rpcCall('eth_call', [{ to: this.address, data }, 'latest']);
         if (!raw || raw === '0x') {
-            throw new Error(`สัญญาไม่ตอบสำหรับ ${fnName} — ตรวจว่าแอดเดรสถูกเชนถูกหรือไม่`);
+            throw userError(`สัญญาไม่ตอบสำหรับ ${fnName} — ตรวจว่าแอดเดรสถูกเชนถูกหรือไม่`);
         }
         return iface.decodeFunctionResult(fnName, raw);
     }
@@ -185,7 +194,7 @@ class NodeRegistryClient {
 
     async getTierInfo(tierName) {
         const idx = TIER_INDEX[tierName];
-        if (idx === undefined) throw new Error(`tier ไม่รู้จัก: ${tierName}`);
+        if (idx === undefined) throw userError(`tier ไม่รู้จัก: ${tierName}`);
         const [t] = await this._call('getTierInfo', [idx]);
         return {
             tier: tierName,
@@ -258,29 +267,29 @@ class NodeRegistryClient {
      */
     async registerNode(privateKey, fromAddress, tierName, endpoint, stakeWei, walletId) {
         const idx = TIER_INDEX[tierName];
-        if (idx === undefined) throw new Error(`tier ไม่รู้จัก: ${tierName}`);
+        if (idx === undefined) throw userError(`tier ไม่รู้จัก: ${tierName}`);
 
         const ep = String(endpoint || '').trim();
-        if (!ep) throw new Error('ต้องระบุ endpoint ของโหนด');
-        if (ep.length > 100) throw new Error('endpoint ยาวเกิน 100 ตัวอักษร');
+        if (!ep) throw userError('ต้องระบุ endpoint ของโหนด');
+        if (ep.length > 100) throw userError('endpoint ยาวเกิน 100 ตัวอักษร');
 
         const value = BigInt(stakeWei);
-        if (value <= 0n) throw new Error('จำนวน stake ต้องมากกว่า 0');
+        if (value <= 0n) throw userError('จำนวน stake ต้องมากกว่า 0');
 
         // ตรวจกับสัญญาก่อนส่ง เพื่อให้ผู้ใช้เห็นเหตุผลชัด แทน revert เปล่า ๆ
         const tier = await this.getTierInfo(tierName);
         if (value < BigInt(tier.minStakeWei)) {
-            throw new Error(
+            throw userError(
                 `ระดับ ${tierName} ต้อง stake อย่างน้อย ${BigInt(tier.minStakeWei) / 10n ** 18n} TPIX`
             );
         }
         if (tier.maxNodes > 0 && tier.activeNodes >= tier.maxNodes) {
-            throw new Error(`ระดับ ${tierName} เต็มแล้ว (${tier.activeNodes}/${tier.maxNodes})`);
+            throw userError(`ระดับ ${tierName} เต็มแล้ว (${tier.activeNodes}/${tier.maxNodes})`);
         }
 
         const existing = await this.getNodeInfo(fromAddress);
         if (existing && existing.status === 'active') {
-            throw new Error('กระเป๋านี้ลงทะเบียนโหนดไว้แล้ว');
+            throw userError('กระเป๋านี้ลงทะเบียนโหนดไว้แล้ว');
         }
 
         return this._send(privateKey, fromAddress, 'registerNode', [idx, ep], {
@@ -297,7 +306,7 @@ class NodeRegistryClient {
      */
     async getChainTime() {
         const block = await rpcCall('eth_getBlockByNumber', ['latest', false]);
-        if (!block || !block.timestamp) throw new Error('อ่านเวลาจากเชนไม่ได้');
+        if (!block || !block.timestamp) throw userError('อ่านเวลาจากเชนไม่ได้');
         return parseInt(block.timestamp, 16);
     }
 
@@ -307,12 +316,12 @@ class NodeRegistryClient {
     async deregisterNode(privateKey, fromAddress, walletId) {
         const node = await this.getNodeInfo(fromAddress);
         if (!node || node.status !== 'active') {
-            throw new Error('ไม่มีโหนดที่ทำงานอยู่สำหรับกระเป๋านี้');
+            throw userError('ไม่มีโหนดที่ทำงานอยู่สำหรับกระเป๋านี้');
         }
         const now = await this.getChainTime();
         if (now < node.unlockAt) {
             const days = Math.ceil((node.unlockAt - now) / 86400);
-            throw new Error(`ยังอยู่ในช่วงล็อก เหลืออีก ${days} วัน`);
+            throw userError(`ยังอยู่ในช่วงล็อก เหลืออีก ${days} วัน`);
         }
         return this._send(privateKey, fromAddress, 'deregisterNode', [], { walletId });
     }
@@ -324,9 +333,9 @@ class NodeRegistryClient {
         const r = await this.getRewards(fromAddress);
         if (BigInt(r.claimableWei) === 0n) {
             if (BigInt(r.earnedWei) > 0n) {
-                throw new Error('มีรางวัลค้างอยู่แต่ reward pool ยังเติมไม่พอ — ยอดไม่หาย เบิกได้เมื่อพูลมีเงิน');
+                throw userError('มีรางวัลค้างอยู่แต่ reward pool ยังเติมไม่พอ — ยอดไม่หาย เบิกได้เมื่อพูลมีเงิน');
             }
-            throw new Error('ยังไม่มีรางวัลให้เบิก');
+            throw userError('ยังไม่มีรางวัลให้เบิก');
         }
         return this._send(privateKey, fromAddress, 'claimRewards', [], { walletId });
     }
@@ -336,7 +345,7 @@ class NodeRegistryClient {
      */
     async fundRewardPool(privateKey, fromAddress, amountWei, walletId) {
         const value = BigInt(amountWei);
-        if (value <= 0n) throw new Error('จำนวนต้องมากกว่า 0');
+        if (value <= 0n) throw userError('จำนวนต้องมากกว่า 0');
         return this._send(privateKey, fromAddress, 'fundRewardPool', [], {
             valueWei: value,
             walletId,

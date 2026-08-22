@@ -12,6 +12,7 @@ const WalletManager = require('./wallet-manager');
 const TransactionManager = require('./transaction-manager');
 const IdentityManager = require('./identity-manager');
 const AppUpdater = require('./auto-updater');
+const { NodeRegistryClient } = require('./node-registry');
 const chainHealth = require('./chain-health');
 
 let mainWindow = null;
@@ -20,6 +21,7 @@ let db = null;
 let nodeManager = null;
 let walletManager = null;
 let txManager = null;
+let nodeRegistry = null;
 let identityManager = null;
 let appUpdater = null;
 
@@ -113,6 +115,10 @@ function createTray() {
 // Strips file paths, stack traces, and internal details.
 function sanitizeError(err) {
     const msg = err && err.message ? err.message : String(err);
+    // error ที่โมดูลตั้งใจให้ผู้ใช้อ่าน (เช่นกติกาของสัญญา staking)
+    // ไม่มีพาธไฟล์/stack/ข้อมูลลับ ปล่อยผ่านได้ ไม่งั้นทุกอาการกลายเป็น
+    // "Operation failed" เหมือนกันหมดจนแก้ปัญหาไม่ถูก
+    if (err && err.userFacing) return msg;
     // Known safe error messages to pass through
     const safePatterns = [
         'Wallet not found', 'No active wallet', 'Wrong password',
@@ -143,6 +149,13 @@ function setupIPC() {
     nodeManager = new NodeManager(db);
     walletManager = new WalletManager(db);
     txManager = new TransactionManager(db);
+    nodeRegistry = new NodeRegistryClient(db);
+    try {
+        // ที่อยู่สัญญามาจาก config ของผู้ใช้ — ว่างได้ แปลว่ายังไม่ deploy
+        nodeRegistry.setAddress((nodeManager.config && nodeManager.config.registryAddress) || '');
+    } catch (err) {
+        console.warn('[registry] ที่อยู่สัญญาใน config ใช้ไม่ได้:', err.message);
+    }
     identityManager = new IdentityManager(db);
 
     // ═══════════════════════════════════════════════════════════
@@ -332,6 +345,114 @@ function setupIPC() {
     // ═══════════════════════════════════════════════════════════
     //  STAKING
     // ═══════════════════════════════════════════════════════════
+
+    // ═══════════════════════════════════════════════════════════
+    //  NODE REGISTRY (สัญญา staking จริงบนเชน)
+    //  ทุก handler คืน { success, data|error } เหมือนกลุ่มอื่น
+    //  ถ้ายังไม่ตั้งแอดเดรสสัญญา จะได้ code REGISTRY_NOT_CONFIGURED
+    //  ให้หน้าจอรู้ว่าต้องกลับไปโหมดประมาณการ ไม่ใช่ error จริง
+    // ═══════════════════════════════════════════════════════════
+
+    ipcMain.handle('registry:status', async () => {
+        try {
+            if (!nodeRegistry.isConfigured()) {
+                return { success: true, data: { configured: false, deployed: false, address: '' } };
+            }
+            const v = await nodeRegistry.verifyDeployed();
+            return { success: true, data: { configured: true, ...v } };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err) };
+        }
+    });
+
+    ipcMain.handle('registry:setAddress', (_, address) => {
+        try {
+            const r = nodeRegistry.setAddress(typeof address === 'string' ? address.trim() : '');
+            nodeManager.saveConfig({ registryAddress: r.address || '' });
+            return { success: true, data: r };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err) };
+        }
+    });
+
+    ipcMain.handle('registry:getNode', async (_, address) => {
+        try {
+            return { success: true, data: await nodeRegistry.getNodeInfo(address) };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err), code: err.code };
+        }
+    });
+
+    ipcMain.handle('registry:getRewards', async (_, address) => {
+        try {
+            return { success: true, data: await nodeRegistry.getRewards(address) };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err), code: err.code };
+        }
+    });
+
+    ipcMain.handle('registry:getPoolStatus', async () => {
+        try {
+            return { success: true, data: await nodeRegistry.getRewardPoolStatus() };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err), code: err.code };
+        }
+    });
+
+    ipcMain.handle('registry:getNetworkStats', async () => {
+        try {
+            return { success: true, data: await nodeRegistry.getNetworkStats() };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err), code: err.code };
+        }
+    });
+
+    ipcMain.handle('registry:getTierInfo', async (_, tier) => {
+        try {
+            return { success: true, data: await nodeRegistry.getTierInfo(tier) };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err), code: err.code };
+        }
+    });
+
+    ipcMain.handle('registry:register', async (_, { tier, endpoint, stakeWei, password }) => {
+        try {
+            const w = walletManager.getActiveWallet();
+            if (!w) throw new Error('No active wallet');
+            const privateKey = walletManager.exportKey(w.id, typeof password === 'string' ? password : '');
+            if (!privateKey) throw new Error('Wrong password');
+            const r = await nodeRegistry.registerNode(privateKey, w.address, tier, endpoint, stakeWei, w.id);
+            return { success: true, data: r };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err), code: err.code };
+        }
+    });
+
+    ipcMain.handle('registry:deregister', async (_, password) => {
+        try {
+            const w = walletManager.getActiveWallet();
+            if (!w) throw new Error('No active wallet');
+            const privateKey = walletManager.exportKey(w.id, typeof password === 'string' ? password : '');
+            if (!privateKey) throw new Error('Wrong password');
+            const r = await nodeRegistry.deregisterNode(privateKey, w.address, w.id);
+            return { success: true, data: r };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err), code: err.code };
+        }
+    });
+
+    ipcMain.handle('registry:claim', async (_, password) => {
+        try {
+            const w = walletManager.getActiveWallet();
+            if (!w) throw new Error('No active wallet');
+            const privateKey = walletManager.exportKey(w.id, typeof password === 'string' ? password : '');
+            if (!privateKey) throw new Error('Wrong password');
+            const r = await nodeRegistry.claimRewards(privateKey, w.address, w.id);
+            return { success: true, data: r };
+        } catch (err) {
+            return { success: false, error: sanitizeError(err), code: err.code };
+        }
+    });
 
     ipcMain.handle('staking:validateBalance', async (_, walletAddress, tier) => {
         try {

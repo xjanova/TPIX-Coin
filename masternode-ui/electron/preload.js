@@ -27,7 +27,21 @@ contextBridge.exposeInMainWorld('tpix', {
         onRewardAccrued: (cb) => onEvent('node:rewardAccrued', cb),
     },
 
-    // Staking
+    // สัญญา staking จริงบนเชน — แยกจาก staking: ที่เป็นข้อมูลในเครื่อง
+    registry: {
+        status: () => ipcRenderer.invoke('registry:status'),
+        setAddress: (address) => ipcRenderer.invoke('registry:setAddress', address),
+        getNode: (address) => ipcRenderer.invoke('registry:getNode', address),
+        getRewards: (address) => ipcRenderer.invoke('registry:getRewards', address),
+        getPoolStatus: () => ipcRenderer.invoke('registry:getPoolStatus'),
+        getNetworkStats: () => ipcRenderer.invoke('registry:getNetworkStats'),
+        getTierInfo: (tier) => ipcRenderer.invoke('registry:getTierInfo', tier),
+        register: (payload) => ipcRenderer.invoke('registry:register', payload),
+        deregister: (password) => ipcRenderer.invoke('registry:deregister', password),
+        claim: (password) => ipcRenderer.invoke('registry:claim', password),
+    },
+
+    // Staking (ข้อมูลในเครื่อง — ยอดประมาณการ ไม่ใช่เงินบนเชน)
     staking: {
         validateBalance: (walletAddress, tier) => ipcRenderer.invoke('staking:validateBalance', walletAddress, tier),
         register: (data) => ipcRenderer.invoke('staking:register', data),
