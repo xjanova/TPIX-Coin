@@ -175,17 +175,48 @@
                                 <div class="stat-value text-cyan">{{ formatTpix(stakingInfo.stake_amount) }} TPIX</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-label">{{ i18n.staking.totalRewards }}</div>
-                                <div class="stat-value text-green">{{ rewards.total || 0 }} TPIX</div>
+                                <div class="stat-label">{{ i18n.staking.estimatedAccrued }}</div>
+                                <div class="stat-value text-muted">
+                                    &asymp; {{ Number(rewards.total || 0).toFixed(4) }} TPIX
+                                    <span class="source-badge source-demo" style="margin-left:4px">{{ i18n.staking.estimateOnly }}</span>
+                                </div>
                             </div>
                             <div class="stat-card">
                                 <div class="stat-label">{{ i18n.staking.uptime }}</div>
                                 <div class="stat-value">{{ formatDuration(stakingInfo.total_uptime_seconds + nodeUptime) }}</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-label">{{ i18n.staking.rewardWallet }}</div>
-                                <div class="stat-value" style="font-size:12px;">{{ shortAddr(stakingInfo.reward_wallet) }}</div>
+                                <div class="stat-label">{{ i18n.staking.onChainBalance }}</div>
+                                <div class="stat-value text-green" v-if="rewardWalletBalance !== null">{{ rewardWalletBalance }} TPIX</div>
+                                <div class="stat-value text-muted" style="font-size:13px" v-else-if="rewardWalletState === 'error'">{{ i18n.staking.balanceUnavailable }}</div>
+                                <div class="stat-value text-muted" style="font-size:13px" v-else>{{ i18n.staking.loadingBalance }}</div>
                             </div>
+                        </div>
+
+                        <!-- รายงานรางวัล: แอดเดรสจริง + ยอดจริงบนเชน + คำเตือนว่ายอดประมาณการยังไม่ใช่เงิน -->
+                        <div class="reward-report mt-4">
+                            <div class="section-title" style="font-size:13px">{{ i18n.staking.rewardReport }}</div>
+                            <div class="reward-report-row">
+                                <span class="reward-report-label">{{ i18n.staking.rewardWalletAddr }}</span>
+                                <span class="mono reward-report-addr">{{ rewardWalletAddress || '—' }}</span>
+                                <button v-if="rewardWalletAddress" @click="copyToClipboard(rewardWalletAddress)"
+                                        class="btn btn-ghost btn-xs" :title="i18n.staking.copyAddr">&#128203;</button>
+                            </div>
+                            <div class="reward-report-row">
+                                <span class="reward-report-label">{{ i18n.staking.onChainBalance }}</span>
+                                <strong class="text-green" v-if="rewardWalletBalance !== null">{{ rewardWalletBalance }} TPIX</strong>
+                                <strong class="text-muted" v-else-if="rewardWalletState === 'error'">{{ i18n.staking.balanceUnavailable }}</strong>
+                                <strong class="text-muted" v-else>{{ i18n.staking.loadingBalance }}</strong>
+                                <button @click="loadRewardWalletBalance" class="btn btn-ghost btn-xs"
+                                        :disabled="rewardWalletState === 'loading'">&#8635;</button>
+                                <span v-if="rewardWalletCheckedAt" class="metric-sub">{{ i18n.staking.checkedAt }} {{ new Date(rewardWalletCheckedAt).toLocaleTimeString() }}</span>
+                            </div>
+                            <div class="reward-report-row">
+                                <span class="reward-report-label">{{ i18n.staking.estimatedAccrued }}</span>
+                                <strong class="text-muted">&asymp; {{ Number(rewards.total || 0).toFixed(4) }} TPIX</strong>
+                                <span class="source-badge source-demo">{{ i18n.staking.estimateOnly }}</span>
+                            </div>
+                            <p class="reward-report-note">{{ i18n.staking.estimateNote }}</p>
                         </div>
                     </div>
 
@@ -1040,13 +1071,18 @@
                         <div class="map-header">
                             <h3 class="section-title">{{ i18n.masternodeMap.mapTitle }}
                                 <span v-if="masternodeStats.liveCount > 0" class="source-badge source-chain" style="margin-left:8px;font-size:10px">{{ masternodeStats.liveCount }} CHAIN</span>
-                                <span class="source-badge source-demo" style="margin-left:4px;font-size:10px">{{ masternodeStats.total - (masternodeStats.liveCount || 0) }} {{ i18n.masternodeMap.demoNode }}</span>
                             </h3>
                             <div class="map-controls">
                                 <button @click="mapZoomAll" class="btn btn-ghost btn-sm">&#127760; {{ i18n.masternodeMap.zoomAll }}</button>
                             </div>
                         </div>
-                        <div id="leaflet-map" class="leaflet-map-container"></div>
+                        <div class="leaflet-map-wrap">
+                            <div id="leaflet-map" class="leaflet-map-container"></div>
+                            <div v-if="!hasMappableNodes" class="map-empty-overlay">
+                                <span class="map-empty-icon">&#128506;</span>
+                                <p>{{ i18n.masternodeMap.noMappableNodes }}</p>
+                            </div>
+                        </div>
                         <div class="globe-legend">
                             <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span> {{ i18n.masternodeMap.validator }}</span>
                             <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> {{ i18n.masternodeMap.guardian }}</span>
@@ -1100,21 +1136,28 @@
                                         <td class="mn-location">
                                             <span class="mn-flag">{{ node.flag }}</span>
                                             <div class="mn-loc-info">
-                                                <span class="mn-city">{{ node.isMyNode ? i18n.staking.myNode : node.city }}</span>
-                                                <span class="mn-country-name">{{ node.countryName }}</span>
+                                                <span class="mn-city">{{ node.isMyNode ? i18n.staking.myNode : (node.city || i18n.masternodeMap.locationUndisclosed) }}</span>
+                                                <span class="mn-country-name">{{ node.countryName || '' }}</span>
                                             </div>
                                         </td>
                                         <td><span :class="['type-badge', 'type-' + node.type]">{{ node.type }}</span></td>
                                         <td class="mn-addr-cell mono">{{ node.addr }}</td>
-                                        <td class="mn-ip mono">{{ node.ip }}</td>
+                                        <td class="mn-ip mono">{{ node.ip || '—' }}</td>
                                         <td>
                                             <span :class="['status-dot', node.online ? 'online' : 'offline']"></span>
                                             {{ node.online ? (lang === 'th' ? 'ออนไลน์' : 'Online') : (lang === 'th' ? 'ออฟไลน์' : 'Offline') }}
                                             <span v-if="node.isLiveValidator" class="source-badge source-chain">CHAIN</span>
-                                            <span v-else-if="node.isDemo" class="source-badge source-demo">{{ i18n.masternodeMap.demoNode }}</span>
                                             <span v-else class="source-badge source-live">{{ i18n.masternodeMap.liveNode }}</span>
                                         </td>
-                                        <td class="text-cyan">{{ node.totalRewards }} TPIX</td>
+                                        <td>
+                                            <template v-if="node.totalRewards === null">
+                                                <span class="text-muted" style="font-size:11px">{{ i18n.masternodeMap.rewardsNotOnChain }}</span>
+                                            </template>
+                                            <template v-else>
+                                                <span class="text-muted">&asymp; {{ node.totalRewards }} TPIX</span>
+                                                <span v-if="node.rewardsAreEstimate" class="source-badge source-demo">{{ i18n.staking.estimateOnly }}</span>
+                                            </template>
+                                        </td>
                                         <td>
                                             <button @click.stop="checkNodeRewards(node)" class="btn btn-ghost btn-xs" :title="i18n.masternodeMap.checkRewards">&#128270;</button>
                                         </td>
@@ -1131,13 +1174,18 @@
                             <div class="node-reward-header">
                                 <span class="mn-flag" style="font-size:32px">{{ selectedNodeReward.flag }}</span>
                                 <div>
-                                    <div class="text-cyan">{{ selectedNodeReward.city }}, {{ selectedNodeReward.countryName }}</div>
+                                    <div class="text-cyan" v-if="selectedNodeReward.city">{{ selectedNodeReward.city }}<template v-if="selectedNodeReward.countryName">, {{ selectedNodeReward.countryName }}</template></div>
+                                    <div class="text-muted" style="font-size:12px" v-else>{{ i18n.masternodeMap.locationUndisclosed }}</div>
                                     <div class="mono" style="font-size:12px">{{ selectedNodeReward.addr }}</div>
                                     <span :class="['type-badge', 'type-' + selectedNodeReward.type]">{{ selectedNodeReward.type }}</span>
                                 </div>
                             </div>
                             <div class="reward-summary-box mt-4">
-                                <div class="reward-stat"><span>{{ i18n.masternodeMap.totalRewardsLabel }}</span><strong class="text-cyan">{{ selectedNodeReward.totalRewards }} TPIX</strong></div>
+                                <div class="reward-stat">
+                                    <span>{{ i18n.masternodeMap.totalRewardsLabel }}</span>
+                                    <strong class="text-muted" v-if="selectedNodeReward.totalRewards === null">{{ i18n.masternodeMap.rewardsNotOnChain }}</strong>
+                                    <strong class="text-muted" v-else>&asymp; {{ selectedNodeReward.totalRewards }} TPIX <span class="source-badge source-demo">{{ i18n.staking.estimateOnly }}</span></strong>
+                                </div>
                                 <div class="reward-stat"><span>{{ i18n.masternodeMap.blocksProduced }}</span><strong>{{ selectedNodeReward.rewards.length }}</strong></div>
                             </div>
                             <div class="reward-blocks-list mt-4">

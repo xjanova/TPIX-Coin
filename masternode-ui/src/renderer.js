@@ -306,9 +306,22 @@ const LANG = {
             balanceOk: 'Balance sufficient',
             stakingRequired: 'You must stake TPIX to run a node',
             myNode: 'My Node',
+            rewardReport: 'Reward Report',
+            rewardWalletAddr: 'Reward wallet address',
+            onChainBalance: 'Actual on-chain balance',
+            estimatedAccrued: 'Estimated accrued (not paid)',
+            balanceUnavailable: 'Cannot read from chain',
+            loadingBalance: 'Reading from chain...',
+            estimateOnly: 'ESTIMATE',
+            estimateNote: 'This figure is calculated locally by this app from your tier APY and uptime. The masternode staking contract is not deployed on TPIX Chain yet, so no reward has actually been paid. Only the on-chain balance above is real money.',
+            checkedAt: 'Checked',
+            copyAddr: 'Copy address',
         },
         masternodeMap: {
             title: 'Masternode Network',
+            locationUndisclosed: 'Not disclosed',
+            noMappableNodes: 'No node has published its location yet — the chain validators run on a single host and their coordinates are not public. Nodes are listed in the table below.',
+            rewardsNotOnChain: 'No on-chain reward contract yet',
             totalNodes: 'Total Nodes',
             countries: 'Countries',
             types: 'Node Types',
@@ -331,7 +344,6 @@ const LANG = {
             blocksProduced: 'Blocks Produced',
             rewardHistory: 'Reward History',
             liveNode: 'LIVE',
-            demoNode: 'DEMO',
             chainValidator: 'Chain Validator',
         },
         status: { stopped: 'Stopped', starting: 'Starting...', running: 'Running', syncing: 'Syncing', error: 'Error' },
@@ -633,9 +645,22 @@ const LANG = {
             balanceOk: 'ยอดเงินเพียงพอ',
             stakingRequired: 'ต้อง Stake TPIX เพื่อรันโหนด',
             myNode: 'โหนดของฉัน',
+            rewardReport: 'รายงานรางวัล',
+            rewardWalletAddr: 'แอดเดรสกระเป๋ารับรางวัล',
+            onChainBalance: 'ยอดจริงบนเชน',
+            estimatedAccrued: 'ยอดประมาณการสะสม (ยังไม่จ่าย)',
+            balanceUnavailable: 'อ่านจากเชนไม่ได้',
+            loadingBalance: 'กำลังอ่านจากเชน...',
+            estimateOnly: 'ประมาณการ',
+            estimateNote: 'ตัวเลขนี้แอปคำนวณเองในเครื่องจาก APY ของระดับโหนดคูณเวลาออนไลน์ ตอนนี้ยังไม่ได้ deploy สัญญา staking ของมาสเตอร์โหนดขึ้น TPIX Chain จึงยังไม่มีการจ่ายรางวัลจริงเกิดขึ้น เงินจริงคือยอดบนเชนด้านบนเท่านั้น',
+            checkedAt: 'ตรวจเมื่อ',
+            copyAddr: 'คัดลอกแอดเดรส',
         },
         masternodeMap: {
             title: 'เครือข่ายมาสเตอร์โหนด',
+            locationUndisclosed: 'ไม่เปิดเผย',
+            noMappableNodes: 'ยังไม่มีโหนดที่เปิดเผยตำแหน่ง — validator ของเชนรันอยู่บนโฮสต์เดียวและไม่ประกาศพิกัด ดูรายการโหนดได้ในตารางด้านล่าง',
+            rewardsNotOnChain: 'ยังไม่มีสัญญาจ่ายรางวัลบนเชน',
             totalNodes: 'โหนดทั้งหมด',
             countries: 'ประเทศ',
             types: 'ประเภทโหนด',
@@ -658,7 +683,6 @@ const LANG = {
             blocksProduced: 'บล็อกที่ผลิต',
             rewardHistory: 'ประวัติรางวัล',
             liveNode: 'สด',
-            demoNode: 'เดโม',
             chainValidator: 'ผู้ตรวจสอบเชน',
         },
         status: { stopped: 'หยุด', starting: 'กำลังเริ่ม...', running: 'ทำงาน', syncing: 'กำลังซิงค์', error: 'ข้อผิดพลาด' },
@@ -892,6 +916,13 @@ const app = createApp({
         const txPage = ref(1);
         const txTotal = ref(0);
         const rewards = ref({ rewards: [], total: 0 });
+        // ยอดจริงบนเชนของกระเป๋ารับรางวัล — ต้องแยกจาก rewards.total ซึ่งเป็นแค่
+        // ตัวเลขที่แอปคำนวณเองลง SQLite ยังไม่มีสัญญาจ่ายรางวัลบนเชน (tx = 0 ทั้งเชน)
+        const rewardWalletBalance = ref(null);
+        const rewardWalletCheckedAt = ref(null);
+        // 'idle' = ยังไม่เคยถาม · 'loading' = กำลังถาม · 'ok' · 'error'
+        // แยกไว้ไม่งั้นเปิดหน้าครั้งแรกจะขึ้น "อ่านจากเชนไม่ได้" ทั้งที่แค่ยังไม่เสร็จ
+        const rewardWalletState = ref('idle');
         const walletNameEdit = ref(null);
         const walletNameInput = ref('');
 
@@ -950,10 +981,17 @@ const app = createApp({
         const masternodeCountries = computed(() => {
             const map = {};
             masternodeData.value.forEach(n => {
+                // โหนดที่ไม่เปิดเผยประเทศไม่ต้องเข้าตัวกรอง — ถ้าปล่อยผ่าน
+                // name จะเป็น null แล้ว localeCompare โยน TypeError ทั้ง dropdown
+                if (!n.country || !n.countryName) return;
                 if (!map[n.country]) map[n.country] = { code: n.country, name: n.countryName, flag: n.flag };
             });
             return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
         });
+
+        // มีโหนดที่เปิดเผยพิกัดจริงไหม — ใช้ตัดสินว่าจะขึ้น empty state ทับแผนที่
+        const hasMappableNodes = computed(() =>
+            masternodeData.value.some(n => n.mappable && n.lat != null && n.lng != null));
 
         const filteredMasternodes = computed(() => {
             return masternodeData.value.filter(n => {
@@ -968,6 +1006,13 @@ const app = createApp({
         const stakingValidation = ref(null); // Balance validation result
         const stakingLoading = ref(false);
         const stakingError = ref('');
+
+        // กระเป๋าที่รางวัลจะเข้าจริง — ถ้าไม่ได้ตั้งแยกไว้ ใช้กระเป๋าที่ stake
+        const rewardWalletAddress = computed(() => {
+            const s = stakingInfo.value;
+            if (!s) return '';
+            return s.reward_wallet || s.wallet_address || '';
+        });
 
         // ─── Update State ─────────────────────────
         const updateStatus = ref({
@@ -1693,104 +1738,72 @@ const app = createApp({
                 }
             } catch { /* chain not reachable — will use demo nodes */ }
 
-            // ── Build LIVE validator nodes from chain data ──
-            const validatorLocations = [
-                { lat: 13.75, lng: 100.50, city: 'Bangkok', country: 'TH', countryName: 'Thailand' },
-                { lat: 18.79, lng: 98.98, city: 'Chiang Mai', country: 'TH', countryName: 'Thailand' },
-                { lat: 7.88, lng: 98.39, city: 'Phuket', country: 'TH', countryName: 'Thailand' },
-                { lat: 14.88, lng: 102.83, city: 'Nakhon Ratchasima', country: 'TH', countryName: 'Thailand' },
-            ];
+            // ── สร้างรายการ validator จากข้อมูลเชนล้วน ──
+            // ตำแหน่งภูมิศาสตร์: validator ทั้งชุดรันอยู่บนโฮสต์เดียว และโครงการ
+            // ไม่เปิดเผยพิกัดเครื่อง จึง **ไม่ปักหมุดบนแผนที่** — เดาพิกัดแล้วโชว์
+            // เป็นเมืองต่าง ๆ คือการโกหกผู้ใช้ ให้แสดงในตารางอย่างเดียว
+            // รางวัล: ยังไม่มีสัญญาจ่ายรางวัลบนเชน (ดู deployed-contracts.json)
+            // จึงไม่มีตัวเลขให้แสดง — ใช้ null แล้วให้ UI ขึ้นขีดกลาง
             let nodes = [];
 
             liveValidators.forEach((addr, i) => {
-                const loc = validatorLocations[i % validatorLocations.length];
                 nodes.push({
-                    id: 100 + i + 1,
+                    id: 'validator-' + (i + 1),
                     type: 'validator',
                     addr: addr,
-                    country: loc.country,
-                    countryName: loc.countryName,
-                    lat: loc.lat + (i >= validatorLocations.length ? (Math.random() - 0.5) * 0.5 : 0),
-                    lng: loc.lng + (i >= validatorLocations.length ? (Math.random() - 0.5) * 0.5 : 0),
-                    city: loc.city,
-                    ip: 'tpix-validator-' + (i + 1),
+                    country: null,
+                    countryName: null,
+                    lat: null,
+                    lng: null,
+                    city: null,
+                    ip: null,
                     online: network.value.isProducing,
-                    totalRewards: '0',
+                    totalRewards: null,
                     rewards: [],
-                    isDemo: false,
                     isLiveValidator: true,
-                    flag: flag(loc.country),
+                    mappable: false,
+                    flag: '',
                 });
             });
 
-            // ── Demo / sample nodes (shown alongside or as fallback) ──
-            const demoNodes = [
-                { id: 1, type: 'validator', addr: '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD4e', country: 'TH', countryName: 'Thailand', lat: 13.75, lng: 100.5, city: 'Bangkok', ip: '203.150.45.12', online: true, totalRewards: '45,200', rewards: [
-                    { block: 1250000, amount: '8.5', time: '2026-03-25 14:30' }, { block: 1249800, amount: '8.5', time: '2026-03-25 14:20' }, { block: 1249600, amount: '8.5', time: '2026-03-25 14:10' },
-                ]},
-                { id: 2, type: 'guardian', addr: '0x8Ba1f109551bD432803012645Hac136c9b7c31A5', country: 'TH', countryName: 'Thailand', lat: 18.79, lng: 98.98, city: 'Chiang Mai', ip: '203.150.78.34', online: true, totalRewards: '10,230', rewards: [
-                    { block: 1250001, amount: '2.5', time: '2026-03-25 14:30' }, { block: 1249801, amount: '2.5', time: '2026-03-25 14:20' },
-                ]},
-                { id: 3, type: 'guardian', addr: '0x1aF5b3E2A31c4e7FBc65A32Da0F7e53c9712E4eB', country: 'SG', countryName: 'Singapore', lat: 1.35, lng: 103.82, city: 'Singapore', ip: '128.199.142.78', online: true, totalRewards: '11,800', rewards: [
-                    { block: 1250002, amount: '2.5', time: '2026-03-25 14:30' },
-                ]},
-                { id: 4, type: 'sentinel', addr: '0x3cD2fC9d5dBe97BAc69f4e7d76D2fA5E3a1E5b7A', country: 'JP', countryName: 'Japan', lat: 35.68, lng: 139.69, city: 'Tokyo', ip: '45.76.198.45', online: true, totalRewards: '5,120', rewards: [
-                    { block: 1249500, amount: '1.2', time: '2026-03-25 13:50' },
-                ]},
-                { id: 5, type: 'sentinel', addr: '0x9eF8A2D3c45b67E8f901d2C34B56a78E9f0123BC', country: 'KR', countryName: 'South Korea', lat: 37.57, lng: 126.98, city: 'Seoul', ip: '121.170.56.89', online: true, totalRewards: '4,890', rewards: [
-                    { block: 1249000, amount: '1.2', time: '2026-03-25 13:00' },
-                ]},
-                { id: 6, type: 'sentinel', addr: '0x5bA3D7e8f901C23d45E67F89a01b2C34D56E78Fe', country: 'US', countryName: 'United States', lat: 37.77, lng: -122.42, city: 'San Francisco', ip: '104.238.167.12', online: true, totalRewards: '4,560', rewards: []},
-                { id: 7, type: 'light', addr: '0x2dC4E5f6A7b8C9d0E1F2a3B4c5D6e7F8a9B0C1De', country: 'DE', countryName: 'Germany', lat: 52.52, lng: 13.41, city: 'Berlin', ip: '195.201.45.167', online: true, totalRewards: '1,230', rewards: []},
-                { id: 8, type: 'light', addr: '0x6fE1a2B3c4D5e6F7a8B9c0D1e2F3a4B5c6D7e8Ab', country: 'GB', countryName: 'United Kingdom', lat: 51.51, lng: -0.13, city: 'London', ip: '51.158.98.201', online: false, totalRewards: '980', rewards: []},
-                { id: 9, type: 'light', addr: '0x4aB7c8D9e0F1a2B3c4D5e6F7a8B9c0D1e2F312Cd', country: 'AU', countryName: 'Australia', lat: -33.87, lng: 151.21, city: 'Sydney', ip: '103.16.128.45', online: true, totalRewards: '1,100', rewards: []},
-                { id: 10, type: 'guardian', addr: '0x7cE9a0B1c2D3e4F5a6B7c8D9e0F1a2B3c4D556Fg', country: 'TH', countryName: 'Thailand', lat: 7.88, lng: 98.39, city: 'Phuket', ip: '203.150.92.56', online: true, totalRewards: '9,750', rewards: [
-                    { block: 1250003, amount: '2.5', time: '2026-03-25 14:30' },
-                ]},
-                { id: 11, type: 'light', addr: '0x8dA2b3C4d5E6f7A8b9C0d1E2f3A4b5C6d7E834Hi', country: 'VN', countryName: 'Vietnam', lat: 10.82, lng: 106.63, city: 'Ho Chi Minh', ip: '113.190.45.78', online: true, totalRewards: '890', rewards: []},
-                { id: 12, type: 'sentinel', addr: '0x1bC5d6E7f8A9b0C1d2E3f4A5b6C7d8E9f0A178Jk', country: 'MY', countryName: 'Malaysia', lat: 3.14, lng: 101.69, city: 'Kuala Lumpur', ip: '175.143.67.89', online: true, totalRewards: '3,450', rewards: []},
-                { id: 13, type: 'light', addr: '0x3eD8f9A0b1C2d3E4f5A6b7C8d9E0f1A2b3C490Lm', country: 'IN', countryName: 'India', lat: 19.08, lng: 72.88, city: 'Mumbai', ip: '49.36.145.23', online: false, totalRewards: '670', rewards: []},
-                { id: 14, type: 'sentinel', addr: '0x5fA1b2C3d4E5f6A7b8C9d0E1f2A3b4C5d6E723No', country: 'CA', countryName: 'Canada', lat: 43.65, lng: -79.38, city: 'Toronto', ip: '198.55.100.34', online: true, totalRewards: '4,120', rewards: []},
-                { id: 15, type: 'light', addr: '0x9gB4c5D6e7F8a9B0c1D2e3F4a5B6c7D8e9F056Pq', country: 'BR', countryName: 'Brazil', lat: -23.55, lng: -46.63, city: 'Sao Paulo', ip: '187.45.223.67', online: true, totalRewards: '540', rewards: []},
-            ].map(n => ({ ...n, flag: flag(n.country), isDemo: true }));
-
-            nodes = [...nodes, ...demoNodes];
-
-            // ── Add user's own node if staking is active ──
+            // ── โหนดของผู้ใช้เอง (ถ้ากำลัง stake อยู่) ──
+            // ไม่รู้พิกัดเครื่องผู้ใช้ (Living Identity เก็บ GPS เป็น hash เท่านั้น)
+            // จึงไม่ปักหมุดเช่นกัน และตัวเลขรางวัลติดธง estimate ไว้ชัด ๆ
             if (stakingInfo.value && stakingInfo.value.status === 'active') {
                 const s = stakingInfo.value;
                 const myNode = {
-                    id: 999,
+                    id: 'my-node',
                     type: s.tier,
                     addr: s.wallet_address,
-                    country: 'TH',
-                    countryName: 'Thailand',
-                    lat: 13.75 + (Math.random() - 0.5) * 0.1,
-                    lng: 100.5 + (Math.random() - 0.5) * 0.1,
-                    city: 'My Node',
-                    ip: '127.0.0.1',
+                    country: null,
+                    countryName: null,
+                    lat: null,
+                    lng: null,
+                    city: null,
+                    ip: null,
                     online: nodeStatus.value === 'running' || nodeStatus.value === 'syncing',
-                    totalRewards: rewards.value.total ? String(rewards.value.total) : '0',
+                    totalRewards: rewards.value.total ? Number(rewards.value.total).toFixed(4) : '0',
+                    rewardsAreEstimate: true,
                     rewards: (rewards.value.rewards || []).slice(0, 5).map(r => ({
                         block: r.block_number,
                         amount: (Number(r.amount) / 1e18).toFixed(4),
                         time: new Date(r.timestamp * 1000).toLocaleString(),
                     })),
                     isMyNode: true,
-                    isDemo: false,
-                    flag: flag('TH'),
+                    mappable: false,
+                    flag: '',
                 };
-                nodes = nodes.filter(n => n.id !== 999);
+                nodes = nodes.filter(n => n.id !== 'my-node');
                 nodes.unshift(myNode);
             }
 
             masternodeData.value = nodes;
 
-            const liveCount = nodes.filter(n => !n.isDemo).length;
+            // ทุกโหนดในลิสต์มาจากเชนหรือเครื่องผู้ใช้ทั้งหมดแล้ว liveCount จึงเท่ากับ total
             const byType = { light: 0, sentinel: 0, guardian: 0, validator: 0 };
             const countrySet = new Set();
-            nodes.forEach(n => { byType[n.type]++; countrySet.add(n.country); });
-            masternodeStats.value = { total: nodes.length, liveCount, countries: countrySet.size, byType };
+            nodes.forEach(n => { byType[n.type]++; if (n.country) countrySet.add(n.country); });
+            masternodeStats.value = { total: nodes.length, liveCount: nodes.length, countries: countrySet.size, byType };
         }
 
         function initLeafletMap() {
@@ -1828,6 +1841,13 @@ const app = createApp({
             });
         }
 
+        // ค่าที่จะไปต่อเป็น innerHTML ต้อง escape ก่อนเสมอ — addr/ip มาจาก RPC ปลายทาง
+        function esc(v) {
+            return String(v == null ? '' : v)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
         function addMapMarkers() {
             if (!leafletMap) return;
 
@@ -1839,6 +1859,8 @@ const app = createApp({
             const typeSizes = { validator: 12, guardian: 11, sentinel: 10, light: 8 };
 
             masternodeData.value.forEach(node => {
+                // ไม่มีพิกัดจริง = ไม่ปักหมุด ห้ามเดาตำแหน่ง
+                if (!node.mappable || node.lat == null || node.lng == null) return;
                 const color = typeColors[node.type] || '#06b6d4';
                 const size = typeSizes[node.type] || 8;
 
@@ -1856,23 +1878,24 @@ const app = createApp({
                 const statusText = node.online ? 'Online' : 'Offline';
                 const sourceBadge = node.isLiveValidator
                     ? '<span style="background:rgba(6,182,212,0.2);color:#06b6d4;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;letter-spacing:0.5px;margin-left:4px;animation:livePulse 2s infinite">CHAIN</span>'
-                    : node.isDemo
-                    ? '<span style="background:rgba(245,158,11,0.2);color:#f59e0b;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;letter-spacing:0.5px;margin-left:4px">DEMO</span>'
                     : '<span style="background:rgba(0,230,118,0.2);color:#00e676;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;letter-spacing:0.5px;margin-left:4px">LIVE</span>';
                 marker.bindPopup(
                     '<div style="font-family:monospace;font-size:12px;min-width:220px;color:#e2e8f0;background:#0a0f1e;padding:8px;border-radius:8px;border:1px solid rgba(6,182,212,0.3)">' +
-                    '<div style="font-size:18px;text-align:center">' + node.flag + '</div>' +
-                    '<div style="font-weight:600;color:#06b6d4;margin:4px 0">' + node.city + ', ' + node.countryName + '</div>' +
+                    '<div style="font-size:18px;text-align:center">' + esc(node.flag) + '</div>' +
+                    '<div style="font-weight:600;color:#06b6d4;margin:4px 0">' + esc(node.city) + ', ' + esc(node.countryName) + '</div>' +
                     '<div><span style="background:' + color + '20;color:' + color + ';padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600">' + node.type.toUpperCase() + '</span> ' + sourceBadge + ' ' + statusDot + ' ' + statusText + '</div>' +
                     '<hr style="border:none;border-top:1px solid rgba(6,182,212,0.15);margin:6px 0">' +
                     '<div style="font-size:10px;color:#94a3b8">Wallet</div>' +
-                    '<div style="font-size:11px;word-break:break-all">' + node.addr + '</div>' +
-                    '<div style="font-size:10px;color:#94a3b8;margin-top:4px">IP: ' + node.ip + '</div>' +
-                    '<div style="color:#06b6d4;margin-top:4px;font-weight:600">Rewards: ' + node.totalRewards + ' TPIX</div>' +
+                    '<div style="font-size:11px;word-break:break-all">' + esc(node.addr) + '</div>' +
+                    '<div style="font-size:10px;color:#94a3b8;margin-top:4px">IP: ' + esc(node.ip || '-') + '</div>' +
+                    '<div style="color:#06b6d4;margin-top:4px;font-weight:600">Rewards: ' +
+                    (node.totalRewards === null ? esc(i18n.value.masternodeMap.rewardsNotOnChain)
+                                                : '&asymp; ' + esc(node.totalRewards) + ' TPIX') + '</div>' +
                     '</div>',
                     { className: 'mn-popup', maxWidth: 300 }
                 );
 
+                marker._tpixNodeId = node.id;
                 leafletMarkers.push(marker);
             });
         }
@@ -1882,12 +1905,11 @@ const app = createApp({
         }
 
         function mapFocusNode(node) {
-            if (leafletMap) {
-                leafletMap.setView([node.lat, node.lng], 10);
-                // Open popup for this node
-                const marker = leafletMarkers.find((m, i) => masternodeData.value[i]?.id === node.id);
-                if (marker) marker.openPopup();
-            }
+            // โหนดที่ไม่เปิดเผยพิกัดไม่มีหมุด — กดแล้วไม่ต้องเลื่อนแผนที่
+            if (!leafletMap || !node.mappable || node.lat == null || node.lng == null) return;
+            leafletMap.setView([node.lat, node.lng], 10);
+            const marker = leafletMarkers.find(m => m._tpixNodeId === node.id);
+            if (marker) marker.openPopup();
         }
 
         function checkNodeRewards(node) {
@@ -1931,6 +1953,38 @@ const app = createApp({
                 const active = await window.tpix.staking.getActive();
                 stakingInfo.value = active;
             } catch {}
+            await loadRewardWalletBalance();
+        }
+
+        // อ่านยอดคงเหลือจริงของกระเป๋ารับรางวัลจากเชน
+        // ตัวเลขนี้คือ "เงินที่มีอยู่จริง" ใช้เทียบกับยอดประมาณการที่แอปคำนวณเอง
+        async function loadRewardWalletBalance() {
+            // double-tap guard — ปุ่มรีเฟรชกดรัวได้ ไม่ควรยิง RPC ซ้อนกัน
+            if (rewardWalletState.value === 'loading') return;
+
+            const addr = rewardWalletAddress.value;
+            if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+                rewardWalletBalance.value = null;
+                rewardWalletState.value = 'idle';
+                return;
+            }
+
+            rewardWalletState.value = 'loading';
+            try {
+                const hex = await window.tpix.rpc.call('eth_getBalance', [addr, 'latest']);
+                // กระเป๋าอาจถูกสลับระหว่างรอ RPC — ผลลัพธ์เก่าห้ามทับของใหม่
+                if (rewardWalletAddress.value !== addr) {
+                    rewardWalletState.value = 'idle';
+                    return;
+                }
+                rewardWalletBalance.value = hexToTpix(hex);
+                rewardWalletCheckedAt.value = Date.now();
+                rewardWalletState.value = 'ok';
+            } catch {
+                // เชนไม่ตอบ — ปล่อยเป็น null ให้ UI ขึ้นว่าอ่านไม่ได้ ดีกว่าโชว์ 0 ให้เข้าใจผิด
+                rewardWalletBalance.value = null;
+                rewardWalletState.value = 'error';
+            }
         }
 
         async function registerStaking() {
@@ -2164,12 +2218,13 @@ const app = createApp({
             formatBlockTime, hexToNum, hexToTpix,
             // Masternodes
             masternodeData, masternodeStats, loadMasternodes,
-            masternodeCountries, filteredMasternodes,
+            masternodeCountries, filteredMasternodes, hasMappableNodes,
             mnFilterType, mnFilterCountry, selectedNodeReward,
             mapZoomAll, mapFocusNode, checkNodeRewards,
             // Staking
             stakingInfo, stakingValidation, stakingLoading, stakingError,
             validateStakeBalance, loadStakingInfo, registerStaking, stopStaking,
+            rewardWalletAddress, rewardWalletBalance, rewardWalletCheckedAt, rewardWalletState, loadRewardWalletBalance,
             // Settings & utils
             loadConfig, saveSettings, openDataDir, openLink, loadLogs,
             formatNumber, formatDuration, formatMB, formatLogTime,

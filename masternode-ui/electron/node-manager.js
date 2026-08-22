@@ -584,6 +584,13 @@ class NodeManager extends EventEmitter {
      * Calculate and store rewards based on tier APY and uptime.
      * Rewards are calculated per-minute based on the average APY of the tier.
      * Formula: rewardPerMinute = (stake * avgAPY) / (365.25 * 24 * 60)
+     *
+     * ⚠️ นี่คือ **ยอดประมาณการในเครื่อง** ไม่ใช่การจ่ายเงินจริง
+     * ยังไม่ได้ deploy สัญญา staking ของมาสเตอร์โหนดขึ้น TPIX Chain
+     * (ดู contracts/deployed-contracts.json — contracts เป็น array ว่าง)
+     * ตัวเลขที่ได้จึงลงแค่ตาราง `rewards` ใน SQLite พร้อม txHash สังเคราะห์
+     * ไม่มี transaction บนเชน และเงินไม่เข้ากระเป๋าผู้ใช้
+     * UI ต้องติดป้าย "ประมาณการ" ทุกที่ที่แสดงตัวเลขนี้
      */
     accrueRewards() {
         if (!this.db || !this.config) return;
@@ -652,7 +659,8 @@ class NodeManager extends EventEmitter {
                     blockNumber,
                     amount: rewardWei.toString(),
                     timestamp: now,
-                    txHash: `reward-${staking.id}-${blockNumber}-${now}`,
+                    // ไม่ใช่ tx hash จริง — ขึ้นต้น estimate- เพื่อให้แยกออกทันทีถ้ามีของจริงเข้ามาทีหลัง
+                    txHash: `estimate-${staking.id}-${blockNumber}-${now}`,
                 });
 
                 // Update checkpoint
@@ -660,10 +668,11 @@ class NodeManager extends EventEmitter {
 
                 // Log reward
                 const rewardTpix = Number(rewardWei) / 1e18;
-                this.addLog('info', `Reward accrued: ${rewardTpix.toFixed(4)} TPIX (${staking.tier} tier, ${elapsedSeconds}s uptime)`);
+                this.addLog('info', `Reward estimate +${rewardTpix.toFixed(4)} TPIX (${staking.tier} tier, ${elapsedSeconds}s uptime) — local estimate, not an on-chain payout`);
 
                 // Emit reward event to frontend
                 this.emit('reward-accrued', {
+                    isEstimate: true,
                     amount: rewardWei.toString(),
                     amountTpix: rewardTpix.toFixed(4),
                     blockNumber,

@@ -1,14 +1,22 @@
 {
   "_doc": "Registry of deployed contracts on TPIX Chain (4289). Keep in sync after each deploy. Feeds scripts/verify-sources.js and external explorers/aggregators.",
-  "_schema_version": 1,
-  "updated": "2026-04-17",
+  "_schema_version": 2,
+  "updated": "2026-08-22",
   "chain": {
     "chainId": 4289,
     "name": "TPIX Chain",
     "rpc": "https://rpc.tpix.online",
-    "explorer": "https://explorer.tpix.online"
+    "rpcAlternatives": [
+      "https://rpc1.tpix.online"
+    ],
+    "explorer": "https://explorer.tpix.online",
+    "_rpcNote": "rpc.tpix.online sits behind a Cloudflare bot rule that 403s clients without a browser-like User-Agent. rpc1.tpix.online has no such rule and answers every client — see masternode-ui/electron/rpc-client.js.",
+    "genesisEpoch": "2026-08-06",
+    "_genesisNote": "The chain was re-genesised on 2026-08-06 and moved to a new host. All contract state from before that date was discarded."
   },
-  "contracts": [
+  "contracts": [],
+  "_contractsNote": "EMPTY ON PURPOSE — verified 2026-08-22 against the live chain: eth_getCode returns 0x for every address below, and Blockscout reports total_transactions = 0 across all ~620k blocks. No contract has ever been deployed on the post-regenesis chain. Do not list an address here until eth_getCode returns bytecode for it.",
+  "retired": [
     {
       "name": "TPIXTokenFactoryV2",
       "category": "token-factory",
@@ -17,6 +25,8 @@
       "compilerVersion": "0.8.20",
       "optimizer": { "enabled": true, "runs": 200 },
       "verified": false,
+      "retiredOn": "2026-08-06",
+      "retiredReason": "Deployed on the pre-regenesis chain. eth_getCode = 0x on the current chain — the address holds no code and must be redeployed.",
       "description": "Coordinator contract for all ERC-20 token types (Enhanced, Utility, Reward, Governance, Stablecoin)"
     },
     {
@@ -27,11 +37,21 @@
       "compilerVersion": "0.8.20",
       "optimizer": { "enabled": true, "runs": 200 },
       "verified": false,
+      "retiredOn": "2026-08-06",
+      "retiredReason": "Deployed on the pre-regenesis chain. eth_getCode = 0x on the current chain — the address holds no code and must be redeployed.",
       "description": "Coordinator for NFT deployment — single NFT + collection"
     }
   ],
+  "pending": [
+    {
+      "name": "NodeRegistry",
+      "sourceFile": "contracts/masternode/NodeRegistry.sol",
+      "blocks": "Real masternode staking. Until this is deployed, staking and reward figures in masternode-ui and on tpix.online are local database records only — no stake is locked and no reward is paid on chain."
+    }
+  ],
   "notes": {
-    "howToAdd": "After deploying a new contract, append { name, address, sourceFile, compilerVersion, optimizer, description, verified: false } and run `npm run verify:sources`. The script updates `verified: true` on success.",
+    "howToAdd": "After deploying a new contract, append { name, address, sourceFile, compilerVersion, optimizer, description, verified: false } to `contracts` and run `npm run verify:sources`. The script updates `verified: true` on success.",
+    "howToVerifyItIsReal": "curl -s -X POST <rpc> -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"eth_getCode\",\"params\":[\"<address>\",\"latest\"],\"id\":1}' — anything other than 0x means the contract exists.",
     "aggregators": "CoinGecko, CoinMarketCap, DeFiLlama, and CEX listings all check source verification status on the block explorer — keep this file up to date."
   }
 }
