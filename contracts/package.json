@@ -9,7 +9,9 @@
     "deploy:wtpix": "npx hardhat run scripts/deploy-wtpix.js --network tpix",
     "deploy:bonding-curve": "npx hardhat run scripts/deploy-bonding-curve.js --network tpix",
     "verify:sources": "node scripts/verify-sources.js",
-    "verify:recheck": "node scripts/verify-sources.js --recheck"
+    "verify:recheck": "node scripts/verify-sources.js --recheck",
+    "deploy:noderegistry": "npx hardhat run scripts/deploy-noderegistry.js --network tpix",
+    "deploy:noderegistry:dry": "npx hardhat run scripts/deploy-noderegistry.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",

@@ -18,7 +18,10 @@ module.exports = {
   },
   networks: {
     tpix: {
-      url: "https://rpc.tpix.online",
+      // rpc1 ไม่ใช่ rpc — rpc.tpix.online มี Cloudflare bot rule ครอบอยู่ ตอบ 403
+      // ให้ client ที่ไม่มี User-Agent แบบเบราว์เซอร์ ซึ่งรวมถึง hardhat
+      // (ดู masternode-ui/electron/rpc-client.js ที่ทดสอบไว้แล้ว)
+      url: process.env.TPIX_RPC_URL || "https://rpc1.tpix.online",
       chainId: 4289,
       gasPrice: 0,
       // Set deployer private key via environment variable:
