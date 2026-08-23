@@ -77,3 +77,22 @@ jobs:
             masternode-ui/dist/*.yml
             masternode-ui/dist/*.yaml
           retention-days: 30
+
+      # บอกเว็บทันทีที่ปล่อยรุ่นเสร็จ ไม่งั้นเว็บกับตัวอัปเดตในแอปจะยังเห็นรุ่นเก่า
+      # ไปอีกครึ่งชั่วโมงตามอายุแคช (เจอมาแล้วตอนปล่อย v1.14.0)
+      - name: Notify tpix.online of new release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DEPLOY_SECRET: ${{ secrets.DEPLOY_SECRET }}
+        shell: bash
+        run: |
+          if [ -z "$DEPLOY_SECRET" ]; then
+            echo "::warning::ไม่ได้ตั้ง DEPLOY_SECRET — ข้ามการแจ้งเว็บ (เว็บจะเห็นรุ่นใหม่ภายใน 30 นาที)"
+            exit 0
+          fi
+          TAG="${GITHUB_REF#refs/tags/}"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "https://tpix.online/api/v1/app/notify-release?secret=${DEPLOY_SECRET}&type=masternode&tag=${TAG}" \
+            -H "User-Agent: GitHub-Actions" -H "Accept: application/json")
+          echo "เว็บตอบ: $HTTP_CODE"
+          [ "$HTTP_CODE" = "200" ] || echo "::warning::เว็บตอบ $HTTP_CODE — รุ่นปล่อยสำเร็จแล้ว ไม่ถือว่าล้มเหลว"
