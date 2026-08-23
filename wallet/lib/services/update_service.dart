@@ -10,21 +10,27 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/locale_provider.dart';
 
-/// TPIX Wallet — Auto-Update Service
-/// Downloads APK directly from GitHub Releases and installs in-app.
-/// Falls back to opening browser if direct install fails.
+/// TPIX Wallet — ตัวอัปเดตอัตโนมัติ
+///
+/// ถามและโหลด APK ผ่านเซิร์ฟเวอร์ TPIX ไม่ใช่จาก GitHub โดยตรง
+///
+/// repo เชนกำลังจะเป็นไพรเวท ถ้าให้แอปยิง GitHub เองต้องฝัง token ลงไฟล์ APK
+/// ที่แจก ซึ่งใครก็แกะออกมาได้ เซิร์ฟเวอร์จึงเป็นคนถือ token ไปดึงแทนแล้วส่งต่อ
+///
+/// ผลพลอยได้: การเทียบเวอร์ชันและการเลือก release ย้ายไปอยู่ฝั่งเซิร์ฟเวอร์
+/// ที่เดียว แก้ทีเดียวมีผลทุกเครื่องทันที ไม่ต้องรอผู้ใช้อัปเดตแอปก่อน
+///
+/// ถ้าติดตั้งในแอปไม่สำเร็จจะถอยไปเปิดหน้าดาวน์โหลดบนเบราว์เซอร์
 /// Developed by Xman Studio
 class UpdateService {
-  static const String _owner = 'xjanova';
-  static const String _repo = 'TPIX-Coin';
   static const String _apiUrl =
-      'https://api.github.com/repos/$_owner/$_repo/releases/latest';
+      'https://tpix.online/api/v1/app/wallet-update-check';
   static const String _downloadPageUrl = 'https://tpix.online/download';
 
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
-    headers: {'Accept': 'application/vnd.github.v3+json'},
+    headers: {'Accept': 'application/json'},
   ));
 
   /// Current app version
@@ -34,61 +40,41 @@ class UpdateService {
   }
 
   /// Fetch latest release from GitHub
-  Future<ReleaseInfo?> getLatestRelease() async {
-    try {
-      final response = await _dio.get(_apiUrl);
-      if (response.statusCode == 200) {
-        return ReleaseInfo.fromJson(response.data);
-      }
-    } catch (e) {
-      debugPrint('Update check failed: ${e.runtimeType}');
-    }
-    return null;
-  }
-
-  /// Check if update is available
+  /// เช็กว่ามีอัปเดตไหม — เซิร์ฟเวอร์เป็นคนเทียบเวอร์ชันให้
   Future<UpdateResult> checkForUpdate() async {
-    try {
-      final currentVersion = await getCurrentVersion();
-      final release = await getLatestRelease();
+    final currentVersion = await getCurrentVersion();
 
-      if (release == null) {
-        return UpdateResult(
-          available: false,
-          currentVersion: currentVersion,
-        );
+    try {
+      final response = await _dio.get(
+        _apiUrl,
+        queryParameters: {'version': currentVersion},
+      );
+
+      if (response.statusCode != 200) {
+        return UpdateResult(available: false, currentVersion: currentVersion);
       }
 
-      final isNewer = _isNewerVersion(currentVersion, release.version);
+      final body = response.data as Map<String, dynamic>;
+
+      if (body['success'] != true || body['data'] is! Map) {
+        return UpdateResult(available: false, currentVersion: currentVersion);
+      }
+
+      final data = body['data'] as Map<String, dynamic>;
+
       return UpdateResult(
-        available: isNewer,
+        available: data['available'] == true,
         currentVersion: currentVersion,
-        latestVersion: release.version,
-        releaseNotes: release.body,
-        releaseDate: release.publishedAt,
-        apkDownloadUrl: release.apkDownloadUrl,
-        apkSize: release.apkSize,
+        latestVersion: data['latest_version'] as String?,
+        releaseNotes: data['release_notes'] as String?,
+        releaseDate: data['published_at'] as String?,
+        apkDownloadUrl: data['download_url'] as String?,
+        apkSize: data['file_size'] as int?,
       );
     } catch (e) {
-      debugPrint('Update check error: ${e.runtimeType}');
-      return UpdateResult(available: false, currentVersion: 'unknown');
+      debugPrint('Update check failed: ${e.runtimeType}');
+      return UpdateResult(available: false, currentVersion: currentVersion);
     }
-  }
-
-  /// Compare semantic versions: returns true if remote > current
-  bool _isNewerVersion(String current, String remote) {
-    final currentParts = current.replaceAll('v', '').split('.');
-    final remoteParts = remote.replaceAll('v', '').split('.');
-
-    for (int i = 0; i < 3; i++) {
-      final c =
-          i < currentParts.length ? int.tryParse(currentParts[i]) ?? 0 : 0;
-      final r =
-          i < remoteParts.length ? int.tryParse(remoteParts[i]) ?? 0 : 0;
-      if (r > c) return true;
-      if (r < c) return false;
-    }
-    return false;
   }
 
   /// Download APK from GitHub and install it
@@ -156,8 +142,8 @@ class UpdateService {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!launched) throw Exception('launchUrl returned false');
     } catch (_) {
-      final fallback =
-          Uri.parse('https://github.com/$_owner/$_repo/releases/latest');
+      // ไม่มีทางสำรองไปหน้า GitHub แล้ว — repo เป็นไพรเวท ผู้ใช้เปิดไม่ได้อยู่ดี
+      final fallback = Uri.parse(_downloadPageUrl);
       final ok =
           await launchUrl(fallback, mode: LaunchMode.externalApplication);
       if (!ok) {
@@ -468,46 +454,6 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 }
 
 /// Release info from GitHub
-class ReleaseInfo {
-  final String version;
-  final String? body;
-  final String? publishedAt;
-  final String? apkDownloadUrl;
-  final int? apkSize; // expected file size from GitHub API
-
-  ReleaseInfo({
-    required this.version,
-    this.body,
-    this.publishedAt,
-    this.apkDownloadUrl,
-    this.apkSize,
-  });
-
-  factory ReleaseInfo.fromJson(Map<String, dynamic> json) {
-    // Find the .apk asset in the release
-    String? apkUrl;
-    int? apkSize;
-    final assets = json['assets'] as List<dynamic>? ?? [];
-    for (final asset in assets) {
-      final name = (asset['name'] as String? ?? '').toLowerCase();
-      if (name.endsWith('.apk')) {
-        apkUrl = asset['browser_download_url'] as String?;
-        apkSize = asset['size'] as int?;
-        break;
-      }
-    }
-
-    return ReleaseInfo(
-      version: (json['tag_name'] as String? ?? '').replaceAll('v', ''),
-      body: json['body'] as String?,
-      publishedAt: json['published_at'] as String?,
-      apkDownloadUrl: apkUrl,
-      apkSize: apkSize,
-    );
-  }
-}
-
-/// Update check result
 class UpdateResult {
   final bool available;
   final String currentVersion;
