@@ -178,3 +178,21 @@ jobs:
           # ไม่งั้น URL ที่ electron-updater ประกอบขึ้นจะชี้ผิด release แล้ว 404
           gh release upload "$NEW_TAG" latest.yml TPIX-Master-Node-Setup-* --clobber
           echo "อัปโหลดครบแล้ว — Master Node เช็คอัปเดตได้ตามปกติ"
+
+      # บอกเว็บทันทีที่ปล่อยรุ่นวอลเล็ตเสร็จ ไม่ต้องรอแคชหมดอายุครึ่งชั่วโมง
+      # แอปวอลเล็ตเลิกยิง GitHub เองแล้ว มันถามผ่าน tpix.online ซึ่งอ่านจากที่นี่อีกที
+      - name: Notify tpix.online of new wallet release
+        env:
+          DEPLOY_SECRET: ${{ secrets.DEPLOY_SECRET }}
+        run: |
+          if [ -z "$DEPLOY_SECRET" ]; then
+            echo "::warning::ไม่ได้ตั้ง DEPLOY_SECRET — ข้ามการแจ้งเว็บ (เว็บจะเห็นรุ่นใหม่ภายใน 30 นาที)"
+            exit 0
+          fi
+          echo "แจ้งเว็บ: v${SEMVER}"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "https://tpix.online/api/v1/app/notify-release?secret=${DEPLOY_SECRET}&type=wallet&tag=v${SEMVER}" \
+            -H "User-Agent: GitHub-Actions" \
+            -H "Accept: application/json")
+          echo "เว็บตอบ: $HTTP_CODE"
+          [ "$HTTP_CODE" = "200" ] || echo "::warning::เว็บตอบ $HTTP_CODE — ไม่ถือว่าล้มเหลว รุ่นปล่อยสำเร็จแล้ว"
