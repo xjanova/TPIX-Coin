@@ -14,6 +14,7 @@ const IdentityManager = require('./identity-manager');
 const AppUpdater = require('./auto-updater');
 const { NodeRegistryClient } = require('./node-registry');
 const chainHealth = require('./chain-health');
+const { ensureDesktopShortcut } = require('./desktop-shortcut');
 
 let mainWindow = null;
 let tray = null;
@@ -801,6 +802,10 @@ function setupIPC() {
 // ─── App Lifecycle ─────────────────────────────────────────────
 
 app.whenReady().then(() => {
+    // ตัวติดตั้งสร้างไอคอนให้แค่ครั้งแรก — ตอนอัปเดตอัตโนมัติมันข้าม
+    // เลยต้องเช็กเองทุกครั้งที่เปิด ดูเหตุผลเต็มใน desktop-shortcut.js
+    ensureDesktopShortcut();
+
     setupIPC();
     createWindow();
     createTray();
