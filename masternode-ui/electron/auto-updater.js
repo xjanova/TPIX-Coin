@@ -1,35 +1,33 @@
 /**
- * TPIX Master Node — Auto Updater
- * Downloads updates from GitHub Releases (xjanova/TPIX-Coin)
- * Uses electron-updater for seamless background updates.
+ * TPIX Master Node — ตัวอัปเดตอัตโนมัติ
  *
- * NOTE: the repo publishes TWO products under the same tag namespace —
- * the Flutter wallet APK (auto-released on every wallet push) and this
- * Electron app. electron-updater's github provider always reads the repo's
- * "latest release", which is often a wallet-only release with no latest.yml
- * → HTTP 404. So we resolve the newest release that actually carries a
- * Windows update channel file ourselves and feed that to the generic
- * provider. The github provider stays as a fallback.
+ * ดึงอัปเดตผ่านเซิร์ฟเวอร์ TPIX (https://tpix.online/updates/masternode)
+ * ไม่ใช่จาก GitHub โดยตรง
+ *
+ * ทำไมต้องผ่านเซิร์ฟเวอร์:
+ * repo ของโปรแกรมนี้เป็นไพรเวท ถ้าให้แอปคุยกับ GitHub เองต้องฝัง token
+ * ลงในไฟล์ .exe ที่แจกให้ผู้ใช้ — ซึ่งใครก็แกะออกมาได้ และ token ที่มีสิทธิ์
+ * อ่าน repo ไพรเวทตัวหนึ่ง มักเปิดตัวอื่นได้หมด เซิร์ฟเวอร์จึงเป็นคนถือ token
+ * ไปดึงแทน แล้วส่งต่อให้แอป ตัวแอปที่แจกออกไปจึงไม่มีความลับติดไปเลย
+ *
+ * ผลพลอยได้: ตรรกะเลือก release ย้ายไปอยู่ฝั่งเซิร์ฟเวอร์ที่เดียว
+ * (รวมถึงการข้าม release ที่ไม่มี latest.yml ซึ่งเคยทำให้เด้ง 404 ใส่หน้าผู้ใช้)
+ * แก้ทีเดียวมีผลกับทุกเครื่องทันที ไม่ต้องรอผู้ใช้อัปเดตแอปก่อน
  *
  * Developed by Xman Studio
  */
 
-const https = require('https');
 const { autoUpdater } = require('electron-updater');
 const { ipcMain, BrowserWindow } = require('electron');
 let log;
 try { log = require('electron-log'); } catch { log = console; }
 
-// GitHub repo: xjanova/TPIX-Coin
-const GH_OWNER = 'xjanova';
-const GH_REPO = 'TPIX-Coin';
-const CHANNEL_FILE = 'latest.yml';
+// ปลายทางอัปเดต — ห้ามเปลี่ยน URL นี้เด็ดขาด
+// เพราะมันถูกฝังอยู่ในไฟล์ .exe ที่แจกออกไปแล้วทุกเครื่อง เปลี่ยนเมื่อไหร่
+// เครื่องเก่าจะหาอัปเดตไม่เจออีกเลยและไม่มีทางรู้ตัว (ตั้ง env ได้เพื่อทดสอบ)
+const UPDATE_FEED_URL = process.env.TPIX_UPDATE_FEED_URL
+    || 'https://tpix.online/updates/masternode';
 const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000; // 30 minutes
-const FEED_CACHE_TTL = 5 * 60 * 1000;         // re-resolve the feed tag at most every 5 min
-const MAX_RELEASE_PAGES = 3;                  // scan up to 300 releases
-const API_TIMEOUT = 12000;
-const API_MAX_BYTES = 8 * 1024 * 1024;        // cap response size — never trust remote length
-const TAG_PATTERN = /^[A-Za-z0-9._+-]{1,100}$/; // reject anything that could escape the URL path
 
 class AppUpdater {
     constructor() {
@@ -43,8 +41,6 @@ class AppUpdater {
         this._checkTimer = null;
         this._firstCheckTimer = null;
         this._downloading = false;
-        this._feedTag = null;
-        this._feedTagAt = 0;
 
         this._configureAutoUpdater();
         this._setupIPC();
@@ -59,8 +55,8 @@ class AppUpdater {
         autoUpdater.autoInstallOnAppQuit = true;
         autoUpdater.allowDowngrade = false;
 
-        // Default feed — replaced on every check by _applyFeed()
-        this._applyFeed(null);
+        // ปลายทางมีตัวเดียวคงที่ — เซิร์ฟเวอร์เป็นคนเลือก release ให้แล้ว
+        this._applyFeed();
 
         // Use simple logger
         autoUpdater.logger = {
@@ -154,102 +150,16 @@ class AppUpdater {
     }
 
     /**
-     * Minimal GitHub REST GET. Returns parsed JSON.
+     * ชี้ electron-updater ไปที่เซิร์ฟเวอร์ TPIX
+     *
+     * ไม่มีทางสำรองไป GitHub แล้ว — repo เป็นไพรเวท ถึงลองก็ได้ 404
+     * เหลือไว้มีแต่จะทำให้ผู้ใช้เห็นข้อความผิดจนหาสาเหตุยากขึ้น
      */
-    _ghApi(path) {
-        return new Promise((resolve, reject) => {
-            const req = https.request({
-                host: 'api.github.com',
-                path,
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'TPIX-MasterNode-Updater',
-                    Accept: 'application/vnd.github+json',
-                },
-                timeout: API_TIMEOUT,
-            }, (res) => {
-                if (res.statusCode !== 200) {
-                    const e = new Error(`GitHub API ${res.statusCode}`);
-                    e.code = String(res.statusCode);
-                    res.resume();
-                    reject(e);
-                    return;
-                }
-                let body = '';
-                let bytes = 0;
-                res.setEncoding('utf8');
-                res.on('data', (chunk) => {
-                    bytes += Buffer.byteLength(chunk);
-                    if (bytes > API_MAX_BYTES) {
-                        req.destroy(new Error('GitHub API response too large'));
-                        return;
-                    }
-                    body += chunk;
-                });
-                res.on('end', () => {
-                    try { resolve(JSON.parse(body)); }
-                    catch { reject(new Error('Invalid response from GitHub API')); }
-                });
-                res.on('error', reject);
-            });
-            req.on('timeout', () => req.destroy(new Error('GitHub API timeout')));
-            req.on('error', reject);
-            req.end();
-        });
-    }
-
-    /**
-     * Find the newest published release that actually carries a Windows
-     * update channel file — wallet-only releases are skipped.
-     * Returns the tag name, or null when nothing suitable exists.
-     */
-    async _resolveFeedTag() {
-        const now = Date.now();
-        if (this._feedTag && (now - this._feedTagAt) < FEED_CACHE_TTL) return this._feedTag;
-
-        for (let page = 1; page <= MAX_RELEASE_PAGES; page++) {
-            const releases = await this._ghApi(
-                `/repos/${GH_OWNER}/${GH_REPO}/releases?per_page=100&page=${page}`
-            );
-            if (!Array.isArray(releases) || releases.length === 0) break;
-
-            // GitHub returns releases newest-first, so the first hit is the newest
-            const hit = releases.find((rel) => rel
-                && rel.draft === false
-                && rel.prerelease === false
-                && TAG_PATTERN.test(String(rel.tag_name || ''))
-                && Array.isArray(rel.assets)
-                && rel.assets.some((a) => a && a.name === CHANNEL_FILE)
-                && rel.assets.some((a) => a && /\.exe$/i.test(String(a.name)))
-            );
-            if (hit) {
-                this._feedTag = String(hit.tag_name);
-                this._feedTagAt = now;
-                return this._feedTag;
-            }
-            if (releases.length < 100) break;
-        }
-        return null;
-    }
-
-    /**
-     * Point electron-updater at a specific release tag (generic provider),
-     * or fall back to the plain github provider when we couldn't resolve one.
-     */
-    _applyFeed(tag) {
-        if (tag && TAG_PATTERN.test(tag)) {
-            autoUpdater.setFeedURL({
-                provider: 'generic',
-                url: `https://github.com/${GH_OWNER}/${GH_REPO}/releases/download/${encodeURIComponent(tag)}`,
-                channel: 'latest',
-            });
-            return;
-        }
+    _applyFeed() {
         autoUpdater.setFeedURL({
-            provider: 'github',
-            owner: GH_OWNER,
-            repo: GH_REPO,
-            releaseType: 'release',
+            provider: 'generic',
+            url: UPDATE_FEED_URL,
+            channel: 'latest',
         });
     }
 
@@ -292,14 +202,7 @@ class AppUpdater {
         this._sendToRenderer('update:status', this.getStatus());
 
         try {
-            let tag = null;
-            try {
-                tag = await this._resolveFeedTag();
-            } catch (e) {
-                // API unreachable / rate-limited → let the github provider try
-                console.warn('[Updater] feed resolve failed:', e.message);
-            }
-            this._applyFeed(tag);
+            this._applyFeed();
 
             await autoUpdater.checkForUpdates();
             this.checking = false;
