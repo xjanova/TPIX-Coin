@@ -105,11 +105,8 @@ jobs:
           cp wallet/build/app/outputs/flutter-apk/app-release.apk "TPIX-Wallet-v${SEMVER}.apk"
           echo "APK_NAME=TPIX-Wallet-v${SEMVER}.apk" >> $GITHUB_ENV
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tpix-wallet-apk
-          path: "*.apk"
+      # ถอด upload-artifact ออกแล้ว — APK ถูกแนบเข้า Release ทุกรอบอยู่แล้ว
+      # เก็บซ้ำอีกชุดคือกินโควต้าพื้นที่เปล่า ๆ (เคยค้างไว้ 213 MB)
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

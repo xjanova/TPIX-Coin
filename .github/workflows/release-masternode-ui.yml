@@ -68,7 +68,11 @@ jobs:
           echo "=== dist/ ==="
           Get-ChildItem -Path dist -Recurse -File | Select-Object Name, Length, FullName
 
-      - name: Upload artifacts
+      # เก็บเฉพาะรอบที่ไม่ได้ปล่อย Release (บิลด์ตรวจบน main) ไว้ดูเวลาบิลด์พัง
+      # รอบที่เป็น tag ไฟล์ไปอยู่ใน Release แล้ว เก็บซ้ำ = กินโควต้าเปล่า
+      # ไฟล์ชุดนี้ 162 MB ต่อรอบ เคยค้างสะสมไว้ 1.9 GB
+      - name: Upload artifacts (build check only)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
           name: tpix-masternode-windows
@@ -76,7 +80,7 @@ jobs:
             masternode-ui/dist/*.exe
             masternode-ui/dist/*.yml
             masternode-ui/dist/*.yaml
-          retention-days: 30
+          retention-days: 3
 
       # บอกเว็บทันทีที่ปล่อยรุ่นเสร็จ ไม่งั้นเว็บกับตัวอัปเดตในแอปจะยังเห็นรุ่นเก่า
       # ไปอีกครึ่งชั่วโมงตามอายุแคช (เจอมาแล้วตอนปล่อย v1.14.0)
