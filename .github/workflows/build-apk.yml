@@ -193,3 +193,50 @@ jobs:
             -H "Accept: application/json")
           echo "เว็บตอบ: $HTTP_CODE"
           [ "$HTTP_CODE" = "200" ] || echo "::warning::เว็บตอบ $HTTP_CODE — ไม่ถือว่าล้มเหลว รุ่นปล่อยสำเร็จแล้ว"
+
+      # ---- ลบ Release เก่าทิ้งเมื่อปล่อยตัวใหม่สำเร็จ เก็บไว้ตัวเดียว ----
+      #
+      # ผู้ใช้โหลดผ่าน tpix.online แล้ว GitHub Release เหลือหน้าที่แค่เป็นที่เก็บไฟล์
+      # ไม่ต้องสะสมของเก่าไว้ให้ใครหยิบไปใช้ได้อีก
+      #
+      # สั่งลบอัตโนมัติแล้วพลาด = กู้ไม่ได้ จึงมีด่านกัน 4 ชั้น
+      #   1. ยืนยันก่อนว่า Release ที่เพิ่งปล่อยมีไฟล์จริง ไม่มี = ไม่ลบอะไรเลย
+      #      กันเคสบิลด์เพี้ยนแล้วลบของเก่าจนไม่เหลืออะไรให้โหลดสักตัว
+      #   2. คัดเฉพาะ Release ที่มีไฟล์ชนิดของผลิตภัณฑ์นี้ — repo มีหลายผลิตภัณฑ์
+      #      ใช้ tag ชุดเดียวกัน ลบตามอายุเฉย ๆ จะไปโดนของผลิตภัณฑ์อื่น
+      #   3. ลบเฉพาะตัว Release ไม่แตะ tag — ย้อนสร้างใหม่จาก source ได้เสมอ
+      #   4. continue-on-error — ลบพลาดต้องไม่ทำให้รอบที่ปล่อยรุ่นสำเร็จกลายเป็นล้มเหลว
+      - name: Prune old releases (keep newest only)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP: '1'
+          PATTERN: '\.apk$'
+          CURRENT_TAG: v${{ env.SEMVER }}
+        shell: bash
+        run: |
+          have=$(gh release view "$CURRENT_TAG" --repo "$GITHUB_REPOSITORY" --json assets -q "[.assets[].name | select(test(\"$PATTERN\"))] | length" 2>/dev/null || echo 0)
+
+          if [ "${have:-0}" -lt 1 ]; then
+            echo "::warning::$CURRENT_TAG ไม่มีไฟล์ที่ตรงเงื่อนไข จึงไม่ลบอะไรทั้งสิ้น"
+            exit 0
+          fi
+          echo "$CURRENT_TAG มีไฟล์ $have ชิ้น เริ่มลบของเก่า"
+
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > all.json || exit 0
+
+          jq -r --arg pat "$PATTERN" --argjson keep "$KEEP" '[ .[] | select(.draft | not) | select([.assets[].name | test($pat)] | any) ] | sort_by(.created_at) | reverse | .[$keep:] | .[] | "\(.id) \(.tag_name)"' all.json > old.txt || exit 0
+
+          count=$(grep -c . old.txt || true)
+          if [ "${count:-0}" -eq 0 ]; then
+            echo "ไม่มีของเก่าให้ลบ"
+            exit 0
+          fi
+
+          while read -r id tag; do
+            [ -n "$id" ] || continue
+            echo "  ลบ release $tag (id=$id) โดยไม่แตะ tag"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id" || echo "::warning::ลบ $tag ไม่สำเร็จ"
+          done < old.txt
+
+          echo "ลบไปทั้งหมด $count รายการ เหลือรุ่นล่าสุดตัวเดียว"
