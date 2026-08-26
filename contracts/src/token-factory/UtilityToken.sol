@@ -164,7 +164,9 @@ contract UtilityToken is ERC20, Ownable, Pausable, ReentrancyGuard {
             : type(uint256).max;
 
         // Anti-bot
-        antiBotEnabled = protection_.antiBotDuration > 0;
+        // ต้องนับ tradingCooldown ด้วย ไม่งั้นคนที่ตั้งแต่คูลดาวน์อย่างเดียว
+        // จะได้เหรียญที่ด่านคูลดาวน์ไม่เคยทำงาน (antiBotEnabled = false ตลอด)
+        antiBotEnabled = protection_.antiBotDuration > 0 || protection_.tradingCooldown > 0;
         antiBotDuration = protection_.antiBotDuration;
         tradingCooldown = protection_.tradingCooldown;
 
@@ -213,6 +215,21 @@ contract UtilityToken is ERC20, Ownable, Pausable, ReentrancyGuard {
         bool isSell = isDexPair[to];
         bool senderExcluded = isExcluded[from];
         bool recipientExcluded = isExcluded[to];
+
+        // ยังไม่เปิดเทรด = คนทั่วไปโอนไม่ได้
+        //
+        // เดิม enableTrading() แค่เขียนธง tradingEnabled ไว้เฉย ๆ ไม่มีใครอ่านใน _update
+        // ออฟชั่น "กันบอท" ที่ผู้ใช้จ่ายเงินซื้อจึงไม่เคยกันอะไรเลย บอทซื้อได้ตั้งแต่วินาทีแรก
+        //
+        // บังคับเฉพาะเหรียญที่เลือกเปิดด่านกันบอทไว้ (antiBotEnabled) เท่านั้น
+        // เหรียญที่ไม่ได้เลือกจะไม่ถูกบังคับให้ต้องมากด enableTrading() ก่อนใช้งาน
+        // กระเป๋าที่ถูกยกเว้น (เจ้าของ / กระเป๋าภาษี / สัญญาเอง) ยังแจกจ่ายก่อนเปิดได้ตามปกติ
+        if (antiBotEnabled && !tradingEnabled) {
+            require(
+                isExcluded[from] || isExcluded[to],
+                "UT: trading not enabled"
+            );
+        }
 
         // Anti-bot: ตรวจ cooldown + launch protection
         if (antiBotEnabled && !senderExcluded && !recipientExcluded) {

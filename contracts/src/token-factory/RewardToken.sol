@@ -47,16 +47,24 @@ contract RewardToken is ERC20, Ownable, Pausable {
     uint256 public immutable vestingDuration;
 
     // ═══════════════════════════════════════════
-    //  REFLECTION STATE (rOwned/tOwned dual accounting)
+    //  REFLECTION STATE
     // ═══════════════════════════════════════════
+    //
+    // 🐞 บั๊กเดิม (แก้แล้ว): โค้ดชุดนี้เคยทำบัญชีคู่ขนาน rOwned/rTotal แบบ SafeMoon
+    // ไว้ข้าง ๆ บัญชี _balances ของ ERC20 แต่ **ไม่มีจุดไหนอัปเดต _rOwned เลย**
+    // ตอนโอน (_update เรียกแต่ super._update ซึ่งแตะ _balances อย่างเดียว)
+    // ส่วน balanceOf() กลับไปอ่านจาก _rOwned
+    //
+    // ผลคือเหรียญชนิด reflection ที่ผู้ใช้สร้าง **โอนแล้วปลายทางได้ 0 ตลอดกาล**
+    // ต้นทางก็เห็นยอดตัวเองเท่าเดิมไม่มีวันลด — เหรียญขยับไม่ได้ทั้งใบ
+    // ไม่เคยมีใครจับได้เพราะสัญญาชุดนี้อยู่นอก paths.sources ของ hardhat
+    // จึงไม่เคยถูกคอมไพล์และไม่เคยมีเทสต์
+    //
+    // กลไก reflection ตัวจริงที่ _update ทำอยู่แล้วคือ **เผาค่าธรรมเนียมทุกการโอน**
+    // ซัพพลายลด สัดส่วนที่ผู้ถือแต่ละคนถืออยู่จึงเพิ่มขึ้นเอง — ใช้ได้จริงและตรงไปตรงมา
+    // จึงตัดบัญชีคู่ขนานทิ้ง ให้ยอดคงเหลือยึด _balances ของ ERC20 ที่เดียว
 
-    uint256 private constant MAX = type(uint256).max;
-    uint256 private _rTotal;
     uint256 private _tFeeTotal;
-
-    mapping(address => uint256) private _rOwned;
-    mapping(address => bool) public isExcludedFromReward;
-    address[] private _excludedFromReward;
 
     // ═══════════════════════════════════════════
     //  DIVIDEND STATE
@@ -142,13 +150,6 @@ contract RewardToken is ERC20, Ownable, Pausable {
         isExcludedFromFee[address(this)] = true;
 
         if (totalSupply_ > 0) {
-            if (rewardType_ == 0) {
-                // Reflection: init rTotal
-                _rTotal = (MAX - (MAX % totalSupply_));
-                _rOwned[owner_] = _rTotal;
-                // Exclude contract from reflection
-                _excludeFromReward(address(this));
-            }
             _mint(owner_, totalSupply_);
         }
     }
@@ -159,15 +160,6 @@ contract RewardToken is ERC20, Ownable, Pausable {
 
     function decimals() public view override returns (uint8) {
         return _decimals;
-    }
-
-    function balanceOf(address account) public view override returns (uint256) {
-        if (rewardType == 0 && !isExcludedFromReward[account]) {
-            // Reflection: balance from rOwned
-            if (_rTotal == 0) return super.balanceOf(account);
-            return _rOwned[account] / (_rTotal / totalSupply());
-        }
-        return super.balanceOf(account);
     }
 
     function _update(
@@ -211,11 +203,10 @@ contract RewardToken is ERC20, Ownable, Pausable {
 
         if (feeAmount > 0) {
             if (rewardType == 0) {
-                // Reflection: deduct from rTotal
-                uint256 rFee = feeAmount * (_rTotal / totalSupply());
-                _rTotal -= rFee;
+                // Reflection = เผาค่าธรรมเนียมทิ้ง ซัพพลายลด
+                // สัดส่วนของผู้ถือทุกคนจึงเพิ่มขึ้นตามส่วนโดยไม่ต้องมีบัญชีคู่ขนาน
                 _tFeeTotal += feeAmount;
-                super._update(from, address(0), feeAmount); // burn for reflection
+                super._update(from, address(0), feeAmount);
                 emit RewardDistributed(feeAmount);
             } else {
                 // Dividend/Staking: send to contract as reward pool
@@ -240,13 +231,6 @@ contract RewardToken is ERC20, Ownable, Pausable {
     /// @notice Total reflection fees collected
     function totalReflectionFees() external view returns (uint256) {
         return _tFeeTotal;
-    }
-
-    function _excludeFromReward(address account) internal {
-        if (!isExcludedFromReward[account]) {
-            isExcludedFromReward[account] = true;
-            _excludedFromReward.push(account);
-        }
     }
 
     // ═══════════════════════════════════════════

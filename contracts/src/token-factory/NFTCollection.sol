@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
@@ -24,7 +23,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * Deployed on TPIX Chain (ID: 4289) — Gas FREE
  */
 contract NFTCollection is ERC721, ERC721Enumerable, ERC2981, Ownable, ReentrancyGuard {
-    using Strings for uint256;
 
     // ═══════════════════════════════════════════
     //  CONFIG
@@ -236,7 +234,7 @@ contract NFTCollection is ERC721, ERC721Enumerable, ERC2981, Ownable, Reentrancy
             return placeholderURI;
         }
 
-        return string(abi.encodePacked(baseURI, tokenId.toString(), ".json"));
+        return string(abi.encodePacked(baseURI, _toString(tokenId), ".json"));
     }
 
     // ═══════════════════════════════════════════
@@ -311,5 +309,29 @@ contract NFTCollection is ERC721, ERC721Enumerable, ERC2981, Ownable, Reentrancy
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
+    }
+
+    /**
+     * @dev แปลง uint256 เป็นสตริง
+     *
+     * เขียนเองแทน OpenZeppelin Strings เพราะ Strings.sol (OZ 5.6) เรียก Bytes.sol
+     * ซึ่งใช้โอปโค้ด MCOPY ของ Cancun — เชน TPIX รองรับแค่ถึง london จึงคอมไพล์ไม่ผ่าน
+     * และต่อให้คอมไพล์ผ่านก็ deploy ไม่ขึ้น
+     */
+    function _toString(uint256 value) internal pure returns (string memory) {
+        if (value == 0) return "0";
+
+        uint256 digits;
+        for (uint256 tmp = value; tmp != 0; tmp /= 10) {
+            digits++;
+        }
+
+        bytes memory buffer = new bytes(digits);
+        while (value != 0) {
+            digits--;
+            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
+            value /= 10;
+        }
+        return string(buffer);
     }
 }

@@ -27,7 +27,6 @@ contract FactoryERC721 is ERC721, ERC721URIStorage, ERC2981, Ownable {
 
     bool public immutable isSoulbound;
     bool public immutable isRoyaltyEnabled;
-    uint256 public immutable totalMinted;
 
     /// @notice Next token ID for additional mints
     uint256 private _nextTokenId;
@@ -89,7 +88,6 @@ contract FactoryERC721 is ERC721, ERC721URIStorage, ERC2981, Ownable {
         _nextTokenId = 1;
         _safeMint(owner_, _nextTokenId);
         _setTokenURI(_nextTokenId, tokenURI_);
-        totalMinted = 1;
         _nextTokenId = 2;
 
         emit NFTMinted(owner_, 1, tokenURI_);
@@ -151,6 +149,17 @@ contract FactoryERC721 is ERC721, ERC721URIStorage, ERC2981, Ownable {
     // ═══════════════════════════════════════════
 
     function totalSupply() external view returns (uint256) {
+        return _nextTokenId - 1;
+    }
+
+    /**
+     * @notice จำนวนที่ mint ไปแล้วทั้งหมด
+     *
+     * 🐞 เดิมประกาศเป็น `uint256 public immutable totalMinted` แล้วตั้งเป็น 1
+     *    ตอน constructor — immutable แปลว่าแก้ไม่ได้อีกเลย ค่าจึงค้างที่ 1 ตลอดกาล
+     *    mint ไปกี่ใบก็ตาม UI/explorer ที่อ่านค่านี้เห็น "1" เสมอ
+     */
+    function totalMinted() external view returns (uint256) {
         return _nextTokenId - 1;
     }
 

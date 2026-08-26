@@ -15,12 +15,20 @@
 
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
+const { loadFixture, time } = require("@nomicfoundation/hardhat-network-helpers");
 
 // contract WTPIX มี 2 ตัว (sale + bridge) — ต้องใช้ fully qualified name
 const WTPIX_FQN = "src/sale/WTPIX_ERC20.sol:WTPIX";
 
-const DEADLINE = () => Math.floor(Date.now() / 1000) + 3600;
+/**
+ * deadline ต้องอิง "นาฬิกาของ EVM" ไม่ใช่นาฬิกาเครื่อง
+ *
+ * เดิมใช้ Date.now() ซึ่งพังทันทีที่ไฟล์เทสต์อื่นเดินเวลา EVM ไปข้างหน้า
+ * (เช่นเทสต์ vesting/cooldown ที่ time.increase() ไปหลายเดือน) — พอ block.timestamp
+ * แซงนาฬิกาเครื่อง ทุกเคสในไฟล์นี้ก็ revert "TPIX: EXPIRED" ทั้งที่โค้ดไม่ได้ผิดอะไรเลย
+ * และมันจะพังเฉพาะตอนรันรวมทั้งสวีท รันไฟล์เดี่ยว ๆ ผ่านหมด — หลอกคนดูได้ง่ายมาก
+ */
+const DEADLINE = async () => (await time.latest()) + 3600;
 
 describe("TPIXDEX (AMM)", function () {
     let deployer, alice, bob, feeCollector;
@@ -104,7 +112,7 @@ describe("TPIXDEX (AMM)", function () {
                 LIQ_USDT,
                 LIQ_TPIX,
                 deployer.address,
-                DEADLINE(),
+                await DEADLINE(),
                 { value: LIQ_TPIX }
             );
 
@@ -131,7 +139,7 @@ describe("TPIXDEX (AMM)", function () {
             await usdt.approve(await router.getAddress(), LIQ_USDT);
             await router.addLiquidityETH(
                 await usdt.getAddress(), LIQ_USDT, LIQ_USDT, LIQ_TPIX,
-                deployer.address, DEADLINE(), { value: LIQ_TPIX }
+                deployer.address, await DEADLINE(), { value: LIQ_TPIX }
             );
 
             const pairAddress = await factory.getPair(await wtpix.getAddress(), await usdt.getAddress());
@@ -141,7 +149,7 @@ describe("TPIXDEX (AMM)", function () {
 
             const usdtBefore = await usdt.balanceOf(deployer.address);
             await router.removeLiquidityETH(
-                await usdt.getAddress(), lpBalance, 0, 0, deployer.address, DEADLINE()
+                await usdt.getAddress(), lpBalance, 0, 0, deployer.address, await DEADLINE()
             );
             const usdtReturned = (await usdt.balanceOf(deployer.address)) - usdtBefore;
 
@@ -162,7 +170,7 @@ describe("TPIXDEX (AMM)", function () {
             await usdt.approve(await router.getAddress(), LIQ_USDT);
             await router.addLiquidityETH(
                 await usdt.getAddress(), LIQ_USDT, LIQ_USDT, LIQ_TPIX,
-                deployer.address, DEADLINE(), { value: LIQ_TPIX }
+                deployer.address, await DEADLINE(), { value: LIQ_TPIX }
             );
         });
 
@@ -172,7 +180,7 @@ describe("TPIXDEX (AMM)", function () {
             const quoted = await router.getAmountsOut(amountIn, path);
 
             await router.connect(alice).swapExactETHForTokens(
-                quoted[1], path, alice.address, DEADLINE(), { value: amountIn }
+                quoted[1], path, alice.address, await DEADLINE(), { value: amountIn }
             );
 
             expect(await usdt.balanceOf(alice.address)).to.equal(quoted[1]);
@@ -190,7 +198,7 @@ describe("TPIXDEX (AMM)", function () {
 
             await expect(
                 router.connect(alice).swapExactTokensForETH(
-                    amountIn, quoted[1], path, alice.address, DEADLINE()
+                    amountIn, quoted[1], path, alice.address, await DEADLINE()
                 )
             ).to.changeEtherBalance(alice, quoted[1]);
         });
@@ -202,7 +210,7 @@ describe("TPIXDEX (AMM)", function () {
 
             await expect(
                 router.connect(alice).swapExactETHForTokens(
-                    quoted[1] + 1n, path, alice.address, DEADLINE(), { value: amountIn }
+                    quoted[1] + 1n, path, alice.address, await DEADLINE(), { value: amountIn }
                 )
             ).to.be.revertedWith("TPIX: INSUFFICIENT_OUTPUT_AMOUNT");
         });
@@ -254,7 +262,7 @@ describe("TPIXDEX (AMM)", function () {
             await router.addLiquidityETH(
                 await usdt.getAddress(),
                 ethers.parseUnits("10000", 6), 0, 0,
-                deployer.address, DEADLINE(),
+                deployer.address, await DEADLINE(),
                 { value: ethers.parseEther("2000") }
             );
 
@@ -263,7 +271,7 @@ describe("TPIXDEX (AMM)", function () {
             await router.addLiquidityETH(
                 await tokenB.getAddress(),
                 ethers.parseUnits("20000", 6), 0, 0,
-                deployer.address, DEADLINE(),
+                deployer.address, await DEADLINE(),
                 { value: ethers.parseEther("2000") }
             );
         });
@@ -279,7 +287,7 @@ describe("TPIXDEX (AMM)", function () {
             await router.addLiquidity(
                 await usdt.getAddress(), await tokenB.getAddress(),
                 ethers.parseUnits("5000", 6), ethers.parseUnits("5000", 6),
-                0, 0, deployer.address, DEADLINE()
+                0, 0, deployer.address, await DEADLINE()
             );
 
             const amountIn = ethers.parseUnits("100", 6);
@@ -289,7 +297,7 @@ describe("TPIXDEX (AMM)", function () {
             const path = [await usdt.getAddress(), await tokenB.getAddress()];
             const quoted = await router.getAmountsOut(amountIn, path);
             await router.connect(alice).swapExactTokensForTokens(
-                amountIn, quoted[1], path, alice.address, DEADLINE()
+                amountIn, quoted[1], path, alice.address, await DEADLINE()
             );
             expect(await tokenB.balanceOf(alice.address)).to.equal(quoted[1]);
         });
@@ -308,7 +316,7 @@ describe("TPIXDEX (AMM)", function () {
             expect(quoted[2]).to.be.gt(0);
 
             await router.connect(alice).swapExactTokensForTokens(
-                amountIn, quoted[2], path, alice.address, DEADLINE()
+                amountIn, quoted[2], path, alice.address, await DEADLINE()
             );
             expect(await tokenB.balanceOf(alice.address)).to.equal(quoted[2]);
         });
@@ -327,7 +335,7 @@ describe("TPIXDEX (AMM)", function () {
             await usdt.approve(await router.getAddress(), LIQ_USDT * 2n);
             await router.addLiquidityETH(
                 await usdt.getAddress(), LIQ_USDT, 0, 0,
-                deployer.address, DEADLINE(), { value: ethers.parseEther("5000") }
+                deployer.address, await DEADLINE(), { value: ethers.parseEther("5000") }
             );
 
             const pairAddress = await factory.getPair(await wtpix.getAddress(), await usdt.getAddress());
@@ -337,13 +345,13 @@ describe("TPIXDEX (AMM)", function () {
             for (let i = 0; i < 5; i++) {
                 await router.connect(alice).swapExactETHForTokens(
                     0, [await wtpix.getAddress(), await usdt.getAddress()],
-                    alice.address, DEADLINE(), { value: ethers.parseEther("200") }
+                    alice.address, await DEADLINE(), { value: ethers.parseEther("200") }
                 );
                 const back = await usdt.balanceOf(alice.address);
                 await usdt.connect(alice).approve(await router.getAddress(), back);
                 await router.connect(alice).swapExactTokensForETH(
                     back, 0, [await usdt.getAddress(), await wtpix.getAddress()],
-                    alice.address, DEADLINE()
+                    alice.address, await DEADLINE()
                 );
             }
 
@@ -351,7 +359,7 @@ describe("TPIXDEX (AMM)", function () {
             expect(await pair.balanceOf(feeCollector.address)).to.equal(0);
             await router.addLiquidityETH(
                 await usdt.getAddress(), ethers.parseUnits("100", 6), 0, 0,
-                deployer.address, DEADLINE(), { value: ethers.parseEther("1000") }
+                deployer.address, await DEADLINE(), { value: ethers.parseEther("1000") }
             );
             expect(await pair.balanceOf(feeCollector.address)).to.be.gt(0);
         });
