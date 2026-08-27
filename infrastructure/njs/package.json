@@ -1,0 +1,6 @@
+{
+  "name": "tpix-njs",
+  "private": true,
+  "type": "module",
+  "description": "มีไว้ให้ node import tpix-rpc.js มาเทสต์ได้เท่านั้น — nginx/njs ไม่อ่านไฟล์นี้"
+}

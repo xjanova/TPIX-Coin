@@ -49,10 +49,37 @@ x-validator: &validator
     start_period: 60s
   networks: [tpix]
 
+# ⚠️ ก่อน apply ทุกครั้ง ต้องยืนยันว่ารุ่นนี้รู้จักธงพวกนี้จริง ใช้เวลา 5 วินาที
+#    ธงที่ไม่มีอยู่จริง = validator ไม่บูต = เชนหยุดทั้งวง
+#      sudo docker run --rm 0xpolygon/polygon-edge:0.9.0 server --help \
+#        | grep -E 'max-enqueued|max-slots|block-gas-target|price-limit'
+#
+# ── ทำไมตั้งค่าพวกนี้ (เชนค่าแก๊ส 0 กันสแปมด้วยราคาไม่ได้) ───────────────────
+# --price-limit 0     คือจุดขายของเชน ห้ามแตะ — แต่แปลว่าไม่มีต้นทุนต่อธุรกรรม
+#                     ผู้ใช้จริงจึง **แซงคิวสแปมด้วยการจ่ายแพงกว่าไม่ได้**
+#                     ด่านกันสแปมทั้งหมดจึงต้องอยู่นอกเชน (ดู infrastructure/njs/)
+#
+# --max-enqueued 16   เดิมไม่ได้ตั้ง = ใช้ค่าเริ่มต้น 128 ต่อ address
+#                     → 32 address ก็กิน max-slots 4096 จนเต็มแล้ว
+#                     ลดเหลือ 16 ต้องใช้ 256 address ถึงจะทำได้เท่าเดิม
+#
+# --block-gas-target  ลดจาก 20M เหลือ 10M
+#                     20M/2วิ = 476 tx/s ซึ่งไม่เคยมีใครใช้ (txpool pending = 0)
+#                     แต่มันคือ **เพดานการโตของ state ต่อบล็อก** ด้วย
+#                     10M ยังได้ ~238 tx/s (เกินพอ) แต่ครึ่งเดียวของอัตราถมดิสก์
+#                     ถ้าวันหน้าทราฟฟิกจริงชนเพดาน ปรับกลับได้ทันที ไม่ใช่ค่าถาวร
+#
+# --json-rpc-batch-request-limit / --json-rpc-block-range-limit
+#                     **ไม่ใส่โดยตั้งใจ** — ยืนยันจาก prod แล้วว่าค่าเริ่มต้นทำงานอยู่
+#                     (batch 30 ใบ → "Batch request length too long",
+#                      getLogs ทั้งเชน → "block range too high")
+#                     ใส่ธงที่รุ่นนี้ไม่รู้จัก = เชนไม่บูต จึงไม่เสี่ยงโดยไม่จำเป็น
 x-cmd: &cmd >
   server --data-dir /data --chain /genesis.json
   --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545
-  --seal --max-slots 4096 --block-gas-target 20000000 --price-limit 0
+  --seal --price-limit 0
+  --max-slots 4096 --max-enqueued 16
+  --block-gas-target 10000000
   --log-level INFO
 
 services:

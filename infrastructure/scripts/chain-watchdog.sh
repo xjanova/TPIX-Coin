@@ -40,6 +40,22 @@ MAX_RESTART_PER_HOUR="${TPIX_MAX_RESTART_PER_HOUR:-3}"
 RESTART_COUNTER_FILE="${TPIX_RESTART_COUNTER_FILE:-/tmp/tpix-restart-counter}"
 BLOCK_PROGRESS_WAIT="${TPIX_BLOCK_PROGRESS_WAIT:-10}"  # วินาที — ห่างกันระหว่าง 2 sample
 MEM_WARN_PCT="${TPIX_MEM_WARN_PCT:-85}"
+
+# ── ด่านดิสก์ ────────────────────────────────────────────────────────────────
+# เดิม watchdog ไม่เคยตรวจดิสก์เลยสักบรรทัด ซึ่งเป็นช่องที่แย่ที่สุดของเชนค่าแก๊ส 0:
+# เขียน state ฟรี → deploy สัญญา 24KB ≈ 4.9M gas → ~4 GB/วัน
+# หรือ SSTORE slot ใหม่ (20k gas) → ~5-10 GB/วัน เทียบกับ data เชนเก่าทั้งชีวิต 9.8 GB
+# พอดิสก์เต็ม validator จะ crash แล้ว watchdog จะ restart วนไม่จบโดยไม่มีใครรู้สาเหตุ
+DISK_PATH="${TPIX_DISK_PATH:-/opt/tpix}"
+DISK_WARN_PCT="${TPIX_DISK_WARN_PCT:-75}"
+DISK_CRIT_PCT="${TPIX_DISK_CRIT_PCT:-88}"
+
+# ── ด่านสแปม ────────────────────────────────────────────────────────────────
+# บล็อกเต็มติดกัน = สัญญาณยิงถล่มที่ชัดที่สุด เพราะทราฟฟิกจริงตอนนี้ทำให้
+# pending เป็น 0 อยู่ตลอด (ยืนยันจาก prod 2026-08-27)
+# ไม่ restart เพราะ restart ไม่ได้แก้สแปม แค่ทำให้เชนสะดุดซ้ำ — หน้าที่คือส่งเสียง
+MEMPOOL_WARN="${TPIX_MEMPOOL_WARN:-1000}"      # pending+queued ที่ถือว่าผิดปกติ
+BLOCK_FULL_PCT="${TPIX_BLOCK_FULL_PCT:-80}"    # gasUsed/gasLimit ที่ถือว่าเต็ม
 VALIDATORS=(tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4)
 
 # Optional integrations (empty = skip)
@@ -232,6 +248,76 @@ check_memory() {
     return 0
 }
 
+# ─── ดิสก์ ───
+# คืน 1 เมื่อถึงขั้นวิกฤต · ระดับเตือนแค่ log + แจ้งหลังบ้าน ไม่ทำให้ล้ม
+check_disk() {
+    local pct
+    pct=$(df -P "$DISK_PATH" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+    if [ -z "$pct" ]; then
+        log "WARNING: อ่านพื้นที่ดิสก์ของ $DISK_PATH ไม่ได้"
+        return 0
+    fi
+
+    if [ "$pct" -ge "$DISK_CRIT_PCT" ]; then
+        log "CRITICAL: ดิสก์ $DISK_PATH ใช้ไป ${pct}% (เพดานวิกฤต ${DISK_CRIT_PCT}%)"
+        backend_alert "disk_critical" "critical" \
+            "ดิสก์เชนเหลือน้อยมาก ใช้ไป ${pct}% — เต็มเมื่อไหร่ validator ตายทั้งวง"
+        return 1
+    fi
+
+    if [ "$pct" -ge "$DISK_WARN_PCT" ]; then
+        log "WARNING: ดิสก์ $DISK_PATH ใช้ไป ${pct}% (เพดานเตือน ${DISK_WARN_PCT}%)"
+        backend_alert "disk_warning" "warning" \
+            "ดิสก์เชนใช้ไป ${pct}% — ถ้าโตเร็วผิดปกติให้ดูว่ามีใครยิง state ถล่มอยู่ไหม"
+    fi
+
+    return 0
+}
+
+# ─── สแปม / ยิงถล่ม ───
+# แจ้งเตือนอย่างเดียว ไม่ restart — restart ไม่ได้ไล่คนยิงออกไป
+check_flood() {
+    local pool pending queued total blk gas_used gas_limit pct
+
+    # txpool_status ผูก 127.0.0.1 ไว้ ไม่ได้เปิดออกเน็ต (ด่าน njs ปิดไว้ฝั่ง nginx)
+    pool=$(curl -s -m 5 -X POST "$RPC_URL" -H 'Content-Type: application/json' \
+        --data '{"jsonrpc":"2.0","method":"txpool_status","params":[],"id":1}' 2>/dev/null)
+
+    pending=$(printf '%s' "$pool" | grep -o '"pending":[^,}]*' | head -1 | cut -d: -f2 | tr -d '" ')
+    queued=$(printf '%s' "$pool"  | grep -o '"queued":[^,}]*'  | head -1 | cut -d: -f2 | tr -d '" ')
+
+    if [ -n "$pending" ] && [ -n "$queued" ]; then
+        total=$(( $(printf '%d' "$pending" 2>/dev/null || echo 0) + $(printf '%d' "$queued" 2>/dev/null || echo 0) ))
+        if [ "$total" -ge "$MEMPOOL_WARN" ]; then
+            log "WARNING: mempool ค้าง $total ใบ (เพดาน $MEMPOOL_WARN)"
+            backend_alert "mempool_flood" "warning" \
+                "mempool ค้าง $total ใบ — ปกติเป็น 0 ให้ดูว่ามีใครยิงถล่มอยู่ไหม"
+        fi
+    fi
+
+    # บล็อกล่าสุดเต็มแค่ไหน — เชนนี้ทราฟฟิกจริงยังใกล้ 0 บล็อกเต็มจึงผิดปกติแน่นอน
+    blk=$(curl -s -m 5 -X POST "$RPC_URL" -H 'Content-Type: application/json' \
+        --data '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["latest",false],"id":1}' 2>/dev/null)
+
+    gas_used=$(printf '%s' "$blk"  | grep -o '"gasUsed":"[^"]*"'  | head -1 | cut -d'"' -f4)
+    gas_limit=$(printf '%s' "$blk" | grep -o '"gasLimit":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+    if [ -n "$gas_used" ] && [ -n "$gas_limit" ]; then
+        gas_used=$(printf '%d' "$gas_used" 2>/dev/null || echo 0)
+        gas_limit=$(printf '%d' "$gas_limit" 2>/dev/null || echo 0)
+        if [ "$gas_limit" -gt 0 ]; then
+            pct=$(( gas_used * 100 / gas_limit ))
+            if [ "$pct" -ge "$BLOCK_FULL_PCT" ]; then
+                log "WARNING: บล็อกล่าสุดใช้แก๊สไป ${pct}% ของเพดาน"
+                backend_alert "block_saturated" "warning" \
+                    "บล็อกล่าสุดเต็ม ${pct}% — เชนนี้ปกติแทบว่าง ให้ตรวจว่ามีใครยิงถล่มไหม"
+            fi
+        fi
+    fi
+
+    return 0
+}
+
 # ─── Restart all validators ───
 restart_chain() {
     local reason="$1" compose_file
@@ -323,6 +409,14 @@ main() {
         [ $? -eq 0 ] && hc_ping || hc_ping "/fail"
         exit 0
     fi
+
+    # Check 5: ดิสก์ — ไม่ restart เพราะ restart ไม่ได้คืนพื้นที่ แต่ต้องส่งเสียง
+    # ข้อนี้สำคัญกว่าที่เห็น: เชนค่าแก๊ส 0 ถูกถมดิสก์ได้ฟรี และเมื่อเต็มแล้ว
+    # อาการจะออกมาเป็น "validator ตาย → watchdog restart → ตายอีก" วนไม่จบ
+    check_disk || true
+
+    # Check 6: สแปม / ยิงถล่ม — แจ้งเตือนอย่างเดียวเช่นกัน
+    check_flood || true
 
     # All checks passed — heartbeat (healthchecks.io + หลังบ้าน tpix.online)
     hc_ping
