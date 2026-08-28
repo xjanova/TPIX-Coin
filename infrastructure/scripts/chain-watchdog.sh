@@ -56,6 +56,11 @@ DISK_CRIT_PCT="${TPIX_DISK_CRIT_PCT:-88}"
 # ไม่ restart เพราะ restart ไม่ได้แก้สแปม แค่ทำให้เชนสะดุดซ้ำ — หน้าที่คือส่งเสียง
 MEMPOOL_WARN="${TPIX_MEMPOOL_WARN:-1000}"      # pending+queued ที่ถือว่าผิดปกติ
 BLOCK_FULL_PCT="${TPIX_BLOCK_FULL_PCT:-80}"    # gasUsed/gasLimit ที่ถือว่าเต็ม
+
+# ── ล็อกกันชนกับงานสำรองข้อมูล ────────────────────────────────────────────────
+# ต้องเป็น path เดียวกับที่ backup-chain.sh สร้าง ไม่งั้นทั้งสองตัวจะไม่เห็นกัน
+BACKUP_LOCK="${TPIX_BACKUP_LOCK:-/run/tpix-backup.lock}"
+BACKUP_LOCK_MAX_AGE="${TPIX_BACKUP_LOCK_MAX_AGE:-1800}"   # 30 นาที
 VALIDATORS=(tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4)
 
 # Optional integrations (empty = skip)
@@ -378,6 +383,27 @@ main() {
         log "ERROR: Infrastructure dir not found: $INFRA_DIR"
         hc_ping "/fail"
         exit 1
+    fi
+
+    # ── ยอมให้งานสำรองข้อมูลหยุด validator ได้ 1 ตัวโดยไม่โดน restart ทับ ──────
+    #
+    # backup-chain.sh หยุด tpix-validator-4 ชั่วคราวเพื่อคัดลอกข้อมูลให้สอดคล้องกัน
+    # (IBFT 4 ตัวทนพังได้ 1 เชนจึงเดินต่อ) แต่ check_containers เห็นแล้วจะสั่ง
+    # restart ทั้งวง = ข้อมูลถูกคัดลอกกลางคันจนไฟล์สำรองเสีย และเชนสะดุดฟรี ๆ
+    #
+    # ล็อกมีอายุ ถ้า backup ตายกลางทางจนลบล็อกไม่ทัน watchdog จะกลับมาทำงานเองใน
+    # 30 นาที ไม่ใช่เงียบไปตลอดกาล
+    if [ -f "$BACKUP_LOCK" ]; then
+        local lock_age
+        lock_age=$(( $(date +%s) - $(stat -c %Y "$BACKUP_LOCK" 2>/dev/null || echo 0) ))
+        if [ "$lock_age" -lt "$BACKUP_LOCK_MAX_AGE" ]; then
+            log "SKIP: งานสำรองข้อมูลกำลังทำงาน (ล็อกอายุ ${lock_age}s) — ไม่ตรวจ/ไม่ restart รอบนี้"
+            hc_ping
+            exit 0
+        fi
+        log "WARNING: ล็อกสำรองข้อมูลค้างมา ${lock_age}s เกินเพดาน ${BACKUP_LOCK_MAX_AGE}s — ตรวจตามปกติ"
+        backend_alert "backup_lock_stale" "warning" \
+            "ล็อกสำรองข้อมูลค้างเกิน ${BACKUP_LOCK_MAX_AGE}s — งานสำรองอาจตายกลางทาง ไปดูที่ $BACKUP_LOCK"
     fi
 
     # Check 1: containers

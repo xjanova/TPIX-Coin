@@ -37,6 +37,12 @@ KEEP_DAYS="${TPIX_BACKUP_KEEP_DAYS:-14}"
 # คำสั่งส่งไฟล์ออกนอกเครื่อง — ใช้ {file} เป็นตัวแทนพาธไฟล์
 UPLOAD_CMD="${TPIX_BACKUP_UPLOAD:-}"
 
+# ── ล็อกบอก watchdog ว่ากำลังสำรองข้อมูลอยู่ ──────────────────────────────────
+# สคริปต์นี้หยุด validator 1 ตัวชั่วคราว ซึ่ง chain-watchdog.sh จะเห็นแล้วสั่ง
+# restart ทั้งวงทับ = ข้อมูลถูกคัดลอกกลางคันจนไฟล์สำรองเสีย และเชนสะดุดฟรี ๆ
+# ต้องเป็น path เดียวกับ BACKUP_LOCK ใน chain-watchdog.sh
+BACKUP_LOCK="${TPIX_BACKUP_LOCK:-/run/tpix-backup.lock}"
+
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[+]${NC} $(date '+%F %T') $*"; }
 warn() { echo -e "${YELLOW}[!]${NC} $(date '+%F %T') $*"; }
@@ -63,7 +69,23 @@ start_validator() {
         docker start "$VALIDATOR" >/dev/null 2>&1 || err "เปิด $VALIDATOR ไม่สำเร็จ — ต้องเข้าไปดูด้วยมือทันที"
     fi
 }
-trap start_validator EXIT
+cleanup() {
+    start_validator
+    rm -f "$BACKUP_LOCK"
+}
+trap cleanup EXIT
+
+# กัน backup สองตัวทับกัน (cron ซ้อนตอนรอบก่อนยังไม่จบ)
+if [[ -f "$BACKUP_LOCK" ]]; then
+    LOCK_AGE=$(( $(date +%s) - $(stat -c %Y "$BACKUP_LOCK" 2>/dev/null || echo 0) ))
+    if [[ "$LOCK_AGE" -lt 1800 ]]; then
+        err "มีงานสำรองข้อมูลทำงานอยู่แล้ว (ล็อกอายุ ${LOCK_AGE}s) — ยกเลิกรอบนี้"
+        trap - EXIT          # อย่าไปลบล็อกของตัวที่กำลังทำงานอยู่
+        exit 1
+    fi
+    warn "ล็อกค้างมา ${LOCK_AGE}s ถือว่าเป็นของรอบที่ตายไปแล้ว — ทำต่อ"
+fi
+date +%s > "$BACKUP_LOCK"
 
 # ── 1. ตรวจสุขภาพเชนก่อนแตะอะไร ────────────────────────────────────────────
 BEFORE_HEX="$(block_number)"
