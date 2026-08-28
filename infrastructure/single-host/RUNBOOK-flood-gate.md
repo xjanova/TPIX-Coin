@@ -1,26 +1,37 @@
-# รันบุ๊ก — เปิดด่านกันยิงถล่มเชนค่าแก๊ส 0
+# รันบุ๊ก — ด่านกันยิงถล่มเชนค่าแก๊ส 0
 
-> **ลำดับสำคัญมาก** ข้ามขั้นหรือสลับลำดับ = ตัดผู้ใช้ออกทั้งเว็บ หรือเชนไม่บูต
-> ทุกขั้นมีคำสั่งตรวจของจริงต่อท้าย — **อย่าเชื่อว่า "ติดตั้งแล้ว" แปลว่า "ทำงาน"**
-> (ตัวกรองรุ่นก่อนหน้า `nginx -t` ผ่านแล้วบล็อกทุกคำขอ ต้องคอมเมนต์ทิ้งทั้งชุด)
+> **สถานะ: ติดตั้งครบบน `tpixserver` (123.253.62.252) แล้ว เมื่อ 2026-08-28**
+> เอกสารนี้เขียนใหม่หลังลงมือจริง — ทุกขั้นและทุกกับดักด้านล่างเกิดขึ้นจริงระหว่างติดตั้ง
+> ใช้ตอนตั้งเครื่องใหม่ กู้คืน หรือย้ายเชนไปเครื่องอื่น
 
-## ปัญหาที่กำลังแก้
+## ปัญหาที่แก้
 
-เชนนี้ `--price-limit 0` เป็นจุดขาย แต่แปลว่า **ไม่มีต้นทุนต่อธุรกรรม**
-ผู้ใช้จริงจึงแซงคิวสแปมด้วยการจ่ายแก๊สแพงกว่าไม่ได้ (บนเชนปกติทำได้)
+`--price-limit 0` เป็นจุดขาย แต่แปลว่าไม่มีต้นทุนต่อธุรกรรม
+ผู้ใช้จริงจึง **แซงคิวสแปมด้วยการ bid gas สูงกว่าไม่ได้** (บนเชนทั่วไปทำได้)
+→ ด่านกันสแปมต้องอยู่นอกเชนทั้งหมด และจำกัดที่ **อัตรา** ไม่ใช่ **ราคา**
 
-| | ก่อนแก้ |
-|---|---|
-| เชนรับได้ | 20M gas ÷ 21,000 ÷ 2 วิ ≈ **476 tx/s** |
-| IP เดียวยิงได้ | 30 r/s × batch 20 = **600 tx/s** |
-| txpool | `--max-slots 4096` → เต็มใน **~7 วินาที** |
-| ต่อ address | `--max-enqueued` ไม่ได้ตั้ง = 128 → **32 address กิน pool หมด** |
-
-→ IP เดียว ต้นทุน 0 บาท ท่วม mempool ถาวร = เซ็นเซอร์ผู้ใช้จริงทั้งเชน
+วัดกับ prod ก่อนแก้: batch 20 ใบของ `eth_sendRawTransaction` ในคำขอเดียว
+ได้ 200 ใน 0.23 วิ และทุกใบไปถึงขั้นถอด RLP ของโหนดจริง
+= **1 คำขอ HTTP เท่ากับ 20 ครั้งที่พยายามยัดเข้า mempool** เทียบกับ txpool ที่มี 4096 ช่อง
 
 ---
 
-## ขั้น 0 — ตรวจว่ารุ่น polygon-edge รู้จักธงที่จะใส่ (5 วินาที)
+## ⛔ กับดักที่เจอจริง — อ่านก่อนลงมือทุกครั้ง
+
+| กับดัก | อาการ | ทางที่ถูก |
+|---|---|---|
+| `js_shared_dict_zone` ไม่ใส่ `type=number` | **ธุรกรรมทุกใบได้ 500** (แย่กว่าไม่มีด่าน) `nginx -t` ผ่านฉลุย เห็นแค่ `TypeError: shared dict is not a number dict` ใน error log | ใส่ `type=number` เสมอ |
+| เปลี่ยนชนิดโซนแล้ว `reload` | `systemctl reload` **คืนค่าสำเร็จ** แต่ nginx ปฏิเสธ config ใหม่ (`[emerg] ... had previously a different type`) ตัวเก่าวิ่งต่อเงียบ ๆ | ต้อง `restart` และอ่าน error log ยืนยัน อย่าเชื่อ exit code |
+| ทับ `10-tpix-http.conf` ทั้งไฟล์ | `99-tpix-debug.conf` อ้าง `$rpc_method_denied` ฯลฯ จาก map ในไฟล์นั้น ลบ map = **nginx ไม่สตาร์ท** | เพิ่มไฟล์ `05-tpix-njs.conf` แยก อย่าไปแตะของเดิม |
+| `failregex` ของ fail2ban ใส่ `\[วันที่\]` | ไม่แมตช์สักบรรทัด รายงานแค่ "0 matched" ไม่มี error | fail2ban **ตัดวันที่ออกก่อน** ใช้ `.*` ข้ามช่วงนั้น |
+| jail ไม่ระบุ `backend = auto` | fail2ban ไปอ่าน journald **มองข้าม logpath** status ขึ้น `Journal matches:` แทน `File list:` | ระบุ `backend = auto` เสมอ |
+| `grep -r load_module /etc/nginx/modules-enabled/` | ได้ผลว่าง แล้วสรุปผิดว่าโมดูล njs ไม่ได้โหลด | `-r` ไม่ตาม symlink ต้องใช้ `-R` |
+| curl ไม่ส่ง UA | Cloudflare bot rule ตอบ **403** ทำให้นึกว่าด่านเราพัง | ส่ง `User-Agent` แบบเบราว์เซอร์เสมอ |
+| copy watchdog ไป `/usr/local/bin` | cron เรียก `/usr/local/sbin/tpix-chain-watchdog` (ไม่มี `.sh`) — ตัวใหม่ไม่เคยถูกเรียก | ตรวจ `/etc/cron.d/tpix-chain-watchdog` ก่อนเสมอ |
+
+---
+
+## ขั้น 0 — ตรวจธง polygon-edge (5 วินาที)
 
 ธงที่ไม่มีอยู่จริง = validator ไม่บูต = **เชนหยุดทั้งวง**
 
@@ -29,100 +40,88 @@ sudo docker run --rm 0xpolygon/polygon-edge:0.9.0 server --help \
   | grep -E 'max-enqueued|max-slots|block-gas-target|price-limit'
 ```
 
-ต้องเห็นครบทั้ง 4 บรรทัด **ถ้า `max-enqueued` ไม่มี** → ตัดธงนั้นออกจาก
-`single-host/docker-compose.yml` ก่อน แล้วค่อยไปขั้นถัดไป
+ยืนยันแล้วบน 0.9.0: มีครบทั้ง 4 ตัว (`--max-enqueued` default 128, `--max-slots` default 4096)
 
 ---
 
-## ขั้น 1 — ติดตั้งด่าน njs ที่ nginx
-
-ตรวจก่อนว่ามีโมดูล (ต้อง njs ≥ 0.8.0 เพราะใช้ `js_shared_dict_zone`):
-
-```bash
-nginx -V 2>&1 | tr ' ' '\n' | grep -i njs ; dpkg -l | grep libnginx-mod-http-js
-```
+## ขั้น 1 — ด่าน njs ที่ nginx
 
 ```bash
 cd ~/TPIX-Coin && git pull
+TS=$(date +%Y%m%d-%H%M%S)
+sudo mkdir -p /etc/nginx/njs /etc/nginx/backup-$TS
+sudo cp /etc/nginx/sites-available/tpix-rpc.conf /etc/nginx/backup-$TS/
+sudo cp /etc/nginx/conf.d/10-tpix-http.conf     /etc/nginx/backup-$TS/
 
-sudo mkdir -p /etc/nginx/njs
 sudo cp infrastructure/njs/tpix-rpc.js /etc/nginx/njs/
+sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
+sudo cp infrastructure/single-host/nginx-rpc.conf /etc/nginx/sites-available/tpix-rpc.conf
 
-# ⚠️ ไฟล์นี้ต้องมีก่อน ไม่งั้น geo ... include จะทำให้ nginx ไม่สตาร์ท
-sudo cp infrastructure/single-host/tpix-banned.map /etc/nginx/conf.d/
-
-# สำรองของเดิมไว้ก่อนเสมอ
-sudo cp /etc/nginx/conf.d/10-tpix-http.conf{,.bak-$(date +%Y%m%d-%H%M%S)} 2>/dev/null || true
-sudo cp /etc/nginx/sites-available/tpix-rpc.conf{,.bak-$(date +%Y%m%d-%H%M%S)} 2>/dev/null || true
-
-sudo cp infrastructure/single-host/nginx-http-tpix.conf /etc/nginx/conf.d/10-tpix-http.conf
-sudo cp infrastructure/single-host/nginx-rpc.conf       /etc/nginx/sites-available/tpix-rpc.conf
-
-sudo nginx -t && sudo systemctl reload nginx
+sudo nginx -t && sudo systemctl restart nginx     # restart ไม่ใช่ reload
+sudo tail -20 /var/log/nginx/error.log            # ต้องไม่มี [emerg] / js exception
 ```
 
-**ตรวจของจริงทันที:**
-
+ตรวจ:
 ```bash
-sudo bash infrastructure/scripts/verify-rpc-gate.sh
+bash infrastructure/scripts/verify-rpc-gate.sh https://rpc.tpix.online
 ```
+ต้องได้ **ผ่าน 17 · ไม่ผ่าน 0** ถ้าไม่ผ่าน → คืนไฟล์จาก `/etc/nginx/backup-$TS/` แล้ว restart
 
-ต้องผ่านทุกข้อ ถ้าไม่ผ่าน → `sudo cp <ไฟล์ .bak ล่าสุด> กลับ && sudo systemctl reload nginx`
-
-> ขั้นนี้ทำให้ `real_ip_header CF-Connecting-IP` เริ่มทำงาน → `$remote_addr`
-> ในล็อกกลายเป็น IP ผู้ใช้จริง ไม่ใช่ IP ของ Cloudflare
-> **ต้องทำก่อนขั้น 3 เสมอ** ไม่งั้น fail2ban จะแบน IP ของ Cloudflare = ตัดผู้ใช้ทั้งเว็บ
+> `real_ip_header CF-Connecting-IP` อยู่ใน `00-cloudflare-realip.conf` ตั้งแต่ 6 ส.ค. แล้ว
+> ไม่ต้องตั้งซ้ำ — และเพราะมันเปิดอยู่ `$remote_addr` ในล็อกจึงเป็น IP ผู้ใช้จริง
 
 ---
 
 ## ขั้น 2 — ปิดทางยิงตรงเข้า origin
 
-ตอนนี้เดินอ้อม Cloudflare ได้จริง (พิสูจน์ 2026-08-27 ตอบ 200 พร้อมเลขบล็อก)
-ตราบใดที่ยังเดินอ้อมได้ **โควตาเขียนของ njs หลบได้ทั้งดุ้น** ด้วยการปลอม
-`CF-Connecting-IP` เป็นค่าอะไรก็ได้ทุกใบ
-
+ก่อนทำ **ตรวจว่าทุกโดเมนบนเครื่องนี้อยู่หลัง Cloudflare จริง** ไม่งั้นล็อกแล้วเว็บนั้นดับ:
 ```bash
-# ดูก่อนว่าจะใส่กฎอะไรบ้าง — ไม่แตะไฟร์วอลล์
-bash infrastructure/scripts/allow-cloudflare-only.sh
-
-# ลงมือจริง (เปิด 80/443 ให้เฉพาะช่วง Cloudflare + IP ที่ SSH เข้ามา)
-sudo ADMIN_IP=$(echo $SSH_CLIENT | cut -d' ' -f1) \
-  bash infrastructure/scripts/allow-cloudflare-only.sh --apply
+getent hosts rpc.tpix.online explorer.tpix.online     # ต้องเป็น IP ของ Cloudflare
+ls /etc/letsencrypt/live/ 2>/dev/null                 # ถ้ามี ต้องคิดเรื่อง ACME ก่อนล็อกพอร์ต 80
 ```
 
-**ตรวจจากเครื่องนอก:**
-
 ```bash
-ORIGIN_IP=123.253.62.252 bash infrastructure/scripts/verify-rpc-gate.sh
+sudo bash infrastructure/scripts/allow-cloudflare-only.sh            # ดูแผนก่อน
+sudo bash infrastructure/scripts/allow-cloudflare-only.sh --apply    # ลงมือ (SSH 22 ไม่ถูกแตะ)
 ```
 
-ถ้าเว็บล่ม → `sudo ufw allow 443/tcp` กลับทันที แล้วค่อยหาสาเหตุ
+ตรวจจาก **เครื่องนอก** (สำคัญ — ตรวจจากบนเครื่องเองไม่พิสูจน์อะไร):
+```bash
+curl -sk -m 12 -o /dev/null -w '%{http_code}\n' -X POST https://123.253.62.252 \
+     -H 'Host: rpc.tpix.online' -H 'User-Agent: Mozilla/5.0' \
+     -d '{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}'
+# ต้องได้ 000 (ต่อไม่ติด) ไม่ใช่ 200
+
+curl -s -m 12 https://rpc.tpix.online/health -H 'User-Agent: Mozilla/5.0'   # ต้องยัง 200
+```
+
+ถ้าเว็บดับ: `sudo ufw allow 443/tcp` กลับทันที แล้วค่อยหาสาเหตุ
 
 ---
 
-## ขั้น 3 — ซ่อม fail2ban (ตอนนี้แบนใครไม่ได้เลย)
-
-ของเดิม vhost เขียนล็อกลง `tpix-dbg.log` ด้วยฟอร์แมตกำหนดเอง
-แต่ jail ไปเฝ้า `access.log` ด้วย regex ของฟอร์แมต combined → **ไม่เคยแมตช์เลย**
+## ขั้น 3 — fail2ban
 
 ```bash
 sudo cp infrastructure/fail2ban/filter.d/tpix-rpc.conf /etc/fail2ban/filter.d/
 sudo cp infrastructure/fail2ban/jail.d/tpix-rpc.conf   /etc/fail2ban/jail.d/
 
-# ต้องได้ matched มากกว่า 0 — ถ้าเป็น 0 แปลว่า regex ยังไม่ตรงกับล็อกจริง
+# กันแบนตัวเอง: IP สาธารณะของเครื่องนี้วนกลับผ่าน CF ตอนรัน verify
+sudo sed -i 's|^ignoreip = 127.0.0.1/8 ::1|ignoreip = 127.0.0.1/8 ::1 123.253.62.252|' \
+     /etc/fail2ban/jail.d/tpix-rpc.conf
+
 sudo fail2ban-regex /var/log/nginx/tpix-rpc.access.log \
-     /etc/fail2ban/filter.d/tpix-rpc.conf
+     /etc/fail2ban/filter.d/tpix-rpc.conf | grep -E "Failregex|Lines:"   # matched ต้อง > 0
 
 sudo fail2ban-client reload tpix-rpc
-sudo fail2ban-client status tpix-rpc     # "File list" ต้องเป็น tpix-rpc.access.log
+sudo fail2ban-client status tpix-rpc     # ต้องเห็น "File list:" ไม่ใช่ "Journal matches:"
 ```
 
-> ⚠️ jail ใหม่ตัดช่วง IP ของ Cloudflare ออกจาก `ignoreip` แล้ว
-> **ทำได้ก็ต่อเมื่อขั้น 1 ผ่านแล้วเท่านั้น** (real_ip ทำงาน)
-> ยืนยันด้วยการดูล็อก: คอลัมน์แรกต้องเป็น IP ผู้ใช้ ไม่ใช่ 172.64.x / 104.16.x
-> ```bash
-> sudo tail -5 /var/log/nginx/tpix-rpc.access.log
-> ```
+พิสูจน์ว่า action แบนได้จริงโดยไม่แตะ IP ของใคร:
+```bash
+sudo fail2ban-client set tpix-rpc banip 203.0.113.99
+sudo iptables -L f2b-tpix-rpc -n | head -4        # ต้องเห็นบรรทัด REJECT
+sudo fail2ban-client set tpix-rpc unbanip 203.0.113.99
+```
 
 ---
 
@@ -134,29 +133,37 @@ sudo cp infrastructure/single-host/docker-compose.yml /opt/tpix/docker-compose.y
 sudo bash infrastructure/single-host/apply-rolling.sh
 ```
 
-`apply-rolling.sh` เปลี่ยนทีละตัวและรอ healthcheck ก่อนแตะตัวถัดไป
-**ห้าม `docker compose down`** — เชนจะหยุดทั้งวง
+`apply-rolling.sh` เปลี่ยนทีละตัวและรอ healthcheck + รอเชนเดินก่อนแตะตัวถัดไป
+**ห้าม `docker compose down`** เชนจะหยุดทั้งวง
 
-**ตรวจ:**
-
+ตรวจว่าธงติดจริง:
 ```bash
-sudo docker logs tpix-validator-1 --tail 20      # ต้องไม่มี "unknown flag"
-curl -s -X POST http://127.0.0.1:8545 -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}'    # เลขบล็อกต้องเดินต่อ
+ps -ef | grep -o "server --data-dir.*log-level INFO" | head -1
+sudo docker logs tpix-validator-1 --since 5m 2>&1 | grep -i "unknown\|panic"   # ต้องว่าง
 ```
+
+> watchdog อาจมองว่าเชนสะดุดระหว่าง rolling แล้วสั่ง restart ซ้ำ — ไม่เป็นไร เชนกลับมาเอง
+> (เกิดขึ้นจริงตอนติดตั้ง เห็นใน `/var/log/tpix-watchdog.log` เป็น `RESTART OK`)
 
 ---
 
 ## ขั้น 5 — watchdog เฝ้าดิสก์ + สแปม
 
+⚠️ ตรวจก่อนว่า cron เรียกไฟล์ไหน **อย่าเดา**:
 ```bash
-sudo cp infrastructure/scripts/chain-watchdog.sh /usr/local/bin/tpix-chain-watchdog.sh
-sudo bash /usr/local/bin/tpix-chain-watchdog.sh        # รันมือ 1 รอบดูผล
-sudo tail -20 /var/log/tpix-watchdog.log
+sudo cat /etc/cron.d/tpix-chain-watchdog
+# ปัจจุบัน: * * * * * root /usr/local/sbin/tpix-chain-watchdog     ← ไม่มี .sh และอยู่ sbin
 ```
 
-ปรับเพดานได้ที่ `/etc/tpix-watchdog.env`:
+```bash
+sudo cp /usr/local/sbin/tpix-chain-watchdog /usr/local/sbin/tpix-chain-watchdog.bak-$(date +%Y%m%d-%H%M%S)
+sudo cp infrastructure/scripts/chain-watchdog.sh /usr/local/sbin/tpix-chain-watchdog
+sudo chmod +x /usr/local/sbin/tpix-chain-watchdog
+grep -c "check_disk\|check_flood" /usr/local/sbin/tpix-chain-watchdog   # ต้องได้ 4
+sudo /usr/local/sbin/tpix-chain-watchdog && sudo tail -5 /var/log/tpix-watchdog.log
+```
 
+ปรับเพดานที่ `/etc/tpix-watchdog.env`:
 ```bash
 TPIX_DISK_PATH=/opt/tpix
 TPIX_DISK_WARN_PCT=75
@@ -167,28 +174,27 @@ TPIX_BLOCK_FULL_PCT=80
 
 ---
 
-## หลังทำครบ — ภาพที่ควรเป็น
+## ภาพหลังติดตั้งครบ
 
-| ชั้น | กันอะไร |
-|---|---|
-| ufw เปิดเฉพาะ Cloudflare | บังคับให้ทุกคนผ่าน CF จริง ๆ (WAF/DDoS/rate limit ของ CF เริ่มมีผล) |
-| `limit_req` 30 r/s + `limit_conn` 10 | เพดานหยาบต่อ IP จริง (หลัง real_ip) |
-| njs deny-list | `admin_*` `debug_*` `txpool_*` `eth_sign` ฯลฯ ถูกปฏิเสธ แกะ JSON จริงจึงหลอกด้วย escape ไม่ได้ |
-| njs allow-list | เมธอดที่ไม่รู้จัก = ปฏิเสธ (default deny) |
-| **njs โควตาเขียน 10 tx / 10 วิ / IP** | **แกนของงานนี้** — นับรายธุรกรรม batch 20 ใบ = 20 หน่วย |
-| `--max-enqueued 16` | 1 address จองได้ 16 ช่อง (เดิม 128) |
-| `--block-gas-target 10M` | ครึ่งเดียวของอัตราถมดิสก์สูงสุด |
-| fail2ban | ยิงโดนปฏิเสธ 10 ครั้ง/60 วิ → แบน 1 ชม. เพิ่มเป็นเท่าตัวถ้าซ้ำ |
-| watchdog | ดิสก์ 75/88% · mempool ค้าง · บล็อกเต็ม → แจ้งหลังบ้าน |
+| ชั้น | กันอะไร | สถานะ |
+|---|---|---|
+| ufw เปิดเฉพาะ Cloudflare | บังคับให้ทุกคนผ่าน CF จริง (WAF/DDoS/rate limit ของ CF จึงมีผล) | ✅ |
+| `limit_req` 30 r/s + `limit_conn` 10 | เพดานหยาบต่อ IP จริง | ✅ (มีอยู่เดิม) |
+| njs deny-list | `admin_*` `debug_*` `txpool_*` `eth_sign` ฯลฯ | ✅ |
+| njs allow-list | เมธอดที่ไม่รู้จัก = ปฏิเสธ | ✅ |
+| **njs โควตาเขียน 10 tx / 10 วิ / IP** | **แกนของงานนี้** นับรายธุรกรรม batch 20 = 20 หน่วย | ✅ |
+| `--max-enqueued 16` | 1 address จองได้ 16 ช่อง (เดิม 128) | ✅ |
+| `--block-gas-target 10M` | ครึ่งเดียวของอัตราถมดิสก์สูงสุด | ✅ |
+| fail2ban | ปฏิเสธ 10 ครั้ง/60 วิ → แบน 1 ชม. เพิ่มเท่าตัวถ้าซ้ำ | ✅ (ก่อนหน้านี้ **ไม่เคยถูกติดตั้งเลย** มีแต่ jail sshd) |
+| watchdog | ดิสก์ 75/88% · mempool ค้าง · บล็อกเต็ม | ✅ |
 
-**คนยิงถล่มต้องมี ~400 IP จริงที่ผ่าน Cloudflare** ถึงจะได้ปริมาณเท่าที่เมื่อก่อน
-IP เดียวทำได้ และทุกใบที่โดนปฏิเสธจะพาไปสู่การถูกแบนเร็วขึ้น
+**คนยิงถล่มต้องมี ~240 IP จริงที่ผ่าน Cloudflare** ถึงจะได้ปริมาณเท่าที่ IP เดียวเคยทำได้
 
 ---
 
-## ยังไม่ได้แก้ในรอบนี้
+## ยังไม่ได้แก้
 
 - โหนด RPC สาธารณะยังชี้เข้า validator ที่ `--seal` และถือคีย์ — ควรมีโหนดที่ไม่ seal แยก
 - validator 4 ตัวอยู่เครื่องเดียว ทน BFT ได้แค่ 1 ตัวพัง
-- คีย์ validator ยังเก็บแบบไม่เข้ารหัส (`--insecure`)
-- `$origin_ok` token gate ยัง `default 1` (ตั้ง Transform Rule ที่ Cloudflare ก่อน)
+- คีย์ validator เก็บแบบไม่เข้ารหัส (`--insecure`)
+- `$origin_ok` token gate ยัง `default 1` (ต้องตั้ง Transform Rule ที่ Cloudflare ก่อน)

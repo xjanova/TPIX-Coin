@@ -77,7 +77,8 @@ if ! ufw status | grep -qE '^22(/tcp)?[[:space:]]+ALLOW'; then
     die "ufw ยังไม่อนุญาตพอร์ต 22 — เปิดก่อน (ufw allow 22/tcp) ไม่งั้นเสี่ยงล็อกตัวเองออก"
 fi
 
-CURRENT_SSH="${SSH_CLIENT%% *}"
+# ต้องมี :- เพราะ sudo ทิ้ง SSH_CLIENT ทิ้ง แล้ว set -u จะทำให้สคริปต์ตายทันที
+CURRENT_SSH="${SSH_CLIENT:-}"; CURRENT_SSH="${CURRENT_SSH%% *}"
 if [ -n "${ADMIN_IP:-}" ]; then
     KEEP_IP="$ADMIN_IP"
 elif [ -n "$CURRENT_SSH" ]; then

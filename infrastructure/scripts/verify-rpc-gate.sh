@@ -18,7 +18,9 @@
 set -uo pipefail
 
 TARGET="${1:-https://rpc.tpix.online}"
-UA="tpix-verify/1.0"
+# ⚠️ ต้องเป็น UA แบบเบราว์เซอร์ — Cloudflare หน้า rpc.tpix.online มี bot rule
+#    ที่ตอบ 403 ให้ UA ปริยายของ curl ถ้าไม่ตั้งจะนึกว่าด่านเราพัง ทั้งที่ nginx ตอบ 200
+UA="Mozilla/5.0"
 PASS=0
 FAIL=0
 
@@ -85,6 +87,8 @@ echo
 echo "── โควตาเขียน (ธุรกรรมขยะ ไม่เข้า mempool) ──"
 # raw tx ปลอม — โหนดปฏิเสธตั้งแต่ถอดรหัส แต่ด่านนับโควตาไปแล้ว
 # จึงทดสอบตัวจำกัดได้โดยไม่ทิ้งอะไรไว้บนเชน
+# รอให้หน้าต่างโควตาของรอบก่อนหมดอายุ ไม่งั้นจะโดนตัดตั้งแต่ใบแรกแล้วอ่านผลผิด
+sleep 11
 JUNK='{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":["0xdeadbeef"],"id":1}'
 LIMITED=0
 for i in $(seq 1 14); do
@@ -106,7 +110,9 @@ check "อ่านยังผ่านหลังโควตาเขีย�
 
 echo
 echo "── health ──"
-HEALTH=$(curl -sk -m 8 -o /dev/null -w '%{http_code}' "$TARGET/health" 2>/dev/null || echo "000")
+# ⚠️ ต้องส่ง UA ด้วย — Cloudflare bot rule ตอบ 403 ให้ UA ปริยายของ curl
+#    ลืมบรรทัดนี้แล้วจะนึกว่าด่านเราพัง ทั้งที่ nginx ตอบ 200 อยู่ (เสียเวลาไล่หามาแล้ว)
+HEALTH=$(curl -sk -m 8 -o /dev/null -w '%{http_code}' "$TARGET/health" -H "User-Agent: $UA" 2>/dev/null || echo "000")
 if [ "$HEALTH" = "200" ]; then
     printf '  ✔ %-52s 200\n' "GET /health"
     PASS=$((PASS + 1))
