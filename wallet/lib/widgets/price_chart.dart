@@ -104,7 +104,9 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
+              // Expanded — ราคา/เปอร์เซ็นต์ยาวขึ้นตามค่าจริง ต้องไม่ดันป้ายขวาตกขอบ
+              Expanded(
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
@@ -142,8 +144,9 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
                     ),
                   ),
                 ],
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               // Change badge
               Container(
                 padding:

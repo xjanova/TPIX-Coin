@@ -455,16 +455,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(width: 12),
-        Column(
+        // Expanded — ชื่อกระเป๋าที่ผู้ใช้ตั้งเองยาวแค่ไหนก็ได้
+        // ไม่ครอบไว้ = ดันปุ่มภาษา/ฟันเฟืองตกขอบขวา (วัดได้ 80px บน iPhone 13 Pro)
+        Expanded(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             GestureDetector(
               onTap: () => WalletListSheet.show(context),
               child: Row(
                 children: [
-                  Text(
-                    wallet.activeWallet?.name ?? 'TPIX Wallet',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text),
+                  Flexible(
+                    child: Text(
+                      wallet.activeWallet?.name ?? 'TPIX Wallet',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text),
+                    ),
                   ),
                   if (wallet.walletCount > 1) ...[
                     const SizedBox(width: 4),
@@ -508,8 +515,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
           ],
+          ),
         ),
-        const Spacer(),
+        const SizedBox(width: 8),
         // Language toggle
         GestureDetector(
           onTap: () => l.toggle(),
@@ -774,9 +782,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      wallet.formattedBalance,
-                      style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w800, color: Colors.white, height: 1),
+                    // FittedBox — ยอดเงินเยอะ ๆ ต้อง "ย่อลง" ไม่ใช่ "ดันจนล้น"
+                    // กระเป๋าคริปโตที่ตัวเลขยอดเงินทำเลย์เอาต์แตก = ดูเชื่อถือไม่ได้ทันที
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          wallet.formattedBalance,
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w800, color: Colors.white, height: 1),
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Padding(
