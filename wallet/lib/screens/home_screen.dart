@@ -848,6 +848,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           children: [
             Expanded(child: TpixActionButton(
               icon: Icons.arrow_upward_rounded,
+              assetIcon: 'assets/images/icons/send.png',
               label: l.t('home.send'),
               sublabel: l.t('home.sendSub'),
               color: c.brandPrimary,
@@ -856,6 +857,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(width: 12),
             Expanded(child: TpixActionButton(
               icon: Icons.arrow_downward_rounded,
+              assetIcon: 'assets/images/icons/receive.png',
               label: l.t('home.receive'),
               sublabel: l.t('home.receiveSub'),
               color: c.brandSuccess,
@@ -864,6 +866,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(width: 12),
             Expanded(child: TpixActionButton(
               icon: Icons.receipt_long_rounded,
+              assetIcon: 'assets/images/icons/history.png',
               label: l.t('home.history'),
               sublabel: l.t('home.historySub'),
               color: c.brandSecondary,
@@ -877,6 +880,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           children: [
             Expanded(child: TpixActionButton(
               icon: Icons.swap_horiz_rounded,
+              assetIcon: 'assets/images/icons/swap.png',
               label: l.t('home.swap'),
               sublabel: l.t('home.swapSub'),
               color: c.brandWarm,
@@ -885,6 +889,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(width: 12),
             Expanded(child: TpixActionButton(
               icon: Icons.account_tree_rounded,
+              assetIcon: 'assets/images/icons/bridge.png',
               label: l.t('home.bridge'),
               sublabel: l.t('home.bridgeSub'),
               color: Color.lerp(c.brandPrimary, c.brandSecondary, 0.35)!,
@@ -893,6 +898,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(width: 12),
             Expanded(child: TpixActionButton(
               icon: Icons.qr_code_scanner_rounded,
+              assetIcon: 'assets/images/icons/connect.png',
               label: l.t('home.connect'),
               sublabel: l.t('home.connectSub'),
               color: c.brandSecondary,

@@ -88,3 +88,5 @@ flutter:
 
   assets:
     - assets/images/
+    # โฟลเดอร์ย่อยต้องประกาศแยก Flutter ไม่ไล่ให้อัตโนมัติ
+    - assets/images/icons/

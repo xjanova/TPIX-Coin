@@ -22,6 +22,11 @@ import '../core/themes/theme_bundle.dart';
 
 class TpixActionButton extends StatefulWidget {
   final IconData icon;
+
+  /// ไอคอนเจลลี่ 3D (ถ้ามี ใช้แทนวงกลมสี+ไอคอนเวกเตอร์)
+  /// รูปทรงเจลลี่เป็นตัวสื่อความหมายเอง ไม่ต้องมีจานสีมาแข่งสายตา
+  final String? assetIcon;
+
   final String label;
   final String sublabel;
 
@@ -36,6 +41,7 @@ class TpixActionButton extends StatefulWidget {
   const TpixActionButton({
     super.key,
     required this.icon,
+    this.assetIcon,
     required this.label,
     required this.sublabel,
     required this.color,
@@ -155,6 +161,50 @@ class _TpixActionButtonState extends State<TpixActionButton> {
   // ของใหม่ทึบเต็มสี ไอคอนขาว = คอนทราสต์สูงสุด เห็นชัดทั้งกลางแดดและกลางคืน
   Widget _iconDisc(TpixThemeExtension t, bool isDark) {
     final c = widget.color;
+
+    // มีไอคอนเจลลี่ → ใช้ตัวมันเลย พร้อมแสงสีประจำปุ่มเรืองอยู่ข้างหลัง
+    // (ไม่วางบนจานสีทึบ เพราะสีของจานจะตีกับสีในตัวเจลลี่จนขุ่น)
+    if (widget.assetIcon != null) {
+      return SizedBox(
+        width: 54,
+        height: 54,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // แสงเรืองด้านหลัง — ต้องฟุ้งจริง ไม่ใช่จานสีทึบ
+            // ค่าเดิม (alpha .38 blur 18 spread -2) จับตัวเป็นวงกลมสีชัด
+            // แล้วไปตีกับสีมินต์/ลาเวนเดอร์ในตัวไอคอนจนขุ่น
+            // จางลง + ฟุ้งกว้างขึ้น = ได้แสงรอบตัวไอคอน ยังบอกรหัสสีประจำปุ่มได้
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: c.withValues(alpha: t.useGlow ? 0.34 : 0.22),
+                    blurRadius: 26,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+            ),
+            Image.asset(
+              widget.assetIcon!,
+              width: 46,
+              height: 46,
+              // ถอดรหัสที่ขนาดวาดจริง (46 x 3 dpr) ไม่ใช่ไฟล์เต็ม
+              cacheWidth: 138,
+              cacheHeight: 138,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, __, ___) =>
+                  Icon(widget.icon, color: Colors.white, size: 26),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       width: 50,
       height: 50,
