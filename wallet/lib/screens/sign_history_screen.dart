@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../services/db_service.dart';
 
@@ -97,8 +98,7 @@ class _SignHistoryScreenState extends State<SignHistoryScreen> {
             ),
         ],
       ),
-      body: Container(
-        decoration: c.screenBg,
+      body: TpixScreenBackground(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _rows.isEmpty

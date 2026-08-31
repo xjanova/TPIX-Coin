@@ -9,6 +9,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import 'luxe_texture.dart';
+
 class LiquidBlobsBackground extends StatefulWidget {
   final Widget child;
   const LiquidBlobsBackground({super.key, required this.child});
@@ -75,19 +77,14 @@ class _LiquidBlobsBackgroundState extends State<LiquidBlobsBackground>
           ),
         ),
 
-        // ── ชั้น 2: ภาพหยดเจลลี่ (ศิลป์หลักของธีม) ──
-        // dark ใช้จางกว่ามาก เพราะภาพเป็นโทนสว่าง ถ้าเข้มไปตัวหนังสือจะอ่านยาก
+        // ── ชั้น 2: ลายพื้นผิว guilloché (วาดด้วยโค้ด) ──
+        // เดิมชั้นนี้เป็น liquid_bg.jpg ขนาด 720×1280 ปูเต็มจอด้วย BoxFit.cover
+        // บน iPhone 13 Pro (1170×2532) = ยืด 1.63 เท่า ทำให้ทั้งหน้าจอดูเบลอ
+        // ลายที่วาดด้วยโค้ดคมทุกความละเอียด และให้ผิวแบบธนบัตร/บัตรพรีเมียม
         Positioned.fill(
-          child: IgnorePointer(
-            child: Opacity(
-              opacity: isDark ? 0.12 : 0.55,
-              child: Image.asset(
-                'assets/images/liquid_bg.jpg',
-                fit: BoxFit.cover,
-                // ภาพหายไม่ควรทำให้แอพพัง — ตกไปใช้พื้นไล่สีอย่างเดียว
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
-            ),
+          child: LuxeTexture(
+            isDark: isDark,
+            lineColor: isDark ? Colors.white : const Color(0xFF16394D),
           ),
         ),
 

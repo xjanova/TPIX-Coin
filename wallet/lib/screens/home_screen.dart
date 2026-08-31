@@ -6,7 +6,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../core/themes/theme_bundle.dart';
+import '../core/themes/widgets/luxe_texture.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
@@ -177,8 +179,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       extendBody: true,
       bottomNavigationBar: _buildNavBar(l),
       body: Consumer<WalletProvider>(
-        builder: (context, wallet, _) => Container(
-          decoration: c.screenBg,
+        builder: (context, wallet, _) => TpixScreenBackground(
           child: SafeArea(
             child: RefreshIndicator(
               onRefresh: wallet.refreshBalance,
@@ -692,15 +693,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       builder: (_, child) => Transform.scale(scale: _balanceScale.value, child: child),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
           gradient: c.balanceGradient,
-          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
+          border: Border.all(color: c.brandPrimary.withValues(alpha: 0.25)),
           boxShadow: c.elevatedShadow,
         ),
-        child: Stack(
-          children: [
+        // ย้าย padding เข้าไปที่เนื้อหาข้างใน เพื่อให้ชั้นลายกินเต็มการ์ดถึงขอบ
+        // (ถ้าปล่อย padding ไว้ที่ Container ลายจะหยุดห่างขอบ 28px เป็นกรอบสี่เหลี่ยม)
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Stack(
+            children: [
+              // ลายเส้นสานบนผิวการ์ด — ให้ดูเป็นวัสดุมีเนื้อ ไม่ใช่แผ่นไล่สีเรียบ
+              Positioned.fill(
+                child: LuxeTexture(
+                  isDark: Theme.of(context).brightness == Brightness.dark,
+                  lineColor: Colors.white,
+                  scale: LuxeTextureScale.card,
+                ),
+              ),
             // Inner top-left glow for 3D depth
             Positioned(
               left: -30,
@@ -774,10 +786,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
 
-            Column(
+            Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l.t('home.balance'), style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+                Text(l.t('home.balance'), style: TextStyle(fontSize: 14, color: c.textSec)),
                 const SizedBox(height: 8),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -813,11 +827,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 8),
                 Text(
                   '≈ \$${wallet.portfolioValueUSD.toStringAsFixed(2)} USD',
-                  style: TextStyle(fontSize: 14, color: AppTheme.textMuted.withValues(alpha: 0.7)),
+                  style: TextStyle(fontSize: 14, color: c.textMuted),
                 ),
               ],
+              ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

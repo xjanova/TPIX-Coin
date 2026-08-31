@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../models/chain_config.dart';
 import '../services/fee_service.dart';
 import '../services/swap_service.dart';
@@ -545,8 +546,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     final l = context.watch<LocaleProvider>();
 
     return Scaffold(
-      body: Container(
-        decoration: AppColors.of(context).screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Column(
             children: [

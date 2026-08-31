@@ -17,6 +17,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
 
@@ -42,8 +43,7 @@ class ReceiveScreen extends StatelessWidget {
     final address = wallet.address ?? '';
 
     return Scaffold(
-      body: Container(
-        decoration: c.screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),

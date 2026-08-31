@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import 'backup_screen.dart';
 import 'import_screen.dart';
@@ -125,8 +126,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      body: Container(
-        decoration: c.screenBg,
+      body: TpixScreenBackground(
+        showTexture: false,
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),

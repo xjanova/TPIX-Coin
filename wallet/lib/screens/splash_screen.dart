@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
 import 'onboarding_screen.dart';
@@ -126,8 +127,8 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: AppColors.of(context).screenBg,
+      body: TpixScreenBackground(
+        showTexture: false,
         child: Stack(
           children: [
             // Animated particles background

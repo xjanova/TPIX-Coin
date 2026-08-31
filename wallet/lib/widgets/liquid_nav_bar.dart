@@ -9,6 +9,7 @@
 
 import 'package:flutter/material.dart';
 import '../core/themes/theme_bundle.dart';
+import '../core/themes/widgets/luxe_texture.dart';
 
 /// รายการเมนูหนึ่งช่อง
 class LiquidNavItem {
@@ -166,15 +167,52 @@ class _LiquidNavBarState extends State<LiquidNavBar>
           ),
         ],
       ),
-      child: Row(
-        children: [
-          Expanded(child: _navSlot(t, 0)),
-          Expanded(child: _navSlot(t, 1)),
-          // ช่องว่างตรงกลางไว้ให้ปุ่มสแกน
-          SizedBox(width: _scanSize + 16),
-          Expanded(child: _navSlot(t, 2)),
-          Expanded(child: _navSlot(t, 3)),
-        ],
+      // ClipRRect — ลายต้องถูกตัดตามทรงแคปซูล ไม่งั้นเส้นทะลุออกนอกแถบ
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_barHeight / 2),
+        child: Stack(
+          children: [
+            // ลายเส้นสานบนผิวแถบ — ให้รู้สึกเป็นวัสดุ ไม่ใช่พลาสติกทาสี
+            Positioned.fill(
+              child: LuxeTexture(
+                isDark: isDark,
+                lineColor: isDark ? Colors.white : t.brandPrimary,
+                scale: LuxeTextureScale.card,
+              ),
+            ),
+            // ประกายผิวโค้งด้านบน — ทำให้แคปซูลดูเป็นวัตถุนูนจริง
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: _barHeight * 0.5,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withValues(alpha: isDark ? 0.07 : 0.55),
+                        Colors.white.withValues(alpha: 0.0),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(child: _navSlot(t, 0)),
+                Expanded(child: _navSlot(t, 1)),
+                // ช่องว่างตรงกลางไว้ให้ปุ่มสแกน
+                SizedBox(width: _scanSize + 16),
+                Expanded(child: _navSlot(t, 2)),
+                Expanded(child: _navSlot(t, 3)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../models/tx_record.dart';
 import '../providers/wallet_provider.dart';
 import '../services/wallet_service.dart';
@@ -28,8 +29,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
     return Scaffold(
-      body: Container(
-        decoration: AppColors.of(context).screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Column(
             children: [

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../services/bridge_service.dart';
 import '../services/fee_service.dart';
 import '../services/swap_service.dart';
@@ -418,8 +419,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      body: Container(
-        decoration: c.screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Column(
             children: [

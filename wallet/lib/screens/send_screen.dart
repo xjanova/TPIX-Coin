@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../models/contact.dart';
 import '../providers/wallet_provider.dart';
 import '../services/biometric_service.dart';
@@ -434,8 +435,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: AppColors.of(context).screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Builder(
             builder: (context) {

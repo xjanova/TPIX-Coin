@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../models/token_info.dart';
 import '../providers/wallet_provider.dart';
 import '../services/db_service.dart';
@@ -144,8 +145,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     final l = context.watch<LocaleProvider>();
     final c = AppColors.of(context);
     return Scaffold(
-      body: Container(
-        decoration: AppColors.of(context).screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Column(
             children: [

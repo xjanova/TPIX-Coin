@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../services/price_service.dart';
 
 /// Beautiful gradient area chart for TPIX price history
@@ -75,23 +76,34 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
     final changeIcon = isPositive ? Icons.trending_up : Icons.trending_down;
     final portfolioValue = widget.balanceTPIX * widget.currentPrice;
 
+    // สีการ์ดเดิมฮาร์ดโค้ดกรมท่าเข้ม ไม่สนธีม → บนธีมสว่างกลายเป็นการ์ดดำบนพื้นขาว
+    // ต้องอ่านจากธีมปัจจุบันเสมอ
+    final c = AppColors.of(context);
+    final t = TpixThemeExtension.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(t.cardRadius),
         gradient: LinearGradient(
-          colors: [
-            const Color(0xFF0E2A47).withValues(alpha: 0.9),
-            const Color(0xFF0A1628).withValues(alpha: 0.9),
-          ],
+          colors: isDark
+              ? [
+                  Color.lerp(t.card, c.brandPrimary, 0.10)!,
+                  Color.lerp(t.card, Colors.black, 0.12)!,
+                ]
+              : [
+                  Colors.white,
+                  Color.lerp(Colors.white, c.brandPrimary, 0.10)!,
+                ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border:
-            Border.all(color: AppTheme.primary.withValues(alpha: 0.12)),
+        border: Border.all(
+            color: c.brandPrimary.withValues(alpha: isDark ? 0.22 : 0.18)),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.06),
+            color: c.brandPrimary.withValues(alpha: isDark ? 0.10 : 0.14),
             blurRadius: 24,
             spreadRadius: 2,
           ),

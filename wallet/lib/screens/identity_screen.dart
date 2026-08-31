@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../services/identity_service.dart';
 import '../services/synth_service.dart';
 
@@ -59,8 +60,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     final l = context.watch<LocaleProvider>();
     final c = AppColors.of(context);
     return Scaffold(
-      body: Container(
-        decoration: c.screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))

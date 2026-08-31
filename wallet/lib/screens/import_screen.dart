@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../widgets/qr_scanner_screen.dart';
 import 'pin_screen.dart';
@@ -83,8 +84,7 @@ class _ImportScreenState extends State<ImportScreen> {
     final l = context.watch<LocaleProvider>();
     final c = AppColors.of(context);
     return Scaffold(
-      body: Container(
-        decoration: AppColors.of(context).screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),

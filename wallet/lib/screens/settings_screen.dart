@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../core/theme_provider.dart';
 import '../core/themes/theme_bundle.dart';
 import '../providers/wallet_provider.dart';
@@ -46,8 +47,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l = context.watch<LocaleProvider>();
     final c = AppColors.of(context);
     return Scaffold(
-      body: Container(
-        decoration: c.settingsBg,
+      body: TpixScreenBackground(
+        settings: true,
         child: SafeArea(
           child: Column(
             children: [

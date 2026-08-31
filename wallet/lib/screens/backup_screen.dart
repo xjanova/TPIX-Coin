@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import 'pin_screen.dart';
 
 class BackupScreen extends StatefulWidget {
@@ -60,8 +61,7 @@ class _BackupScreenState extends State<BackupScreen> {
     final words = _mnemonic.isNotEmpty ? _mnemonic.split(' ') : <String>[];
 
     return Scaffold(
-      body: Container(
-        decoration: AppColors.of(context).screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),

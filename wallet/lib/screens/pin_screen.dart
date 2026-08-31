@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../services/biometric_service.dart';
 import '../services/synth_service.dart';
@@ -178,8 +179,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
         : l.t('pin.unlockSub');
 
     return Scaffold(
-      body: Container(
-        decoration: AppColors.of(context).screenBg,
+      body: TpixScreenBackground(
         child: SafeArea(
           child: Column(
             children: [
