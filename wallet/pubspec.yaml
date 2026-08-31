@@ -68,12 +68,16 @@ dev_dependencies:
   sqflite_common_ffi: ^2.3.4
   flutter_launcher_icons: ^0.14.3
 
+# ไอคอนแอปต้องใช้ต้นฉบับ 2048px (iOS App Store ขอ 1024x1024 ถ้าย่อกว่านั้นจะเบลอ)
+# ไฟล์ต้นฉบับอยู่ที่ assets/icon/ ซึ่ง "ไม่ได้" ประกาศไว้ใน flutter.assets ข้างล่าง
+# จึงไม่ถูกแพ็กลง APK — ใช้ตอนเจนไอคอนอย่างเดียว
+# ส่วน assets/images/logowallet.png ที่แอปเรียกใช้จริงย่อเหลือ 512px แล้ว
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/logowallet.png"
+  image_path: "assets/icon/logowallet_2048.png"
   adaptive_icon_background: "#0A0E1A"
-  adaptive_icon_foreground: "assets/images/logowallet.png"
+  adaptive_icon_foreground: "assets/icon/logowallet_2048.png"
   remove_alpha_ios: true
 
 flutter:

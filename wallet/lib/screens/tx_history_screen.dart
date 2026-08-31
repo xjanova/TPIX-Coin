@@ -179,7 +179,8 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                       color: color.withValues(alpha: 0.08),
                     ),
                     child: ClipOval(
-                      child: Image.asset('assets/images/logowallet.png', width: 42, height: 42, fit: BoxFit.cover),
+                      // ถอดรหัสที่ 126px (42 logical x 3 dpr)
+                      child: Image.asset('assets/images/logowallet.png', width: 42, height: 42, fit: BoxFit.cover, cacheWidth: 126, cacheHeight: 126),
                     ),
                   ),
                   Positioned(
@@ -288,7 +289,8 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
             const SizedBox(height: 20),
             Row(
               children: [
-                ClipOval(child: Image.asset('assets/images/logowallet.png', width: 28, height: 28, fit: BoxFit.cover)),
+                // ถอดรหัสที่ 84px (28 logical x 3 dpr)
+                ClipOval(child: Image.asset('assets/images/logowallet.png', width: 28, height: 28, fit: BoxFit.cover, cacheWidth: 84, cacheHeight: 84)),
                 const SizedBox(width: 10),
                 Text(l.t('tx.detail'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
               ],

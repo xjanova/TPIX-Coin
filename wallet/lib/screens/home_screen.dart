@@ -28,6 +28,7 @@ import '../services/peer_sign_service.dart';
 import '../services/update_service.dart';
 import '../providers/update_provider.dart';
 import '../widgets/peer_app_card.dart';
+import '../widgets/action_button.dart';
 import '../widgets/liquid_nav_bar.dart';
 import '../widgets/qr_scanner_screen.dart';
 import 'package:app_links/app_links.dart';
@@ -443,7 +444,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ],
             ),
             child: ClipOval(
-              child: Image.asset('assets/images/logowallet.png', fit: BoxFit.cover),
+              // ถอดรหัสที่ 132px (44 logical x 3 dpr) ไม่ใช่ 512px เต็มไฟล์
+              child: Image.asset(
+                'assets/images/logowallet.png',
+                fit: BoxFit.cover,
+                cacheWidth: 132,
+                cacheHeight: 132,
+              ),
             ),
           ),
         ),
@@ -777,7 +784,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          ClipOval(child: Image.asset('assets/images/logowallet.png', width: 22, height: 22, fit: BoxFit.cover)),
+                          // ถอดรหัสที่ 66px (22 logical x 3 dpr)
+                          ClipOval(child: Image.asset('assets/images/logowallet.png', width: 22, height: 22, fit: BoxFit.cover, cacheWidth: 66, cacheHeight: 66)),
                           const SizedBox(width: 4),
                           const Text('TPIX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.primary)),
                         ],
@@ -799,32 +807,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildActionButtons(BuildContext context, LocaleProvider l) {
+    final c = AppColors.of(context);
     return Column(
       children: [
         // Primary actions row
         Row(
           children: [
-            Expanded(child: _buildActionBtn(
+            Expanded(child: TpixActionButton(
               icon: Icons.arrow_upward_rounded,
               label: l.t('home.send'),
               sublabel: l.t('home.sendSub'),
-              color: AppTheme.primary,
+              color: c.brandPrimary,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SendScreen())),
             )),
             const SizedBox(width: 12),
-            Expanded(child: _buildActionBtn(
+            Expanded(child: TpixActionButton(
               icon: Icons.arrow_downward_rounded,
               label: l.t('home.receive'),
               sublabel: l.t('home.receiveSub'),
-              color: AppTheme.success,
+              color: c.brandSuccess,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReceiveScreen())),
             )),
             const SizedBox(width: 12),
-            Expanded(child: _buildActionBtn(
+            Expanded(child: TpixActionButton(
               icon: Icons.receipt_long_rounded,
               label: l.t('home.history'),
               sublabel: l.t('home.historySub'),
-              color: AppTheme.accent,
+              color: c.brandSecondary,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TxHistoryScreen())),
             )),
           ],
@@ -833,88 +842,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         // DeFi actions row
         Row(
           children: [
-            Expanded(child: _buildActionBtn(
+            Expanded(child: TpixActionButton(
               icon: Icons.swap_horiz_rounded,
               label: l.t('home.swap'),
               sublabel: l.t('home.swapSub'),
-              color: AppTheme.warm,
+              color: c.brandWarm,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SwapScreen())),
             )),
             const SizedBox(width: 12),
-            Expanded(child: _buildActionBtn(
+            Expanded(child: TpixActionButton(
               icon: Icons.account_tree_rounded,
               label: l.t('home.bridge'),
               sublabel: l.t('home.bridgeSub'),
-              color: const Color(0xFF00D4FF),
+              color: Color.lerp(c.brandPrimary, c.brandSecondary, 0.35)!,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BridgeScreen())),
             )),
             const SizedBox(width: 12),
-            Expanded(child: _buildActionBtn(
+            Expanded(child: TpixActionButton(
               icon: Icons.qr_code_scanner_rounded,
               label: l.t('home.connect'),
               sublabel: l.t('home.connectSub'),
-              color: const Color(0xFF8B5CF6),
+              color: c.brandSecondary,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DAppConnectScreen())),
             )),
           ],
         ),
       ],
-    );
-  }
-
-  Widget _buildActionBtn({
-    required IconData icon,
-    required String label,
-    required String sublabel,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    final c = AppColors.of(context);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                c.actionBtnBg(color),
-                color.withValues(alpha: c.isDark ? 0.03 : 0.02),
-              ],
-            ),
-            border: Border.all(color: c.actionBtnBorder(color)),
-            boxShadow: c.cardShadow,
-          ),
-          child: Column(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: c.actionBtnIcon(color),
-                  boxShadow: [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.25),
-                      blurRadius: 12,
-                      spreadRadius: -2,
-                    ),
-                  ],
-                ),
-                child: Icon(icon, color: color, size: 24),
-              ),
-              const SizedBox(height: 10),
-              Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
-              Text(sublabel, style: TextStyle(fontSize: 11, color: c.textMuted)),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -999,7 +952,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 color: isNative ? AppTheme.primary.withValues(alpha: 0.12) : AppTheme.accent.withValues(alpha: 0.12),
               ),
               child: isNative
-                  ? ClipOval(child: Image.asset('assets/images/logowallet.png', width: 36, height: 36, fit: BoxFit.cover))
+                  // ถอดรหัสที่ 108px (36 logical x 3 dpr)
+                  ? ClipOval(child: Image.asset('assets/images/logowallet.png', width: 36, height: 36, fit: BoxFit.cover, cacheWidth: 108, cacheHeight: 108))
                   : Center(child: Text(symbol.isNotEmpty ? symbol[0] : '?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.accent))),
             ),
             const SizedBox(width: 12),
@@ -1230,7 +1184,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             color: color.withValues(alpha: 0.08),
                           ),
                           child: ClipOval(
-                            child: Image.asset('assets/images/logowallet.png', width: 32, height: 32, fit: BoxFit.cover),
+                            // ถอดรหัสที่ 96px (32 logical x 3 dpr)
+                            child: Image.asset('assets/images/logowallet.png', width: 32, height: 32, fit: BoxFit.cover, cacheWidth: 96, cacheHeight: 96),
                           ),
                         ),
                         Positioned(

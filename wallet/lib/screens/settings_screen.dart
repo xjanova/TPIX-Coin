@@ -165,7 +165,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Center(
                         child: Column(
                           children: [
-                            Image.asset('assets/images/logowallet.png', width: 48, height: 48),
+                            // ถอดรหัสที่ 144px (48 logical x 3 dpr)
+                            Image.asset('assets/images/logowallet.png', width: 48, height: 48, cacheWidth: 144, cacheHeight: 144),
                             const SizedBox(height: 8),
                             Text('TPIX Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
                             if (_appVersion.isNotEmpty)

@@ -110,11 +110,14 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
                   Row(
                     children: [
                       ClipOval(
+                        // ถอดรหัสที่ 60px (20 logical x 3 dpr)
                         child: Image.asset(
                           'assets/images/logowallet.png',
                           width: 20,
                           height: 20,
                           fit: BoxFit.cover,
+                          cacheWidth: 60,
+                          cacheHeight: 60,
                         ),
                       ),
                       const SizedBox(width: 6),

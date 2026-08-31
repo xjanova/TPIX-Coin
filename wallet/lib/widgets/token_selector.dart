@@ -322,12 +322,16 @@ class _TokenLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     // TPIX native token uses local asset
     if (token.isNative && chain.chainId == 4289) {
+      // ถอดรหัสตามขนาดที่วาดจริง (size x 3 dpr) ไม่ใช่ 512px เต็มไฟล์
+      final px = (size * 3).round();
       return ClipOval(
         child: Image.asset(
           'assets/images/logowallet.png',
           width: size,
           height: size,
           fit: BoxFit.cover,
+          cacheWidth: px,
+          cacheHeight: px,
         ),
       );
     }
@@ -395,12 +399,16 @@ class ChainLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (chain.chainId == 4289) {
+      // ถอดรหัสตามขนาดที่วาดจริง (size x 3 dpr) ไม่ใช่ 512px เต็มไฟล์
+      final px = (size * 3).round();
       return ClipOval(
         child: Image.asset(
           'assets/images/logowallet.png',
           width: size,
           height: size,
           fit: BoxFit.cover,
+          cacheWidth: px,
+          cacheHeight: px,
         ),
       );
     }
