@@ -60,12 +60,18 @@ class LiquidNavBar extends StatefulWidget {
   static const double barHeight = 64;
   static const double scanSize = 66;
 
+  /// ปุ่มสแกนจมลงไปในแถบเท่าไร (สัดส่วนของขนาดปุ่ม)
+  /// ค่าเดิม 0.42 ทำให้วงกลมโผล่พ้นแถบ 60 จาก 66px = 91% ของใบ
+  /// ซึ่งไม่ใช่ "คร่อมแถบ" แต่เป็น "ลอยอยู่เหนือแถบ"
+  /// 0.82 = โผล่ราวครึ่งใบ ซึ่งเป็นสัดส่วนของปุ่มกลางที่คุ้นตา
+  static const double scanSink = 0.82;
+
   /// ความสูงที่แถบนี้กินจริง (ไม่รวม safe-area ล่าง)
   /// ใช้เว้นที่ว่างท้ายเนื้อหาในหน้าที่ตั้ง `extendBody: true`
   /// ไม่งั้นรายการสุดท้ายจะถูกแถบบัง — และยิ่งผู้ใช้ตั้งตัวอักษรใหญ่ยิ่งบังมาก
   static double heightFor(BuildContext context) {
     final labelHeight = MediaQuery.textScalerOf(context).scale(10) * 1.35;
-    return barHeight - scanSize * 0.42 + (scanSize + 26) + 1 + labelHeight;
+    return barHeight - scanSize * scanSink + (scanSize + 26) + 1 + labelHeight;
   }
 
   @override
@@ -124,7 +130,7 @@ class _LiquidNavBarState extends State<LiquidNavBar>
           // Flutter ไม่ hit-test ส่วนที่ล้นนอกกรอบพ่อ (Clip.none วาดให้เห็นก็จริง แต่กดไม่ติด)
           // ของเดิมกรอบสูง 110px ปุ่มต้องการ 142px → ยอดปุ่มที่โผล่พ้นแถบกดไม่ติดทั้งแถบ
           Padding(
-            padding: EdgeInsets.only(bottom: _barHeight - _scanSize * 0.42),
+            padding: EdgeInsets.only(bottom: _barHeight - _scanSize * LiquidNavBar.scanSink),
             child: _buildScanButton(t, isDark),
           ),
         ],
