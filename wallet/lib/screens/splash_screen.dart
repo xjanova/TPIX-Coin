@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../core/themes/widgets/screen_background.dart';
@@ -259,7 +260,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                   ),
 
-                  const SizedBox(height: 40),
+                  const SizedBox(height: TpixGap.huge),
 
                   // Title
                   AnimatedBuilder(
@@ -286,7 +287,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: TpixGap.md),
 
                   // Subtitle
                   AnimatedBuilder(

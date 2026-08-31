@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/tokens.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../services/biometric_service.dart';
@@ -198,13 +199,13 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
                 child: Image.asset('assets/images/logowallet.png'),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: TpixGap.xxxl),
 
               Text(title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
-              const SizedBox(height: 8),
+              const SizedBox(height: TpixGap.sm),
               Text(subtitle, style: TextStyle(fontSize: 14, color: AppColors.of(context).textMuted)),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: TpixGap.huge),
 
               // PIN dots
               AnimatedBuilder(
@@ -252,7 +253,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
               // Number pad
               _buildNumberPad(),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: TpixGap.huge),
             ],
           ),
         ),
@@ -306,7 +307,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(36),
+          borderRadius: BorderRadius.circular(TpixRadius.hero(context)),
           child: Container(
             width: 72,
             height: 72,

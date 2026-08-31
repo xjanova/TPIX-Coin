@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import 'package:tpix_wallet/core/locale_provider.dart';
 import 'package:tpix_wallet/core/theme.dart';
@@ -104,7 +105,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
             children: [
               // Scan QR Button
               _buildScanButton(l),
-              const SizedBox(height: 8),
+              const SizedBox(height: TpixGap.sm),
 
               // Error message
               if (_error != null) ...[
@@ -112,7 +113,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppTheme.danger.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(TpixRadius.sm),
                     border: Border.all(color: AppTheme.danger.withOpacity(0.3)),
                   ),
                   child: Text(
@@ -120,7 +121,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                     style: const TextStyle(color: AppTheme.danger, fontSize: 13),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
               ],
 
               // Pairing indicator
@@ -129,7 +130,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: AppTheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(TpixRadius.md),
                     border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
                   ),
                   child: Row(
@@ -142,7 +143,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                           color: AppTheme.primary,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: TpixGap.md),
                       Text(
                         l.t('wc.pairing'),
                         style: const TextStyle(color: AppTheme.primary, fontSize: 14),
@@ -150,19 +151,19 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
               ],
 
               // Pending Proposal
               if (wc.hasPendingProposal) ...[
                 _buildProposalCard(l, wc, c),
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
               ],
 
               // Pending Request
               if (wc.hasPendingRequest) ...[
                 _buildRequestCard(l, wc, c),
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
               ],
 
               // Active Sessions
@@ -175,13 +176,13 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                   letterSpacing: 1,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: TpixGap.md),
               Expanded(
                 child: activeSessions.isEmpty
                     ? _buildEmptyState(l)
                     : ListView.separated(
                         itemCount: activeSessions.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        separatorBuilder: (_, __) => const SizedBox(height: TpixGap.sm),
                         itemBuilder: (_, i) =>
                             _buildSessionCard(activeSessions[i], wc, l, c),
                       ),
@@ -204,7 +205,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
           gradient: AppTheme.brandGradient,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(TpixRadius.md),
           boxShadow: [
             BoxShadow(
               color: AppTheme.primary.withOpacity(0.3),
@@ -217,7 +218,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.qr_code_scanner_rounded, color: Colors.white, size: 24),
-            const SizedBox(width: 10),
+            const SizedBox(width: TpixGap.md),
             Text(
               l.t('wc.scanConnect'),
               style: const TextStyle(
@@ -240,7 +241,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: c.card,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
         boxShadow: [
           BoxShadow(
@@ -254,7 +255,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
           // dApp icon
           if (peer.icons.isNotEmpty)
             ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
               child: Image.network(
                 peer.icons.first,
                 width: 48,
@@ -264,13 +265,13 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                   height: 48,
                   decoration: BoxDecoration(
                     color: AppTheme.primary.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(TpixRadius.sm),
                   ),
                   child: const Icon(Icons.language, color: AppTheme.primary),
                 ),
               ),
             ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Text(
             peer.name,
             style: TextStyle(
@@ -280,18 +281,18 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: TpixGap.xs),
           Text(
             peer.url,
             style: TextStyle(color: c.textSec, fontSize: 13),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Text(
             l.t('wc.wantsToConnect'),
             style: TextStyle(color: c.textMuted, fontSize: 13),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: TpixGap.lg),
           // Approve / Reject buttons
           Row(
             children: [
@@ -302,7 +303,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                   onTap: () => wc.rejectProposal(),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               Expanded(
                 child: _actionButton(
                   label: l.t('wc.approve'),
@@ -325,7 +326,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: c.card,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         border: Border.all(color: AppTheme.warm.withOpacity(0.3)),
       ),
       child: Column(
@@ -334,7 +335,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
           Row(
             children: [
               const Icon(Icons.edit_note_rounded, color: AppTheme.warm, size: 20),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               Text(
                 info['title'] ?? 'Request',
                 style: TextStyle(
@@ -345,13 +346,13 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: TpixGap.sm),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: c.surface,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(TpixRadius.xs),
             ),
             child: Text(
               info['description'] ?? '',
@@ -364,7 +365,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Row(
             children: [
               Expanded(
@@ -374,7 +375,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                   onTap: () => wc.rejectRequest(),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               Expanded(
                 child: _actionButton(
                   label: l.t('wc.confirm'),
@@ -397,14 +398,14 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: c.card,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         border: Border.all(color: c.border),
       ),
       child: Row(
         children: [
           // dApp icon
           ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(TpixRadius.sm),
             child: peer['icon']!.isNotEmpty
                 ? Image.network(
                     peer['icon']!,
@@ -414,7 +415,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                   )
                 : _iconPlaceholder(),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: TpixGap.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,7 +428,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
                     fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: TpixGap.hair),
                 Text(
                   peer['url'] ?? '',
                   style: TextStyle(color: c.textMuted, fontSize: 12),
@@ -453,12 +454,12 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.link_off_rounded, size: 48, color: c.textMuted.withOpacity(0.4)),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Text(
             l.t('wc.noSessions'),
             style: TextStyle(color: c.textMuted, fontSize: 14),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: TpixGap.xs),
           Text(
             l.t('wc.noSessionsDesc'),
             style: TextStyle(color: c.textMuted.withOpacity(0.6), fontSize: 12),
@@ -475,7 +476,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
       height: 40,
       decoration: BoxDecoration(
         color: AppTheme.primary.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(TpixRadius.sm),
       ),
       child: const Icon(Icons.language, color: AppTheme.primary, size: 20),
     );
@@ -493,7 +494,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: filled ? color : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(TpixRadius.sm),
           border: Border.all(color: color.withOpacity(0.5)),
         ),
         child: Text(
@@ -515,7 +516,7 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
         title: Text(l.t('wc.disconnectTitle'), style: TextStyle(color: c.text)),
         content: Text(
           '${l.t('wc.disconnectMsg')} $name?',

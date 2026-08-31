@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import '../core/theme.dart';
 import '../models/chain_config.dart';
 import '../services/swap_service.dart';
@@ -108,12 +109,12 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
       height: MediaQuery.of(context).size.height * 0.65,
       decoration: const BoxDecoration(
         color: AppTheme.bgCard,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
       ),
       child: Column(
         children: [
           // Handle bar
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Container(
             width: 40,
             height: 4,
@@ -122,7 +123,7 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: TpixGap.lg),
 
           // Title + chain badge
           Padding(
@@ -137,11 +138,11 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
                     color: Colors.white,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: TpixGap.sm),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(TpixRadius.xs),
                     color: widget.chain.color.withValues(alpha: 0.15),
                   ),
                   child: Text(
@@ -166,14 +167,14 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
 
           // Search bar
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 color: AppTheme.bgSurface,
                 border: Border.all(color: AppTheme.borderDim),
               ),
@@ -194,7 +195,7 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
 
           // Token list
           Expanded(
@@ -233,14 +234,14 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
         color: Colors.transparent,
         child: InkWell(
           onTap: isExcluded ? null : () => Navigator.pop(context, token),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(TpixRadius.md),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
             child: Row(
               children: [
                 // Token logo
                 _TokenLogo(token: token, chain: widget.chain, size: 40),
-                const SizedBox(width: 12),
+                const SizedBox(width: TpixGap.md),
 
                 // Name & symbol
                 Expanded(

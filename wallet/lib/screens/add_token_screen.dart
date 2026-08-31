@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
@@ -158,7 +159,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                       onPressed: () => Navigator.pop(context),
                       icon: Icon(Icons.arrow_back_ios, color: c.text),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: TpixGap.sm),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -176,11 +177,11 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
 
                       // Contract address input
                       Text(l.t('token.contractAddress'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textSec)),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       Row(
                         children: [
                           Expanded(
@@ -193,15 +194,15 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                                 filled: true,
                                 fillColor: c.glassColor,
                                 border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(TpixRadius.md),
                                   borderSide: BorderSide(color: c.glassBorder),
                                 ),
                                 enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(TpixRadius.md),
                                   borderSide: BorderSide(color: c.glassBorder),
                                 ),
                                 focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(TpixRadius.md),
                                   borderSide: const BorderSide(color: AppTheme.primary),
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -219,7 +220,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                               onSubmitted: (_) => _search(),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: TpixGap.sm),
                           // Scan QR button
                           GestureDetector(
                             onTap: _scanQR,
@@ -227,7 +228,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                               width: 50,
                               height: 50,
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(TpixRadius.md),
                                 color: AppTheme.primary.withValues(alpha: 0.12),
                                 border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
                               ),
@@ -237,7 +238,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                         ],
                       ),
 
-                      const SizedBox(height: 12),
+                      const SizedBox(height: TpixGap.md),
 
                       // Search button
                       SizedBox(
@@ -254,12 +255,12 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
                           ),
                         ),
                       ),
 
-                      const SizedBox(height: 20),
+                      const SizedBox(height: TpixGap.xl),
 
                       // Error message
                       if (_errorMsg != null)
@@ -267,14 +268,14 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(TpixRadius.md),
                             color: AppTheme.danger.withValues(alpha: 0.08),
                             border: Border.all(color: AppTheme.danger.withValues(alpha: 0.2)),
                           ),
                           child: Row(
                             children: [
                               const Icon(Icons.error_outline, color: AppTheme.danger, size: 18),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: TpixGap.sm),
                               Expanded(child: Text(_errorMsg!, style: const TextStyle(color: AppTheme.danger, fontSize: 13))),
                             ],
                           ),
@@ -283,7 +284,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                       // Found token preview
                       if (_foundToken != null) _buildTokenPreview(l, c),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
 
                       // Known tokens section
                       if (_foundToken == null && _errorMsg == null && !_isLoading)
@@ -304,7 +305,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         gradient: LinearGradient(
           colors: [AppTheme.primary.withValues(alpha: 0.08), AppTheme.accent.withValues(alpha: 0.04)],
         ),
@@ -327,16 +328,16 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Text(token.name, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
           Text(token.symbol, style: const TextStyle(fontSize: 14, color: AppTheme.primary, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           // Details
           _detailRow(l.t('token.contractAddress'), token.shortAddress, c),
           _detailRow(l.t('token.decimalsLabel'), '${token.decimals}', c),
           if (_balance != null)
             _detailRow(l.t('home.balance'), '${_balance!.toStringAsFixed(4)} ${token.symbol}', c),
-          const SizedBox(height: 16),
+          const SizedBox(height: TpixGap.lg),
           // Add button
           SizedBox(
             width: double.infinity,
@@ -347,7 +348,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
               ),
             ),
           ),
@@ -379,11 +380,11 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           Row(
             children: [
               const Icon(Icons.info_outline, color: AppTheme.accent, size: 18),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               Text(l.t('token.howTo'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.accent)),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: TpixGap.md),
           Text(l.t('token.howToDesc'), style: TextStyle(fontSize: 12, color: c.textSec, height: 1.5)),
         ],
       ),

@@ -13,6 +13,7 @@
 /// Developed by Xman Studio
 
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
@@ -137,7 +138,7 @@ class _QRScannerScreenState extends State<QRScannerScreen>
                 width: 260,
                 height: 260,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(TpixRadius.lg),
                   border: Border.all(
                     color: TpixThemeExtension.of(context).brandPrimary,
                     width: 2,
@@ -192,7 +193,7 @@ class _QRScannerScreenState extends State<QRScannerScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, color: Colors.white.withValues(alpha: 0.85), size: 56),
-              const SizedBox(height: 20),
+              const SizedBox(height: TpixGap.xl),
               Text(
                 title,
                 textAlign: TextAlign.center,
@@ -202,7 +203,7 @@ class _QRScannerScreenState extends State<QRScannerScreen>
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: TpixGap.md),
               Text(
                 hint,
                 textAlign: TextAlign.center,
@@ -213,7 +214,7 @@ class _QRScannerScreenState extends State<QRScannerScreen>
                 ),
               ),
               if (!unsupported) ...[
-                const SizedBox(height: 28),
+                const SizedBox(height: TpixGap.xxl),
                 FilledButton.icon(
                   onPressed: () async {
                     await _controller.stop();

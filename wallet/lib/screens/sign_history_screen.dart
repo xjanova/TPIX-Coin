@@ -9,6 +9,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -141,13 +142,13 @@ class _EmptyState extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.draw_outlined, size: 56, color: textSec),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             Text(
               isThai ? 'ยังไม่มีประวัติการเซ็น' : 'No sign history yet',
               style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w600, color: textColor),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: TpixGap.sm),
             Text(
               isThai
                   ? 'เมื่อแอพอื่นขอลายเซ็น จะแสดงที่นี่'
@@ -189,7 +190,7 @@ class _SignHistoryRow extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(TpixRadius.sm),
         border: Border.all(color: textSec.withValues(alpha: 0.1)),
       ),
       child: Column(
@@ -198,7 +199,7 @@ class _SignHistoryRow extends StatelessWidget {
           Row(
             children: [
               Icon(statusIcon, size: 18, color: statusColor),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               Expanded(
                 child: Text(
                   row['source_app'] as String,
@@ -227,7 +228,7 @@ class _SignHistoryRow extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: TpixGap.sm),
           Text(
             row['message'] as String,
             maxLines: 3,
@@ -238,11 +239,11 @@ class _SignHistoryRow extends StatelessWidget {
               fontFamily: 'monospace',
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: TpixGap.sm),
           Row(
             children: [
               Icon(Icons.schedule, size: 12, color: textSec),
-              const SizedBox(width: 4),
+              const SizedBox(width: TpixGap.xs),
               Text(
                 DateFormat(isThai
                         ? 'd MMM yyyy HH:mm:ss'

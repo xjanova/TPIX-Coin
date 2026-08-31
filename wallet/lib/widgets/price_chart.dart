@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import '../core/theme.dart';
 import '../core/themes/theme_bundle.dart';
 import '../services/price_service.dart';
@@ -134,7 +135,7 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
                           cacheHeight: 60,
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: TpixGap.sm),
                       const Text(
                         'TPIX/USD',
                         style: TextStyle(
@@ -145,7 +146,7 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: TpixGap.xs),
                   Text(
                     '\$${widget.currentPrice.toStringAsFixed(4)}',
                     style: const TextStyle(
@@ -158,13 +159,13 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
                 ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               // Change badge
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                   color: changeColor.withValues(alpha: 0.12),
                   border: Border.all(
                       color: changeColor.withValues(alpha: 0.25)),
@@ -173,7 +174,7 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(changeIcon, color: changeColor, size: 14),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: TpixGap.xs),
                     Text(
                       '${isPositive ? '+' : ''}${_changePercent.toStringAsFixed(2)}%',
                       style: TextStyle(
@@ -237,18 +238,18 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
                       ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
 
           // Period selector
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _periodButton('24H', 1),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               _periodButton('7D', 7),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               _periodButton('30D', 30),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               _periodButton('90D', 90),
             ],
           ),
@@ -264,7 +265,7 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(TpixRadius.sm),
           color: isSelected
               ? AppTheme.primary.withValues(alpha: 0.2)
               : Colors.white.withValues(alpha: 0.04),

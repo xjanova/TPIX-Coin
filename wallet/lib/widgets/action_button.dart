@@ -18,6 +18,7 @@
 /// Developed by Xman Studio
 
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import '../core/themes/theme_bundle.dart';
 
 class TpixActionButton extends StatefulWidget {
@@ -82,7 +83,7 @@ class _TpixActionButtonState extends State<TpixActionButton> {
           curve: Curves.easeOut,
           padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(TpixRadius.lg),
             gradient: _surfaceGradient(t, isDark),
             border: Border.all(color: _borderColor(t, isDark), width: 1.2),
             boxShadow: _pressed ? _pressedShadow(t, isDark) : _restShadow(t, isDark),
@@ -102,7 +103,7 @@ class _TpixActionButtonState extends State<TpixActionButton> {
                   child: Container(
                     height: 46,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(TpixRadius.lg),
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
@@ -119,7 +120,7 @@ class _TpixActionButtonState extends State<TpixActionButton> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _iconDisc(t, isDark),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: TpixGap.md),
                   Text(
                     widget.label,
                     maxLines: 1,
@@ -133,7 +134,7 @@ class _TpixActionButtonState extends State<TpixActionButton> {
                           : t.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: TpixGap.hair),
                   Text(
                     widget.sublabel,
                     maxLines: 1,

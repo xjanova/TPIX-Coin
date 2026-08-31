@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
@@ -97,7 +98,7 @@ class _ImportScreenState extends State<ImportScreen> {
                       onPressed: () => Navigator.pop(context),
                       icon: Icon(Icons.arrow_back_ios, color: c.text),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: TpixGap.sm),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -108,7 +109,7 @@ class _ImportScreenState extends State<ImportScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: TpixGap.xxxl),
 
                 // Toggle
                 Container(
@@ -122,7 +123,7 @@ class _ImportScreenState extends State<ImportScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: TpixGap.xxl),
 
                 // Wallet name
                 TextField(
@@ -137,21 +138,21 @@ class _ImportScreenState extends State<ImportScreen> {
                     filled: true,
                     fillColor: c.glassColor,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       borderSide: BorderSide(color: c.glassBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       borderSide: BorderSide(color: c.glassBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       borderSide: const BorderSide(color: AppTheme.primary),
                     ),
                   ),
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: TpixGap.md),
 
                 // Key / Seed input
                 TextField(
@@ -164,21 +165,21 @@ class _ImportScreenState extends State<ImportScreen> {
                     filled: true,
                     fillColor: c.glassColor,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       borderSide: BorderSide(color: c.glassBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       borderSide: BorderSide(color: c.glassBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       borderSide: const BorderSide(color: AppTheme.primary),
                     ),
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
 
                 // Scan QR button
                 SizedBox(
@@ -190,7 +191,7 @@ class _ImportScreenState extends State<ImportScreen> {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
                     ),
                   ),
                 ),
@@ -205,7 +206,7 @@ class _ImportScreenState extends State<ImportScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,
                         padding: const EdgeInsets.symmetric(vertical: 18),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
                       ),
                       child: provider.isLoading
                           ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
@@ -229,7 +230,7 @@ class _ImportScreenState extends State<ImportScreen> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(TpixRadius.sm),
           color: active ? AppTheme.primary.withValues(alpha: 0.2) : Colors.transparent,
         ),
         alignment: Alignment.center,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -197,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 child: Column(
                   children: [
                     _buildHeader(wallet, l),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: TpixGap.lg),
                     // Update banner (ถ้ามี version ใหม่)
                     _buildUpdateBanner(l),
                     // Peer app card (ถ้า TPIX Trade ติดตั้งในเครื่อง)
@@ -205,26 +206,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     // Wallet selector (when multiple wallets)
                     if (wallet.walletCount > 1) ...[
                       _buildWalletSelector(wallet, l),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: TpixGap.lg),
                     ],
                     _buildBalanceCard(wallet, l),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: TpixGap.xl),
                     // Price chart
                     PriceChartWidget(
                       currentPrice: wallet.tpixPrice,
                       balanceTPIX: wallet.balance,
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: TpixGap.xl),
                     _buildActionButtons(context, l),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: TpixGap.xxl),
                     _buildTokenList(wallet, l),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: TpixGap.xxl),
                     _buildIdentityCard(l),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: TpixGap.xxl),
                     _buildRecentTx(wallet, l),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: TpixGap.xxl),
                     _buildInfoCards(l),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: TpixGap.xxl),
                     _buildQuickLinks(l),
                   ],
                 ),
@@ -361,14 +362,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: InkWell(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(TpixRadius.md),
             onTap: () =>
                 UpdateService.showUpdateDialog(context, result, update.service),
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: AppTheme.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 border: Border.all(
                   color: AppTheme.primary.withValues(alpha: 0.35),
                   width: 1,
@@ -388,12 +389,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     height: 36,
                     decoration: BoxDecoration(
                       color: AppTheme.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(TpixRadius.sm),
                     ),
                     child: const Icon(Icons.system_update_rounded,
                         color: AppTheme.primary, size: 18),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: TpixGap.md),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -459,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: TpixGap.md),
         // Expanded — ชื่อกระเป๋าที่ผู้ใช้ตั้งเองยาวแค่ไหนก็ได้
         // ไม่ครอบไว้ = ดันปุ่มภาษา/ฟันเฟืองตกขอบขวา (วัดได้ 80px บน iPhone 13 Pro)
         Expanded(
@@ -479,7 +480,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   if (wallet.walletCount > 1) ...[
-                    const SizedBox(width: 4),
+                    const SizedBox(width: TpixGap.xs),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
@@ -491,11 +492,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         style: const TextStyle(fontSize: 10, color: AppTheme.accent, fontWeight: FontWeight.w700),
                       ),
                     ),
-                    const SizedBox(width: 2),
+                    const SizedBox(width: TpixGap.hair),
                     Icon(Icons.expand_more, size: 18, color: AppTheme.textMuted),
                   ],
                   if (_appVersion.isNotEmpty) ...[
-                    const SizedBox(width: 6),
+                    const SizedBox(width: TpixGap.sm),
                     Text('v$_appVersion', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                   ],
                 ],
@@ -514,7 +515,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Row(
                 children: [
                   Text(wallet.shortAddress, style: const TextStyle(fontSize: 13, color: AppTheme.primary, fontFamily: 'monospace')),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: TpixGap.xs),
                   const Icon(Icons.copy, size: 12, color: AppTheme.textMuted),
                 ],
               ),
@@ -522,21 +523,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ],
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: TpixGap.sm),
         // Language toggle
         GestureDetector(
           onTap: () => l.toggle(),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
               color: AppTheme.accent.withValues(alpha: 0.1),
               border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
             ),
             child: Text(l.isThai ? 'TH' : 'EN', style: const TextStyle(fontSize: 11, color: AppTheme.accent, fontWeight: FontWeight.w700)),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: TpixGap.sm),
         // Settings gear
         GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
@@ -550,14 +551,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: Icon(Icons.settings_rounded, color: c.textSec, size: 18),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: TpixGap.sm),
         // Network badge — tap to show chain info
         GestureDetector(
           onTap: () => _showChainInfo(wallet),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(TpixRadius.lg),
               color: wallet.activeChain.color.withValues(alpha: 0.1),
               border: Border.all(color: wallet.activeChain.color.withValues(alpha: 0.3)),
               boxShadow: [
@@ -572,7 +573,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ChainLogo(chain: wallet.activeChain, size: 14),
-                const SizedBox(width: 4),
+                const SizedBox(width: TpixGap.xs),
                 Text(
                   wallet.activeChain.shortName,
                   style: TextStyle(fontSize: 11, color: wallet.activeChain.color, fontWeight: FontWeight.w600),
@@ -596,7 +597,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               l.t('wallets.title'),
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textMuted),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: TpixGap.sm),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
@@ -610,7 +611,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: TpixGap.sm),
         SizedBox(
           height: 42,
           child: ListView.builder(
@@ -632,7 +633,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       color: isActive
                           ? AppTheme.primary.withValues(alpha: 0.15)
                           : Colors.white.withValues(alpha: 0.04),
@@ -665,7 +666,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: TpixGap.sm),
                         Text(
                           w.name,
                           style: TextStyle(
@@ -675,7 +676,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                         ),
                         if (isActive) ...[
-                          const SizedBox(width: 4),
+                          const SizedBox(width: TpixGap.xs),
                           const Icon(Icons.check_circle, color: AppTheme.success, size: 14),
                         ],
                       ],
@@ -698,7 +699,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(TpixRadius.hero(context)),
           gradient: c.balanceGradient,
           border: Border.all(color: c.brandPrimary.withValues(alpha: 0.25)),
           boxShadow: c.elevatedShadow,
@@ -706,7 +707,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         // ย้าย padding เข้าไปที่เนื้อหาข้างใน เพื่อให้ชั้นลายกินเต็มการ์ดถึงขอบ
         // (ถ้าปล่อย padding ไว้ที่ Container ลายจะหยุดห่างขอบ 28px เป็นกรอบสี่เหลี่ยม)
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(TpixRadius.hero(context)),
           child: Stack(
             children: [
               // ลายเส้นสานบนผิวการ์ด — ให้ดูเป็นวัสดุมีเนื้อ ไม่ใช่แผ่นไล่สีเรียบ
@@ -796,7 +797,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(l.t('home.balance'), style: TextStyle(fontSize: 14, color: c.textSec)),
-                const SizedBox(height: 8),
+                const SizedBox(height: TpixGap.sm),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -813,7 +814,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: TpixGap.sm),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Row(
@@ -821,14 +822,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         children: [
                           // ถอดรหัสที่ 66px (22 logical x 3 dpr)
                           ClipOval(child: Image.asset('assets/images/logowallet.png', width: 22, height: 22, fit: BoxFit.cover, cacheWidth: 66, cacheHeight: 66)),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: TpixGap.xs),
                           const Text('TPIX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.primary)),
                         ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: TpixGap.sm),
                 Text(
                   '≈ \$${wallet.portfolioValueUSD.toStringAsFixed(2)} USD',
                   style: TextStyle(fontSize: 14, color: c.textMuted),
@@ -858,7 +859,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               color: c.brandPrimary,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SendScreen())),
             )),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             Expanded(child: TpixActionButton(
               icon: Icons.arrow_downward_rounded,
               assetIcon: 'assets/images/icons/receive.png',
@@ -867,7 +868,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               color: c.brandSuccess,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReceiveScreen())),
             )),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             Expanded(child: TpixActionButton(
               icon: Icons.receipt_long_rounded,
               assetIcon: 'assets/images/icons/history.png',
@@ -878,7 +879,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             )),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: TpixGap.md),
         // DeFi actions row
         Row(
           children: [
@@ -890,7 +891,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               color: c.brandWarm,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SwapScreen())),
             )),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             Expanded(child: TpixActionButton(
               icon: Icons.account_tree_rounded,
               assetIcon: 'assets/images/icons/bridge.png',
@@ -899,7 +900,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               color: Color.lerp(c.brandPrimary, c.brandSecondary, 0.35)!,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BridgeScreen())),
             )),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             Expanded(child: TpixActionButton(
               icon: Icons.qr_code_scanner_rounded,
               assetIcon: 'assets/images/icons/connect.png',
@@ -935,14 +936,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(TpixRadius.sm),
                     color: AppTheme.primary.withValues(alpha: 0.12),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.add, color: AppTheme.primary, size: 16),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: TpixGap.xs),
                       Text(l.t('token.add'), style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                     ],
                   ),
@@ -950,7 +951,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           // TPIX native — always first
           _buildTokenRow(
             symbol: 'TPIX',
@@ -999,7 +1000,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ? ClipOval(child: Image.asset('assets/images/logowallet.png', width: 36, height: 36, fit: BoxFit.cover, cacheWidth: 108, cacheHeight: 108))
                   : Center(child: Text(symbol.isNotEmpty ? symbol[0] : '?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.accent))),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1026,7 +1027,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: sc.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1041,21 +1042,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: TpixGap.xl),
             Row(
               children: [
                 Text(
                   'Multi-Chain',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: sc.text),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: TpixGap.sm),
                 Text(
                   '(tap to switch)',
                   style: TextStyle(fontSize: 12, color: sc.textMuted),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             ...ChainConfig.all.map((chain) {
               double bal;
               if (chain.chainId == 4289) {
@@ -1073,7 +1074,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(TpixRadius.md),
                     color: isActive ? chain.color.withValues(alpha: 0.10) : Colors.transparent,
                     border: Border.all(
                       color: isActive ? chain.color.withValues(alpha: 0.30) : Colors.transparent,
@@ -1082,7 +1083,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: Row(
                     children: [
                       ChainLogo(chain: chain, size: 32),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: TpixGap.md),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1097,7 +1098,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: chain.color),
                       ),
                       if (isActive) ...[
-                        const SizedBox(width: 8),
+                        const SizedBox(width: TpixGap.sm),
                         Icon(Icons.check_circle, color: chain.color, size: 18),
                       ],
                     ],
@@ -1105,7 +1106,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               );
             }),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
           ],
         ),
       );
@@ -1120,7 +1121,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final dc = AppColors.of(ctx);
         return AlertDialog(
         backgroundColor: dc.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('token.removeConfirm'), style: const TextStyle(color: AppTheme.danger)),
         content: Text('${token.name} (${token.symbol})', style: TextStyle(color: dc.textSec)),
         actions: [
@@ -1164,7 +1165,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               child: const Icon(Icons.shield_rounded, color: AppTheme.accent, size: 22),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: TpixGap.lg),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1203,7 +1204,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           ...recent.map((tx) {
             final isSent = tx.direction == 'sent';
             final color = isSent ? AppTheme.danger : AppTheme.success;
@@ -1248,7 +1249,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: TpixGap.md),
                   Expanded(
                     child: Text(
                       isSent ? tx.shortTo : tx.shortFrom,
@@ -1272,11 +1273,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Column(
       children: [
         _buildInfoRow(Icons.speed, l.t('home.blockTime'), l.t('home.blockTimeVal'), AppTheme.success),
-        const SizedBox(height: 10),
+        const SizedBox(height: TpixGap.md),
         _buildInfoRow(Icons.local_gas_station, l.t('home.gasFee'), l.t('home.gasFeeVal'), AppTheme.warm),
-        const SizedBox(height: 10),
+        const SizedBox(height: TpixGap.md),
         _buildInfoRow(Icons.shield, l.t('home.consensus'), 'IBFT 2.0', AppTheme.accent),
-        const SizedBox(height: 10),
+        const SizedBox(height: TpixGap.md),
         // Settings shortcut
         GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
@@ -1286,7 +1287,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: Row(
               children: [
                 const Icon(Icons.settings_rounded, color: AppTheme.primary, size: 22),
-                const SizedBox(width: 12),
+                const SizedBox(width: TpixGap.md),
                 Text(l.t('settings.title'), style: TextStyle(fontSize: 14, color: AppColors.of(context).textSec)),
                 const Spacer(),
                 Icon(Icons.arrow_forward_ios, color: AppColors.of(context).textMuted, size: 14),
@@ -1303,7 +1304,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         gradient: LinearGradient(
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
@@ -1317,7 +1318,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Row(
         children: [
           Icon(icon, color: color, size: 22),
-          const SizedBox(width: 12),
+          const SizedBox(width: TpixGap.md),
           Text(title, style: TextStyle(fontSize: 14, color: AppColors.of(context).textSec)),
           const Spacer(),
           Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
@@ -1334,7 +1335,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(l.t('home.links'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           _buildLink('🌐', 'TPIX TRADE', 'https://tpix.online'),
           _buildLink('🔍', 'Explorer', TpixChain.explorerUrl),
           _buildLink('📖', 'Whitepaper', 'https://tpix.online/whitepaper'),
@@ -1352,13 +1353,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         margin: const EdgeInsets.symmetric(vertical: 3),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(TpixRadius.sm),
           color: c.isDark ? Colors.white.withValues(alpha: 0.03) : Colors.black.withValues(alpha: 0.02),
         ),
         child: Row(
           children: [
             Text(emoji, style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 10),
+            const SizedBox(width: TpixGap.md),
             Text(label, style: TextStyle(fontSize: 14, color: c.textSec)),
             const Spacer(),
             Icon(Icons.open_in_new, size: 16, color: c.textMuted),

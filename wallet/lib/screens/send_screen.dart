@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
@@ -226,7 +227,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: c.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -241,9 +242,9 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: TpixGap.xl),
             Text(l.t('send.confirmTitle'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
-            const SizedBox(height: 20),
+            const SizedBox(height: TpixGap.xl),
             // ผู้รับ — ถ้าเคยบันทึกชื่อไว้ให้โชว์ชื่อด้วย
             // คนตรวจ "ส่งให้น้องเอ" ได้แม่นกว่าตรวจเลขย่อ 0x1234…abcdef
             if (_lookupFavorite(address) case final match?) ...[
@@ -262,7 +263,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
             _confirmRow(l.t('send.confirmAmount'), '${amount.toStringAsFixed(4)} TPIX'),
             // Gas
             _confirmRow(l.t('send.gasFee').replaceAll(': ', ''), l.t('send.gasFreeVal'), valueColor: AppTheme.success),
-            const SizedBox(height: 24),
+            const SizedBox(height: TpixGap.xxl),
             // Buttons
             Row(
               children: [
@@ -272,12 +273,12 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       side: BorderSide(color: c.glassBorder),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
                     ),
                     child: Text(l.t('send.cancel'), style: TextStyle(color: c.textSec)),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: TpixGap.md),
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
@@ -285,14 +286,14 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
                     ),
                     child: Text(l.t('send.confirmButton'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: TpixGap.sm),
           ],
         ),
       ),
@@ -307,7 +308,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('pin.unlock'), style: TextStyle(color: c.text, fontSize: 16)),
         content: TextField(
           controller: pinController,
@@ -374,7 +375,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(TpixRadius.md),
           onTap: () {
             _addressController.text = contact.address;
             SynthService.playTap();
@@ -393,7 +394,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                 ),
                 child: ContactAvatar(contact: contact, size: 42),
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: TpixGap.xs),
               Text(
                 contact.name,
                 maxLines: 1,
@@ -467,7 +468,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                 onPressed: () => Navigator.pop(context),
                 icon: Icon(Icons.arrow_back_ios, color: c.text),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               // Expanded — หัวข้อ+คำอธิบายยาวหรือเครื่องตั้งตัวอักษรใหญ่
               // ต้องตัดเป็น … ไม่ใช่ดันแถวจนล้นขอบขวา
               Expanded(
@@ -488,7 +489,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
             ],
           ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: TpixGap.xxxl),
 
           // ── ผู้รับ + ทางลัดรายการโปรด ──
           Row(
@@ -524,7 +525,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: TpixGap.xs),
           TextField(
             controller: _addressController,
             style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'monospace'),
@@ -534,15 +535,15 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               filled: true,
               fillColor: c.glassColor,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.glassBorder),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.glassBorder),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: const BorderSide(color: AppTheme.primary),
               ),
               suffixIcon: Row(
@@ -567,7 +568,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                         color: AppTheme.primary),
                     onPressed: _scanQR,
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: TpixGap.xs),
                 ],
               ),
             ),
@@ -580,7 +581,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               child: Row(
                 children: [
                   ContactAvatar(contact: _matched!, size: 22),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Flexible(
                     child: Text(
                       _matched!.name,
@@ -598,24 +599,24 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
           // ── แถวชิปรายการโปรด (ทางลัดกดทีเดียวติด) ──
           if (_favorites.isNotEmpty) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: TpixGap.lg),
             SizedBox(
               height: 74,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 2),
                 itemCount: _favorites.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                separatorBuilder: (_, __) => const SizedBox(width: TpixGap.md),
                 itemBuilder: (_, i) => _buildFavoriteChip(_favorites[i], c),
               ),
             ),
           ],
 
-          const SizedBox(height: 24),
+          const SizedBox(height: TpixGap.xxl),
 
           // Amount
           Text(l.t('send.amount'), style: TextStyle(fontSize: 14, color: c.textSec)),
-          const SizedBox(height: 8),
+          const SizedBox(height: TpixGap.sm),
           TextField(
             controller: _amountController,
             keyboardType: TextInputType.number,
@@ -626,15 +627,15 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               filled: true,
               fillColor: c.glassColor,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.glassBorder),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.glassBorder),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: const BorderSide(color: AppTheme.primary),
               ),
               suffixText: 'TPIX',
@@ -642,7 +643,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
 
           // Balance hint
           Consumer<WalletProvider>(
@@ -664,7 +665,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: TpixGap.xs),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -678,20 +679,20 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: TpixGap.lg),
 
           // Fee info
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
               color: AppTheme.success.withValues(alpha: 0.06),
               border: Border.all(color: AppTheme.success.withValues(alpha: 0.15)),
             ),
             child: Row(
               children: [
                 const Icon(Icons.local_gas_station, color: AppTheme.success, size: 18),
-                const SizedBox(width: 8),
+                const SizedBox(width: TpixGap.sm),
                 Flexible(
                   child: Text(l.t('send.gasFee'),
                       maxLines: 1,
@@ -718,14 +719,14 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 padding: const EdgeInsets.symmetric(vertical: 18),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
               ),
               child: _isSending
                   ? Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: TpixGap.md),
                         Text(l.t('send.sending'), style: const TextStyle(fontSize: 16, color: Colors.white)),
                       ],
                     )
@@ -775,13 +776,13 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                     child: const Icon(Icons.check_rounded, color: Colors.white, size: 60),
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: TpixGap.xxxl),
 
                   Text(l.t('send.success'), style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: c.text)),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: TpixGap.sm),
                   Text(l.t('send.confirmed'), style: const TextStyle(fontSize: 16, color: AppTheme.success)),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: TpixGap.xxl),
 
                   if (_txHash != null)
                     Container(
@@ -791,7 +792,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.tag, size: 14, color: c.textMuted),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: TpixGap.sm),
                           Text(
                             '${_txHash!.substring(0, 10)}...${_txHash!.substring(_txHash!.length - 8)}',
                             style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontFamily: 'monospace'),
@@ -803,7 +804,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                   // เพิ่งส่งให้คนที่ยังไม่มีชื่อ → เสนอบันทึกทันที
                   // จังหวะนี้คือตอนที่ผู้ใช้ยังจำได้ว่าที่อยู่นี้คือใคร
                   if (_sentTo != null && _lookupFavorite(_sentTo!) == null) ...[
-                    const SizedBox(height: 24),
+                    const SizedBox(height: TpixGap.xxl),
                     OutlinedButton.icon(
                       onPressed: _saveSentRecipient,
                       style: OutlinedButton.styleFrom(
@@ -811,7 +812,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                             horizontal: 20, vertical: 12),
                         side: BorderSide(color: c.brandWarm.withValues(alpha: 0.5)),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
+                            borderRadius: BorderRadius.circular(TpixRadius.md)),
                       ),
                       icon: Icon(Icons.star_border_rounded,
                           size: 20, color: c.brandWarm),
@@ -825,14 +826,14 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                     ),
                   ],
 
-                  const SizedBox(height: 40),
+                  const SizedBox(height: TpixGap.huge),
 
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
                       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
                     ),
                     child: Text(l.t('send.goBack'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
                   ),

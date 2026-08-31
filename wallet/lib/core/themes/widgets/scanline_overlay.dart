@@ -6,6 +6,7 @@
 
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../tokens.dart';
 
 class CrtScanlineOverlay extends StatefulWidget {
   final Widget child;
@@ -190,7 +191,7 @@ class _CrtScanlineOverlayState extends State<CrtScanlineOverlay>
                       letterSpacing: 1.0,
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: TpixGap.xs),
                   Container(
                     width: 7,
                     height: 12,

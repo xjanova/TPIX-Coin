@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -280,7 +281,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
     return AlertDialog(
       backgroundColor: const Color(0xFF1A1F2E),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         side: const BorderSide(color: Color(0xFF00BCD4), width: 0.5),
       ),
       title: Row(
@@ -289,12 +290,12 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: const Color(0xFF00BCD4).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
             ),
             child: const Icon(Icons.system_update,
                 color: Color(0xFF00BCD4), size: 24),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: TpixGap.md),
           Expanded(
             child: Text(l.t('update.available'),
                 style: const TextStyle(color: Colors.white, fontSize: 18)),
@@ -310,7 +311,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -336,13 +337,13 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 
           if (widget.result.releaseNotes != null &&
               widget.result.releaseNotes!.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: TpixGap.md),
             Text(l.t('update.whats_new'),
                 style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
                     fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
+            const SizedBox(height: TpixGap.xs),
             Container(
               constraints: const BoxConstraints(maxHeight: 100),
               child: SingleChildScrollView(
@@ -355,9 +356,9 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 
           // Download progress
           if (_downloading) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             ClipRRect(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(TpixRadius.xs),
               child: LinearProgressIndicator(
                 value: _progress > 0 ? _progress : null,
                 backgroundColor: Colors.white.withOpacity(0.1),
@@ -366,7 +367,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                 minHeight: 6,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: TpixGap.sm),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -382,12 +383,12 @@ class _UpdateDialogState extends State<_UpdateDialog> {
           ],
 
           if (!_downloading) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: const Color(0xFF00BCD4).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TpixRadius.sm),
                 border: Border.all(
                     color: const Color(0xFF00BCD4).withOpacity(0.2)),
               ),
@@ -400,7 +401,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                     color: const Color(0xFF00BCD4),
                     size: 16,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Expanded(
                     child: Text(
                       widget.result.apkDownloadUrl != null
@@ -443,7 +444,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF00BCD4),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm)),
             ),
             onPressed: _startDownload,
           ),

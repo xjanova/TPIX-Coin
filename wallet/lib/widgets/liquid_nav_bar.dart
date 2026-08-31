@@ -8,6 +8,7 @@
 /// Developed by Xman Studio
 
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/luxe_texture.dart';
 
@@ -253,7 +254,7 @@ class _LiquidNavBarState extends State<LiquidNavBar>
           curve: Curves.easeOut,
           margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(TpixRadius.lg),
             color: active
                 ? t.brandPrimary.withValues(alpha: 0.12)
                 : Colors.transparent,
@@ -281,7 +282,7 @@ class _LiquidNavBarState extends State<LiquidNavBar>
                 )
               else
                 Icon(active ? item.activeIcon : item.icon, size: 21, color: color),
-              const SizedBox(height: 2),
+              const SizedBox(height: TpixGap.hair),
               Text(
                 item.label,
                 maxLines: 1,
@@ -480,7 +481,7 @@ Future<ScanSheetAction?> showScanActionSheet(
     builder: (ctx) => Container(
       decoration: BoxDecoration(
         color: isDark ? t.card : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.sheet)),
         border: Border.all(color: t.glassBorder, width: 1.2),
       ),
       child: SafeArea(
@@ -498,7 +499,7 @@ Future<ScanSheetAction?> showScanActionSheet(
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: TpixGap.lg),
               // ภาพประกอบเจลลี่ — เฉพาะธีมลิควิด (สไตล์ภาพผูกกับธีมนี้)
               if (t.themeId == ThemeId.liquid) ...[
                 Image.asset(
@@ -507,7 +508,7 @@ Future<ScanSheetAction?> showScanActionSheet(
                   height: 96,
                   errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: TpixGap.sm),
               ],
               Text(
                 title,
@@ -517,7 +518,7 @@ Future<ScanSheetAction?> showScanActionSheet(
                   color: t.textPrimary,
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: TpixGap.lg),
               Row(
                 children: [
                   Expanded(
@@ -530,7 +531,7 @@ Future<ScanSheetAction?> showScanActionSheet(
                           Navigator.pop(ctx, ScanSheetAction.scanToPay),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: TpixGap.md),
                   Expanded(
                     child: _ScanChoiceCard(
                       icon: Icons.qr_code_2_rounded,
@@ -573,11 +574,11 @@ class _ScanChoiceCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(TpixRadius.lg),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -613,7 +614,7 @@ class _ScanChoiceCard extends StatelessWidget {
                 ),
                 child: Icon(icon, color: Colors.white, size: 26),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: TpixGap.md),
               Text(
                 label,
                 style: TextStyle(
@@ -622,7 +623,7 @@ class _ScanChoiceCard extends StatelessWidget {
                   color: t.textPrimary,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: TpixGap.hair),
               Text(
                 sub,
                 textAlign: TextAlign.center,

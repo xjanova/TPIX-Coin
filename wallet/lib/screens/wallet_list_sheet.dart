@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
@@ -32,7 +33,7 @@ class WalletListSheet extends StatelessWidget {
         padding: EdgeInsets.only(bottom: bottomPad > 0 ? bottomPad : 16),
         decoration: BoxDecoration(
           color: c.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -54,11 +55,11 @@ class WalletListSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Text(l.t('wallets.title'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(TpixRadius.xs),
                       color: AppTheme.primary.withValues(alpha: 0.1),
                     ),
                     child: Text('${wallet.walletCount}/128', style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600)),
@@ -70,14 +71,14 @@ class WalletListSheet extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(TpixRadius.sm),
                         color: AppTheme.primary.withValues(alpha: 0.12),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(Icons.add, color: AppTheme.primary, size: 16),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: TpixGap.xs),
                           Text(l.t('wallets.addSub'), style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                         ],
                       ),
@@ -98,7 +99,7 @@ class WalletListSheet extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: TpixGap.sm),
           ],
         ),
       ),
@@ -113,7 +114,7 @@ class WalletListSheet extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         color: isActive ? AppTheme.primary.withValues(alpha: 0.08) : Colors.transparent,
         border: Border.all(
           color: isActive ? AppTheme.primary.withValues(alpha: 0.25) : AppTheme.borderDim,
@@ -155,7 +156,7 @@ class WalletListSheet extends StatelessWidget {
               ),
             ),
             if (isActive) ...[
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
@@ -166,7 +167,7 @@ class WalletListSheet extends StatelessWidget {
               ),
             ],
             if (!info.isHD) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: TpixGap.sm),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
@@ -185,7 +186,7 @@ class WalletListSheet extends StatelessWidget {
         trailing: PopupMenuButton<String>(
           icon: Icon(Icons.more_vert, color: AppColors.of(context).textMuted, size: 20),
           color: AppColors.of(context).surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
           onSelected: (action) => _handleAction(context, action, info, wallet, l),
           itemBuilder: (_) => [
             PopupMenuItem(
@@ -193,7 +194,7 @@ class WalletListSheet extends StatelessWidget {
               child: Row(
                 children: [
                   const Icon(Icons.edit, size: 18, color: AppTheme.primary),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Text(l.t('wallets.rename'), style: TextStyle(color: AppColors.of(context).text)),
                 ],
               ),
@@ -204,7 +205,7 @@ class WalletListSheet extends StatelessWidget {
                 child: Row(
                   children: [
                     const Icon(Icons.swap_horiz, size: 18, color: AppTheme.accent),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: TpixGap.sm),
                     Text(l.t('wallets.switch'), style: TextStyle(color: AppColors.of(context).text)),
                   ],
                 ),
@@ -215,7 +216,7 @@ class WalletListSheet extends StatelessWidget {
                 child: Row(
                   children: [
                     const Icon(Icons.delete_outline, size: 18, color: AppTheme.danger),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: TpixGap.sm),
                     Text(l.t('wallets.delete'), style: const TextStyle(color: AppTheme.danger)),
                   ],
                 ),
@@ -254,7 +255,7 @@ class WalletListSheet extends StatelessWidget {
         final dc = AppColors.of(ctx);
         return AlertDialog(
         backgroundColor: dc.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('wallets.rename'), style: TextStyle(color: dc.text)),
         content: TextField(
           controller: controller,
@@ -266,7 +267,7 @@ class WalletListSheet extends StatelessWidget {
             filled: true,
             fillColor: dc.surface,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
               borderSide: BorderSide(color: dc.border),
             ),
           ),
@@ -299,7 +300,7 @@ class WalletListSheet extends StatelessWidget {
         final dc = AppColors.of(ctx);
         return AlertDialog(
         backgroundColor: dc.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('wallets.deleteConfirm'), style: const TextStyle(color: AppTheme.danger)),
         content: Text(
           '${l.t('wallets.deleteMsg')}\n\n${info.name}\n${info.address.substring(0, 10)}...',
@@ -338,13 +339,13 @@ class WalletListSheet extends StatelessWidget {
         final dc = AppColors.of(ctx);
         return AlertDialog(
         backgroundColor: dc.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('wallets.nameTitle'), style: TextStyle(color: dc.text, fontSize: 18)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(l.t('wallets.nameHint'), style: TextStyle(color: dc.textMuted, fontSize: 13)),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             TextField(
               controller: nameController,
               autofocus: true,
@@ -357,11 +358,11 @@ class WalletListSheet extends StatelessWidget {
                 fillColor: dc.surface,
                 counterStyle: TextStyle(color: dc.textMuted),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                   borderSide: BorderSide(color: dc.border),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                   borderSide: const BorderSide(color: AppTheme.primary),
                 ),
               ),

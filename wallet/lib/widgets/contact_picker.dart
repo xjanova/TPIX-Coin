@@ -6,6 +6,7 @@
 /// Developed by Xman Studio
 
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
@@ -131,7 +132,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('contacts.deleteTitle'),
             style: TextStyle(color: c.text, fontSize: 17)),
         content: Text(
@@ -171,12 +172,12 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
       builder: (_, scrollController) => Container(
         decoration: BoxDecoration(
           color: c.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.sheet)),
           border: Border.all(color: c.glassBorder, width: 1.2),
         ),
         child: Column(
           children: [
-            const SizedBox(height: 12),
+            const SizedBox(height: TpixGap.md),
             Container(
               width: 44,
               height: 5,
@@ -185,13 +186,13 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: TpixGap.lg),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
                   Icon(Icons.star_rounded, color: c.brandWarm, size: 22),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Text(
                     l.t('contacts.title'),
                     style: TextStyle(
@@ -206,7 +207,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: TpixGap.md),
 
             // ช่องค้นหา — โผล่เมื่อมีรายการเยอะพอที่จะหายาก
             if (_all.length > 5)
@@ -224,11 +225,11 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                     filled: true,
                     fillColor: c.glassColor,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       borderSide: BorderSide(color: c.glassBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(TpixRadius.md),
                       borderSide: BorderSide(color: c.glassBorder),
                     ),
                   ),
@@ -245,7 +246,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
                           itemCount: items.length,
                           separatorBuilder: (_, __) =>
-                              const SizedBox(height: 4),
+                              const SizedBox(height: TpixGap.xs),
                           itemBuilder: (_, i) =>
                               _buildTile(items[i], l, c),
                         ),
@@ -260,14 +261,14 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         onTap: () => Navigator.pop(context, contact),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           child: Row(
             children: [
               ContactAvatar(contact: contact),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,7 +282,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                           fontWeight: FontWeight.w600,
                           color: c.text),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: TpixGap.hair),
                     Text(
                       contact.shortAddress,
                       style: TextStyle(
@@ -291,7 +292,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                     ),
                     if (contact.note != null &&
                         contact.note!.trim().isNotEmpty) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: TpixGap.hair),
                       Text(
                         contact.note!,
                         maxLines: 1,
@@ -313,7 +314,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                     child: Row(
                       children: [
                         Icon(Icons.edit_outlined, size: 18, color: c.textSec),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: TpixGap.md),
                         Text(l.t('contacts.edit'),
                             style: TextStyle(color: c.text)),
                       ],
@@ -325,7 +326,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                       children: [
                         const Icon(Icons.delete_outline,
                             size: 18, color: AppTheme.danger),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: TpixGap.md),
                         Text(l.t('contacts.delete'),
                             style: const TextStyle(color: AppTheme.danger)),
                       ],
@@ -350,7 +351,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
           children: [
             Icon(searching ? Icons.search_off_rounded : Icons.star_border_rounded,
                 size: 52, color: c.textMuted),
-            const SizedBox(height: 14),
+            const SizedBox(height: TpixGap.lg),
             Text(
               l.t(searching ? 'contacts.noMatch' : 'contacts.empty'),
               textAlign: TextAlign.center,
@@ -358,7 +359,7 @@ class _ContactPickerSheetState extends State<_ContactPickerSheet> {
                   fontSize: 15, fontWeight: FontWeight.w600, color: c.text),
             ),
             if (!searching) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: TpixGap.sm),
               Text(
                 l.t('contacts.emptyHint'),
                 textAlign: TextAlign.center,
@@ -465,7 +466,7 @@ class _SaveContactDialogState extends State<_SaveContactDialog> {
 
     return AlertDialog(
       backgroundColor: c.card,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
       title: Text(
         l.t(widget.existing == null ? 'contacts.saveTitle' : 'contacts.editTitle'),
         style: TextStyle(color: c.text, fontSize: 17, fontWeight: FontWeight.w700),
@@ -478,7 +479,7 @@ class _SaveContactDialogState extends State<_SaveContactDialog> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
               color: c.glassColor,
               border: Border.all(color: c.glassBorder),
             ),
@@ -488,7 +489,7 @@ class _SaveContactDialogState extends State<_SaveContactDialog> {
                   fontSize: 13, color: c.textSec, fontFamily: 'monospace'),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: TpixGap.lg),
           TextField(
             controller: _name,
             autofocus: true,
@@ -504,21 +505,21 @@ class _SaveContactDialogState extends State<_SaveContactDialog> {
               filled: true,
               fillColor: c.glassColor,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.glassBorder),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.glassBorder),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.brandPrimary),
               ),
             ),
             onSubmitted: (_) => _save(),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: TpixGap.md),
           TextField(
             controller: _note,
             maxLength: 60,
@@ -530,21 +531,21 @@ class _SaveContactDialogState extends State<_SaveContactDialog> {
               filled: true,
               fillColor: c.glassColor,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.glassBorder),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.glassBorder),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: BorderSide(color: c.brandPrimary),
               ),
             ),
           ),
           if (_error != null) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: TpixGap.md),
             Text(_error!,
                 style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
           ],

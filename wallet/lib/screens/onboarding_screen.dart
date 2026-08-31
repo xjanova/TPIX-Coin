@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
@@ -68,13 +69,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('wallets.nameTitle'), style: TextStyle(color: c.text, fontSize: 18)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(l.t('wallets.nameHint'), style: TextStyle(color: c.textMuted, fontSize: 13)),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             TextField(
               controller: controller,
               autofocus: true,
@@ -87,11 +88,11 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 fillColor: c.surface,
                 counterStyle: TextStyle(color: c.textMuted),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                   borderSide: BorderSide(color: c.border),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                   borderSide: const BorderSide(color: AppTheme.primary),
                 ),
               ),
@@ -167,7 +168,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   ),
                 ),
 
-                const SizedBox(height: 40),
+                const SizedBox(height: TpixGap.huge),
 
                 // Title
                 FadeTransition(
@@ -187,7 +188,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                               style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: Colors.white),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: TpixGap.md),
                           Text(
                             l.t('onboarding.subtitle'),
                             textAlign: TextAlign.center,
@@ -229,7 +230,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                               onTap: _createWallet,
                             ),
 
-                            const SizedBox(height: 16),
+                            const SizedBox(height: TpixGap.lg),
 
                             // Import Wallet Button
                             _buildOutlineButton(
@@ -252,7 +253,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   'by Xman Studio',
                   style: TextStyle(fontSize: 11, color: c.textMuted),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: TpixGap.xl),
               ],
             ),
           ),
@@ -272,13 +273,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
           decoration: BoxDecoration(
             gradient: gradient,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(TpixRadius.lg),
             boxShadow: [
               BoxShadow(
                 color: AppTheme.primary.withValues(alpha: 0.3),
@@ -290,7 +291,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           child: Row(
             children: [
               Icon(icon, color: Colors.white, size: 28),
-              const SizedBox(width: 16),
+              const SizedBox(width: TpixGap.lg),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -318,19 +319,19 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(TpixRadius.lg),
             border: Border.all(color: c.glassBorder, width: 1.5),
             color: c.glassColor,
           ),
           child: Row(
             children: [
               Icon(icon, color: c.textSec, size: 28),
-              const SizedBox(width: 16),
+              const SizedBox(width: TpixGap.lg),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

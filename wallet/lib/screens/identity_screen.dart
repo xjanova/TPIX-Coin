@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
@@ -68,16 +69,16 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
                     children: [
-                      const SizedBox(height: 12),
+                      const SizedBox(height: TpixGap.md),
                       _buildHeader(l),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: TpixGap.xxl),
                       _buildShieldHero(l, c),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: TpixGap.xxl),
                       _buildStepCards(l, c),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
                       if ((_status['level'] as int? ?? 0) >= 2)
                         _buildRecoveryTestButton(l),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: TpixGap.xxxl),
                     ],
                   ),
                 ),
@@ -107,7 +108,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
             child: const Icon(Icons.arrow_back_rounded, color: AppTheme.primary, size: 20),
           ),
         ),
-        const SizedBox(width: 14),
+        const SizedBox(width: TpixGap.lg),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,7 +154,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           child: Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(TpixRadius.sheet),
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -212,17 +213,17 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
                 Text(
                   l.t('identity.securityLevel'),
                   style: TextStyle(fontSize: 12, color: c.textMuted, letterSpacing: 1.5),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: TpixGap.xs),
                 Text(
                   labels[level.clamp(0, 3)],
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: levelColors[0]),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
                 // Step indicators
                 AnimatedBuilder(
                   animation: _progressController,
@@ -299,7 +300,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           onTap: () => _showSecurityQuestionsDialog(l),
           c: c,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: TpixGap.lg),
         _buildStepCard(
           step: 2,
           icon: Icons.share_location_rounded,
@@ -311,7 +312,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           extraContent: _locationLabels.isNotEmpty ? _buildLocationChips() : null,
           c: c,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: TpixGap.lg),
         _buildStepCard(
           step: 3,
           icon: Icons.fiber_pin_rounded,
@@ -342,7 +343,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(TpixRadius.lg),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -381,7 +382,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     size: 24,
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: TpixGap.lg),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -403,12 +404,12 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                             ),
                           ),
                           if (isComplete) ...[
-                            const SizedBox(width: 8),
+                            const SizedBox(width: TpixGap.sm),
                             Icon(Icons.check_circle_rounded, color: gradientColors[0], size: 16),
                           ],
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: TpixGap.xs),
                       Text(
                         title,
                         style: TextStyle(
@@ -416,7 +417,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                           color: isComplete ? gradientColors[0] : c.text,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: TpixGap.hair),
                       Text(description, style: TextStyle(fontSize: 12, color: c.textMuted)),
                     ],
                   ),
@@ -429,7 +430,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               ],
             ),
             if (extraContent != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: TpixGap.md),
               extraContent,
             ],
           ],
@@ -448,7 +449,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(TpixRadius.lg),
             color: AppTheme.accent.withValues(alpha: 0.1),
             border: Border.all(color: AppTheme.accent.withValues(alpha: 0.2)),
           ),
@@ -456,9 +457,9 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.pin_drop_rounded, size: 14, color: AppTheme.accent),
-              const SizedBox(width: 6),
+              const SizedBox(width: TpixGap.sm),
               Text(loc['label'] ?? '', style: const TextStyle(fontSize: 12, color: AppTheme.accent, fontWeight: FontWeight.w600)),
-              const SizedBox(width: 6),
+              const SizedBox(width: TpixGap.sm),
               GestureDetector(
                 onTap: () async {
                   final dc = AppColors.of(context);
@@ -466,7 +467,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     context: context,
                     builder: (ctx) => AlertDialog(
                       backgroundColor: dc.card,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
                       title: Text('Remove Location?', style: TextStyle(color: dc.text, fontSize: 16)),
                       content: Text('Remove "${loc['label']}"?', style: TextStyle(color: dc.textSec, fontSize: 14)),
                       actions: [
@@ -500,18 +501,18 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
       width: double.infinity,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         gradient: AppTheme.brandGradient,
       ),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(TpixRadius.md),
           color: c.bg,
         ),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(TpixRadius.md),
             onTap: () { SynthService.playTap(); _showRecoveryTestDialog(l); },
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -522,7 +523,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     shaderCallback: (bounds) => AppTheme.brandGradient.createShader(bounds),
                     child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 20),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: TpixGap.md),
                   ShaderMask(
                     shaderCallback: (bounds) => AppTheme.brandGradient.createShader(bounds),
                     child: Text(
@@ -565,15 +566,15 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
       filled: true,
       fillColor: c.glassColor,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         borderSide: BorderSide(color: c.glassBorder),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         borderSide: BorderSide(color: c.glassBorder),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -606,7 +607,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
         ),
         decoration: BoxDecoration(
           color: c.card,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(TpixRadius.sheet)),
         ),
         child: SingleChildScrollView(
           child: Column(
@@ -624,7 +625,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     ),
                     child: const Icon(Icons.psychology_rounded, color: Colors.white, size: 18),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: TpixGap.md),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -634,20 +635,20 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: TpixGap.xl),
               if (hasExisting) ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(TpixRadius.sm),
                     color: AppTheme.warm.withValues(alpha: 0.08),
                     border: Border.all(color: AppTheme.warm.withValues(alpha: 0.15)),
                   ),
                   child: Row(
                     children: [
                       Icon(Icons.warning_amber_rounded, size: 16, color: AppTheme.warm.withValues(alpha: 0.8)),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: TpixGap.sm),
                       Expanded(
                         child: Text(
                           l.isThai ? 'การบันทึกจะแทนที่คำถามเดิม ต้องใส่คำตอบใหม่ทั้งหมด' : 'Saving will replace existing questions. Re-enter all answers.',
@@ -667,13 +668,13 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                       '${l.t('identity.questionLabel')} ${i + 1}',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.primary.withValues(alpha: 0.7), letterSpacing: 0.5),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: TpixGap.sm),
                     TextField(
                       controller: controllers[i][0],
                       style: TextStyle(color: c.text, fontSize: 14),
                       decoration: _inputDeco(hint: l.t('identity.questionPlaceholder'), prefix: Icons.help_outline_rounded),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: TpixGap.sm),
                     TextField(
                       controller: controllers[i][1],
                       style: TextStyle(color: c.text, fontSize: 14),
@@ -682,7 +683,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   ],
                 ),
               )),
-              const SizedBox(height: 8),
+              const SizedBox(height: TpixGap.sm),
               _buildGradientButton(
                 label: l.t('identity.save'),
                 icon: Icons.save_rounded,
@@ -731,7 +732,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
         ),
         decoration: BoxDecoration(
           color: c.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.sheet)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -749,7 +750,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   // KEEP white on gradient circle
                   child: const Icon(Icons.share_location_rounded, color: Colors.white, size: 18),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: TpixGap.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -761,19 +762,19 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: TpixGap.xl),
             // Privacy badge
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TpixRadius.sm),
                 color: AppTheme.success.withValues(alpha: 0.08),
                 border: Border.all(color: AppTheme.success.withValues(alpha: 0.15)),
               ),
               child: Row(
                 children: [
                   Icon(Icons.lock_rounded, size: 14, color: AppTheme.success.withValues(alpha: 0.8)),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Expanded(
                     child: Text(
                       l.isThai ? 'เก็บเฉพาะ hash เท่านั้น ไม่เก็บพิกัดจริง' : 'Only stores hash — never your exact coordinates',
@@ -783,13 +784,13 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             TextField(
               controller: labelController,
               style: TextStyle(color: c.text, fontSize: 14),
               decoration: _inputDeco(hint: l.t('identity.locationLabel'), prefix: Icons.label_outline_rounded),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             _LocationRegisterButton(
               labelController: labelController,
               identityService: _identityService,
@@ -826,7 +827,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
         ),
         decoration: BoxDecoration(
           color: c.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.sheet)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -844,7 +845,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   // KEEP white on gradient circle
                   child: const Icon(Icons.fiber_pin_rounded, color: Colors.white, size: 18),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: TpixGap.md),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -854,7 +855,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: TpixGap.xl),
             TextField(
               controller: pinController,
               keyboardType: TextInputType.number,
@@ -868,13 +869,13 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.3), letterSpacing: 10),
                 filled: true,
                 fillColor: c.glassColor,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: BorderSide(color: c.glassBorder)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: BorderSide(color: c.glassBorder)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
                 counterText: '',
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: TpixGap.md),
             TextField(
               controller: confirmController,
               keyboardType: TextInputType.number,
@@ -888,13 +889,13 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                 hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.3), letterSpacing: 1),
                 filled: true,
                 fillColor: c.glassColor,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: BorderSide(color: c.glassBorder)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: BorderSide(color: c.glassBorder)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
                 counterText: '',
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             _buildGradientButton(
               label: l.t('identity.save'),
               icon: Icons.save_rounded,
@@ -935,7 +936,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Row(
           children: [
             ShaderMask(
@@ -943,7 +944,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               // KEEP white — ShaderMask requires white base to show gradient
               child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 24),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: TpixGap.md),
             Text(l.t('identity.testRecovery'), style: TextStyle(color: c.text, fontSize: 18)),
           ],
         ),
@@ -955,7 +956,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
           ),
           Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
               gradient: AppTheme.brandGradient,
             ),
             child: ElevatedButton(
@@ -993,7 +994,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
         constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
         decoration: BoxDecoration(
           color: c.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.sheet)),
         ),
         child: SingleChildScrollView(
           child: Column(
@@ -1008,11 +1009,11 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                     // KEEP white — ShaderMask requires white base
                     child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 24),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: TpixGap.md),
                   Text(l.t('identity.testRecovery'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: TpixGap.xl),
 
               ...List.generate(questions.length, (i) => Padding(
                 padding: const EdgeInsets.only(bottom: 14),
@@ -1020,7 +1021,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(questions[i], style: TextStyle(fontSize: 13, color: c.textSec, fontWeight: FontWeight.w500)),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: TpixGap.sm),
                     TextField(
                       controller: answerControllers[i],
                       style: TextStyle(color: c.text, fontSize: 14),
@@ -1031,7 +1032,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               )),
 
               Text(l.t('identity.recoveryPinOptional'), style: TextStyle(fontSize: 11, color: c.textMuted)),
-              const SizedBox(height: 6),
+              const SizedBox(height: TpixGap.sm),
               TextField(
                 controller: pinController,
                 keyboardType: TextInputType.number,
@@ -1044,14 +1045,14 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
                   hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.5)),
                   filled: true,
                   fillColor: c.glassColor,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c.glassBorder)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: BorderSide(color: c.glassBorder)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: BorderSide(color: c.glassBorder)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(TpixRadius.md), borderSide: const BorderSide(color: AppTheme.warm, width: 1.5)),
                   counterText: '',
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: TpixGap.lg),
 
               _RecoveryTestButton(
                 answerControllers: answerControllers,
@@ -1081,7 +1082,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         gradient: LinearGradient(colors: colors),
         boxShadow: [BoxShadow(color: colors[0].withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
       ),
@@ -1096,7 +1097,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
             shadowColor: Colors.transparent,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 15),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
           ),
         ),
     );
@@ -1119,13 +1120,13 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               color == AppTheme.success ? Icons.check_circle_rounded : Icons.error_rounded,
               color: Colors.white, size: 18,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: TpixGap.sm),
             Expanded(child: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600))),
           ],
         ),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
         margin: const EdgeInsets.all(16),
         duration: const Duration(seconds: 2),
       ),
@@ -1252,11 +1253,11 @@ class _RecoveryTestButtonState extends State<_RecoveryTestButton> {
           },
         ),
         if (_resultText != null) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: TpixGap.lg),
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(TpixRadius.md),
               color: _resultColor!.withValues(alpha: 0.08),
               border: Border.all(color: _resultColor!.withValues(alpha: 0.25)),
             ),
@@ -1266,7 +1267,7 @@ class _RecoveryTestButtonState extends State<_RecoveryTestButton> {
                   _resultColor == AppTheme.success ? Icons.celebration_rounded : Icons.error_outline_rounded,
                   color: _resultColor, size: 22,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: TpixGap.md),
                 Expanded(
                   child: Text(_resultText!, style: TextStyle(fontSize: 13, color: _resultColor, fontWeight: FontWeight.w600)),
                 ),

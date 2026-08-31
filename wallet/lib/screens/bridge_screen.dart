@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
@@ -268,11 +269,11 @@ class _BridgeScreenState extends State<BridgeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Row(
           children: [
             Icon(Icons.warning_amber_rounded, color: AppTheme.warm, size: 28),
-            const SizedBox(width: 8),
+            const SizedBox(width: TpixGap.sm),
             Flexible(
               child: Text(
                 l.t('bridge.registrationFailed'),
@@ -289,11 +290,11 @@ class _BridgeScreenState extends State<BridgeScreen> {
               l.t('bridge.registrationFailedDesc'),
               style: TextStyle(color: c.textSec, fontSize: 13),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: TpixGap.md),
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TpixRadius.sm),
                 color: c.glassColor,
               ),
               child: Row(
@@ -358,7 +359,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(
           l.t('bridge.confirmTitle'),
           style: TextStyle(color: c.text, fontWeight: FontWeight.w700),
@@ -439,22 +440,22 @@ class _BridgeScreenState extends State<BridgeScreen> {
                             child: Column(
                               children: [
                                 _buildRouteCard(),
-                                const SizedBox(height: 20),
+                                const SizedBox(height: TpixGap.xl),
                                 _buildAmountCard(l),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: TpixGap.lg),
                                 if (_loadingFee)
                                   const Padding(
                                     padding: EdgeInsets.symmetric(vertical: 12),
                                     child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))),
                                   ),
                                 if (_fee != null && !_loadingFee) _buildFeeCard(l),
-                                if (_fee != null && !_loadingFee) const SizedBox(height: 16),
+                                if (_fee != null && !_loadingFee) const SizedBox(height: TpixGap.lg),
                                 if (_bridgeStatus != null) ...[
                                   _buildStatusCard(l),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: TpixGap.lg),
                                 ],
                                 if (_bridgeStatus == null) _buildBridgeButton(l),
-                                const SizedBox(height: 24),
+                                const SizedBox(height: TpixGap.xxl),
                                 _buildInfoSection(l),
                               ],
                             ),
@@ -485,7 +486,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               child: Icon(Icons.arrow_back_rounded, color: c.text, size: 20),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: TpixGap.md),
           Text(
             l.t('bridge.title'),
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text),
@@ -501,7 +502,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         gradient: LinearGradient(
           colors: [
             _route!.sourceChain.color.withValues(alpha: 0.08),
@@ -517,7 +518,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
             child: Column(
               children: [
                 ChainLogo(chain: _route!.sourceChain, size: 48),
-                const SizedBox(height: 8),
+                const SizedBox(height: TpixGap.sm),
                 Text(
                   _route!.sourceChain.shortName,
                   style: TextStyle(
@@ -558,7 +559,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
             child: Column(
               children: [
                 ChainLogo(chain: _route!.destChain, size: 48),
-                const SizedBox(height: 8),
+                const SizedBox(height: TpixGap.sm),
                 Text(
                   _route!.destChain.shortName,
                   style: TextStyle(
@@ -586,7 +587,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         color: c.glassColor,
         border: Border.all(color: c.glassBorder),
       ),
@@ -603,7 +604,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           TextField(
             controller: _amountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -621,7 +622,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
             ),
             onChanged: _onAmountChanged,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: TpixGap.sm),
           Row(
             children: [
               // ยอดขั้นต่ำ/สูงสุดเป็นตัวเลขจากเชนจริง ยาวเท่าไรก็ได้
@@ -633,7 +634,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                   style: TextStyle(fontSize: 11, color: c.textMuted),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               Flexible(
                 child: Text(
                   'Max: ${_route!.maxAmount.toInt()} ${_route!.tokenSymbol}',
@@ -656,7 +657,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         color: c.glassColor,
         border: Border.all(color: c.glassBorder),
       ),
@@ -721,7 +722,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         color: statusColor.withValues(alpha: 0.08),
         border: Border.all(color: statusColor.withValues(alpha: 0.3)),
       ),
@@ -730,7 +731,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
           Row(
             children: [
               Icon(statusIcon, color: statusColor, size: 24),
-              const SizedBox(width: 10),
+              const SizedBox(width: TpixGap.md),
               Text(
                 l.t('bridge.status'),
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text),
@@ -739,7 +740,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                   color: statusColor.withValues(alpha: 0.2),
                 ),
                 child: Text(
@@ -749,7 +750,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           _feeRow(c, l.t('bridge.bridgeId'), status.bridgeId.length > 20
               ? '${status.bridgeId.substring(0, 10)}...${status.bridgeId.substring(status.bridgeId.length - 8)}'
               : status.bridgeId),
@@ -760,7 +761,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
             _feeRow(c, l.t('bridge.destTx'), '${status.destTxHash!.substring(0, 10)}...'),
 
           if (status.status != 'completed' && status.status != 'failed') ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: TpixGap.md),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -769,7 +770,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2, color: statusColor),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: TpixGap.sm),
                 Text(
                   l.t('bridge.monitoring'),
                   style: TextStyle(fontSize: 12, color: statusColor),
@@ -797,7 +798,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(TpixRadius.lg),
           gradient: canBridge
               ? const LinearGradient(colors: [AppTheme.primary, AppTheme.accent])
               : null,
@@ -812,7 +813,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: TpixGap.md),
                   Text(l.t('bridge.bridging'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                 ],
               )
@@ -820,7 +821,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Icon(Icons.account_tree_rounded, color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Text(
                     l.t('bridge.button'),
                     style: TextStyle(
@@ -840,7 +841,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         color: AppTheme.accent.withValues(alpha: 0.05),
         border: Border.all(color: AppTheme.accent.withValues(alpha: 0.15)),
       ),
@@ -850,7 +851,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
           Row(
             children: [
               Icon(Icons.info_outline, color: AppTheme.accent.withValues(alpha: 0.7), size: 18),
-              const SizedBox(width: 8),
+              const SizedBox(width: TpixGap.sm),
               Text(
                 l.t('bridge.howItWorks'),
                 style: TextStyle(
@@ -861,7 +862,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: TpixGap.md),
           Text(
             l.t('bridge.howItWorksDesc'),
             style: TextStyle(
@@ -870,12 +871,12 @@ class _BridgeScreenState extends State<BridgeScreen> {
               height: 1.5,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: TpixGap.sm),
           // Fee source badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(TpixRadius.xs),
               color: AppTheme.primary.withValues(alpha: 0.08),
               border: Border.all(color: AppTheme.primary.withValues(alpha: 0.15)),
             ),
@@ -883,7 +884,7 @@ class _BridgeScreenState extends State<BridgeScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.verified_rounded, color: AppTheme.primary.withValues(alpha: 0.7), size: 14),
-                const SizedBox(width: 6),
+                const SizedBox(width: TpixGap.sm),
                 Flexible(
                   child: Text(
                   l.t('bridge.feeSource'),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -46,7 +47,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                               width: 40, height: 40,
                               child: CircularProgressIndicator(color: AppTheme.primary, strokeWidth: 2),
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: TpixGap.lg),
                             Text(l.t('tx.scanning'), style: const TextStyle(color: AppTheme.textMuted)),
                           ],
                         ),
@@ -100,7 +101,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
             onPressed: () => Navigator.pop(context),
             icon: Icon(Icons.arrow_back_ios, color: c.text),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: TpixGap.sm),
           // Expanded — หัวข้อไทยยาวกว่าอังกฤษ ไม่ครอบไว้ก็ดันปุ่มขวาตกขอบ
           Expanded(
             child: Column(
@@ -138,11 +139,11 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.receipt_long_outlined, size: 64, color: AppTheme.textMuted.withValues(alpha: 0.3)),
-          const SizedBox(height: 16),
+          const SizedBox(height: TpixGap.lg),
           Text(l.t('tx.empty'), style: const TextStyle(fontSize: 16, color: AppTheme.textMuted)),
-          const SizedBox(height: 8),
+          const SizedBox(height: TpixGap.sm),
           Text(l.t('tx.emptyHint'), style: const TextStyle(fontSize: 13, color: AppTheme.textMuted)),
-          const SizedBox(height: 24),
+          const SizedBox(height: TpixGap.xxl),
           Consumer<WalletProvider>(
             builder: (_, wallet, __) => OutlinedButton.icon(
               onPressed: wallet.isScanning ? null : () => wallet.scanTransactions(blockCount: 200),
@@ -150,7 +151,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
               label: Text(l.t('tx.scan'), style: const TextStyle(color: AppTheme.primary)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
               ),
             ),
           ),
@@ -172,7 +173,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
       padding: const EdgeInsets.all(14),
       decoration: adaptiveGlassCard(context, borderRadius: 16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         onTap: () => _showTxDetail(tx, l),
         child: Row(
           children: [
@@ -211,7 +212,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             // Address + date
             Expanded(
               child: Column(
@@ -233,7 +234,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                           ),
                           child: Text('Pending', style: TextStyle(fontSize: 9, color: AppTheme.warm, fontWeight: FontWeight.w600)),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: TpixGap.sm),
                       ],
                       Text(dateStr, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                     ],
@@ -282,7 +283,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
         padding: const EdgeInsets.all(24),
         decoration: const BoxDecoration(
           color: AppTheme.bgCard,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -297,16 +298,16 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: TpixGap.xl),
             Row(
               children: [
                 // ถอดรหัสที่ 84px (28 logical x 3 dpr)
                 ClipOval(child: Image.asset('assets/images/logowallet.png', width: 28, height: 28, fit: BoxFit.cover, cacheWidth: 84, cacheHeight: 84)),
-                const SizedBox(width: 10),
+                const SizedBox(width: TpixGap.md),
                 Text(l.t('tx.detail'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: TpixGap.xl),
             _detailRow(l.t('tx.hash'), tx.shortHash, onTap: () {
               Clipboard.setData(ClipboardData(text: tx.txHash));
               ScaffoldMessenger.of(context).showSnackBar(
@@ -319,7 +320,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
             _detailRow(l.t('tx.status'), tx.status.toUpperCase()),
             if (tx.blockNumber != null)
               _detailRow(l.t('tx.block'), '#${tx.blockNumber}'),
-            const SizedBox(height: 16),
+            const SizedBox(height: TpixGap.lg),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -335,11 +336,11 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: TpixGap.sm),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -353,11 +354,11 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: TpixGap.sm),
           ],
         ),
       ),
@@ -373,7 +374,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
           const Spacer(),
           Text(value, style: const TextStyle(fontSize: 13, color: Colors.white, fontFamily: 'monospace')),
           if (onTap != null) ...[
-            const SizedBox(width: 4),
+            const SizedBox(width: TpixGap.xs),
             const Icon(Icons.copy, size: 12, color: AppTheme.textMuted),
           ],
         ],

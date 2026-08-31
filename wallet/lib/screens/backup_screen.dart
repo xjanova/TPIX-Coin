@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
@@ -75,7 +76,7 @@ class _BackupScreenState extends State<BackupScreen> {
                       onPressed: () => Navigator.pop(context),
                       icon: Icon(Icons.arrow_back_ios, color: c.text),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: TpixGap.sm),
                     Expanded(
                       child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,13 +92,13 @@ class _BackupScreenState extends State<BackupScreen> {
                       ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: TpixGap.sm),
                     // Countdown
                     if (!_cleared)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(TpixRadius.xs),
                           color: (_secondsLeft <= 10 ? AppTheme.danger : AppTheme.warm).withValues(alpha: 0.15),
                         ),
                         child: Text(
@@ -112,20 +113,20 @@ class _BackupScreenState extends State<BackupScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: TpixGap.xxl),
 
                 // Warning
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(TpixRadius.md),
                     color: AppTheme.warm.withValues(alpha: 0.1),
                     border: Border.all(color: AppTheme.warm.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
                       const Icon(Icons.warning_amber_rounded, color: AppTheme.warm, size: 28),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: TpixGap.md),
                       Expanded(
                         child: Text(
                           l.t('backup.warning'),
@@ -136,7 +137,7 @@ class _BackupScreenState extends State<BackupScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: TpixGap.xxl),
 
                 // Words grid or cleared message
                 Expanded(
@@ -146,7 +147,7 @@ class _BackupScreenState extends State<BackupScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(Icons.timer_off, size: 48, color: c.textMuted.withValues(alpha: 0.4)),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: TpixGap.lg),
                               Text(l.t('backup.autoCleared'),
                                   style: TextStyle(fontSize: 16, color: c.textMuted)),
                             ],
@@ -181,7 +182,7 @@ class _BackupScreenState extends State<BackupScreen> {
                         ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
 
                 // Copy button
                 if (!_cleared)
@@ -198,7 +199,7 @@ class _BackupScreenState extends State<BackupScreen> {
                     ),
                   ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: TpixGap.lg),
 
                 // Continue button
                 SizedBox(
@@ -214,7 +215,7 @@ class _BackupScreenState extends State<BackupScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
                       padding: const EdgeInsets.symmetric(vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
                     ),
                     child: Text(l.t('backup.continue'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                   ),

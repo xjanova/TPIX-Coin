@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
@@ -423,7 +424,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(
           l.t('swap.confirmTitle'),
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
@@ -487,11 +488,11 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Row(
           children: [
             const Icon(Icons.check_circle, color: AppTheme.success, size: 28),
-            const SizedBox(width: 8),
+            const SizedBox(width: TpixGap.sm),
             Flexible(child: Text(l.t('swap.success'), style: const TextStyle(color: AppTheme.success))),
           ],
         ),
@@ -500,12 +501,12 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(l.t('swap.successDesc'), style: const TextStyle(color: AppTheme.textSecondary)),
-            const SizedBox(height: 12),
+            const SizedBox(height: TpixGap.md),
             // TX Hash row
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TpixRadius.sm),
                 color: Colors.white.withValues(alpha: 0.04),
               ),
               child: Row(
@@ -557,15 +558,15 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                   child: Column(
                     children: [
                       _buildChainSelector(),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: TpixGap.xl),
                       _buildFromCard(l),
                       _buildFlipButton(),
                       _buildToCard(l),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: TpixGap.lg),
                       _buildSlippageSelector(),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: TpixGap.lg),
                       if (_quoteAmount != null) _buildRateInfo(),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
                       _buildSwapButton(l),
                     ],
                   ),
@@ -595,7 +596,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: TpixGap.md),
           Text(
             l.t('swap.title'),
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
@@ -623,7 +624,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         color: Colors.white.withValues(alpha: 0.04),
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
@@ -637,7 +638,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                   color: isActive ? chain.color.withValues(alpha: 0.15) : Colors.transparent,
                   border: isActive
                       ? Border.all(color: chain.color.withValues(alpha: 0.3))
@@ -647,7 +648,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     ChainLogo(chain: chain, size: 18),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: TpixGap.sm),
                     Text(
                       chain.shortName,
                       style: TextStyle(
@@ -672,7 +673,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         color: Colors.white.withValues(alpha: 0.04),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
@@ -694,7 +695,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                     '${l.t('swap.balance')}: ${formattedBalance.toStringAsFixed(4)}',
                     style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: TpixGap.sm),
                   GestureDetector(
                     onTap: () {
                       // Reserve gas for native token swaps on non-gasless chains
@@ -720,7 +721,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Row(
             children: [
               // Token selector button
@@ -729,7 +730,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(TpixRadius.md),
                     color: Colors.white.withValues(alpha: 0.06),
                   ),
                   child: Row(
@@ -737,20 +738,20 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                     children: [
                       if (_tokenIn != null) ...[
                         TokenLogo(token: _tokenIn!, chain: _chain, size: 28),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: TpixGap.sm),
                         Text(
                           _tokenIn!.symbol,
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
                       ] else
                         const Text('Select', style: TextStyle(color: AppTheme.textMuted)),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: TpixGap.xs),
                       const Icon(Icons.keyboard_arrow_down, color: AppTheme.textMuted, size: 20),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               // Amount input
               Expanded(
                 child: TextField(
@@ -812,7 +813,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
         color: Colors.white.withValues(alpha: 0.04),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
@@ -820,7 +821,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(l.t('swap.to'), style: const TextStyle(fontSize: 13, color: AppTheme.textMuted)),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Row(
             children: [
               GestureDetector(
@@ -828,7 +829,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(TpixRadius.md),
                     color: Colors.white.withValues(alpha: 0.06),
                   ),
                   child: Row(
@@ -836,20 +837,20 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                     children: [
                       if (_tokenOut != null) ...[
                         TokenLogo(token: _tokenOut!, chain: _chain, size: 28),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: TpixGap.sm),
                         Text(
                           _tokenOut!.symbol,
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
                       ] else
                         const Text('Select', style: TextStyle(color: AppTheme.textMuted)),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: TpixGap.xs),
                       const Icon(Icons.keyboard_arrow_down, color: AppTheme.textMuted, size: 20),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               Expanded(
                 child: _isQuoting
                     ? const Align(
@@ -889,7 +890,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 12, color: AppColors.of(context).textMuted)),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: TpixGap.sm),
         ...options.map((s) {
           final isActive = _slippagePercent == s;
           return Padding(
@@ -902,7 +903,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                   color: isActive ? AppTheme.primary.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
                   border: Border.all(
                     color: isActive ? AppTheme.primary.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.06),
@@ -965,7 +966,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         color: Colors.white.withValues(alpha: 0.03),
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
@@ -980,7 +981,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
             _infoRow(l.t('swap.feeWallet'), FeeService.shortWallet(_swapFee.feeWallet)),
           _infoRow(l.t('swap.network'), _chain.name),
           // Fee source badge
-          const SizedBox(height: 6),
+          const SizedBox(height: TpixGap.sm),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -990,7 +991,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                   child: SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1, color: AppTheme.textMuted)),
                 ),
               Icon(Icons.verified_rounded, color: AppTheme.primary.withValues(alpha: 0.5), size: 12),
-              const SizedBox(width: 4),
+              const SizedBox(width: TpixGap.xs),
               Text(
                 'TPIX.ONLINE',
                 style: TextStyle(fontSize: 10, color: AppTheme.primary.withValues(alpha: 0.5), fontWeight: FontWeight.w600),
@@ -1058,7 +1059,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(TpixRadius.lg),
           gradient: onTap != null
               ? LinearGradient(colors: [buttonColor, buttonColor.withValues(alpha: 0.8)])
               : null,
@@ -1077,7 +1078,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: TpixGap.md),
                   Text(
                     buttonText,
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
@@ -1103,7 +1104,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('swap.slippage'), style: const TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -61,18 +62,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       // --- General ---
                       _sectionTitle(l.t('settings.general')),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildLanguageTile(l),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildThemeTile(l),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildBiometricTile(l),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
 
                       // --- Security ---
                       _sectionTitle(l.t('settings.security')),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildTile(
                         icon: Icons.vpn_key_rounded,
                         color: AppTheme.accent,
@@ -80,7 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         subtitle: l.t('settings.backupDesc'),
                         onTap: () => _viewBackup(l),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildTile(
                         icon: Icons.lock_rounded,
                         color: AppTheme.warm,
@@ -95,7 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           );
                         },
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       // Sign history — audit log ของ cross-app sign requests
                       _buildTile(
                         icon: Icons.draw_rounded,
@@ -114,31 +115,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
 
                       // --- Network ---
                       _sectionTitle(l.t('settings.network')),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildInfoTile(Icons.link_rounded, 'RPC', TpixChain.rpcUrl, AppTheme.primary),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildInfoTile(Icons.tag, 'Chain ID', TpixChain.chainId.toString(), AppTheme.accent),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildInfoTile(Icons.token_rounded, l.t('settings.symbol'), TpixChain.symbol, AppTheme.warm),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildInfoTile(Icons.speed, l.t('home.consensus'), 'IBFT 2.0', AppTheme.success),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
 
                       // --- WalletConnect ---
                       _sectionTitle(l.t('wc.sectionTitle')),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildWalletConnectTile(l),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
 
                       // --- App ---
                       _sectionTitle(l.t('settings.general')),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildTile(
                         icon: Icons.system_update_rounded,
                         color: AppTheme.primary,
@@ -147,11 +148,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onTap: () => _manualCheckUpdate(l),
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
 
                       // --- Danger Zone ---
                       _sectionTitle(l.t('settings.dangerZone')),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: TpixGap.sm),
                       _buildTile(
                         icon: Icons.delete_forever_rounded,
                         color: AppTheme.danger,
@@ -160,7 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onTap: () => _confirmDeleteAll(l),
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: TpixGap.xxl),
 
                       // --- About ---
                       Center(
@@ -168,11 +169,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           children: [
                             // ถอดรหัสที่ 144px (48 logical x 3 dpr)
                             Image.asset('assets/images/logowallet.png', width: 48, height: 48, cacheWidth: 144, cacheHeight: 144),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: TpixGap.sm),
                             Text('TPIX Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
                             if (_appVersion.isNotEmpty)
                               Text('v$_appVersion', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: TpixGap.xs),
                             GestureDetector(
                               onTap: () => launchUrl(Uri.parse('https://tpix.online'), mode: LaunchMode.externalApplication),
                               child: const Text('tpix.online', style: TextStyle(fontSize: 12, color: AppTheme.primary)),
@@ -180,7 +181,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: TpixGap.xxxl),
                     ],
                   ),
                 ),
@@ -202,7 +203,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () => Navigator.pop(context),
             icon: Icon(Icons.arrow_back_ios, color: c.text),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: TpixGap.sm),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -230,7 +231,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Row(
         children: [
           const Icon(Icons.language_rounded, color: AppTheme.primary, size: 22),
-          const SizedBox(width: 12),
+          const SizedBox(width: TpixGap.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,7 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(TpixRadius.sm),
                 color: AppTheme.primary.withValues(alpha: 0.12),
                 border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
               ),
@@ -274,12 +275,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TpixRadius.sm),
                 gradient: bundle.buildDark().extension<TpixThemeExtension>()!.brandGradient,
               ),
               child: Icon(bundle.icon, color: Colors.white, size: 18),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,7 +361,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Row(
                   children: [
                     Icon(Icons.fingerprint, color: enabled ? AppTheme.primary : AppColors.of(context).textMuted, size: 22),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: TpixGap.md),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -374,7 +375,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       width: 44,
                       height: 24,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(TpixRadius.sm),
                         color: enabled ? AppTheme.primary.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.1),
                       ),
                       child: AnimatedAlign(
@@ -417,7 +418,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Row(
           children: [
             Icon(icon, color: color, size: 22),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,13 +450,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Row(
           children: [
             Icon(icon, color: color, size: 22),
-            const SizedBox(width: 12),
+            const SizedBox(width: TpixGap.md),
             Text(title, style: TextStyle(fontSize: 14, color: c.textSec)),
             const Spacer(),
             Flexible(
               child: Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color), overflow: TextOverflow.ellipsis),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: TpixGap.xs),
             Icon(Icons.copy, size: 12, color: c.textMuted),
           ],
         ),
@@ -539,7 +540,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('settings.deleteConfirm'), style: const TextStyle(color: AppTheme.danger)),
         content: Text(l.t('settings.deleteConfirmMsg'), style: const TextStyle(color: AppTheme.textSecondary)),
         actions: [
@@ -576,13 +577,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           builder: (ctx, setDialogState) {
             return AlertDialog(
               backgroundColor: AppTheme.bgCard,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
               title: Text(l.t('settings.enterPin'), style: const TextStyle(color: Colors.white, fontSize: 18)),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(l.t('settings.enterPinHint'), style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: TpixGap.lg),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(6, (i) {
@@ -599,7 +600,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     }),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: TpixGap.xl),
                   ...[['1','2','3'], ['4','5','6'], ['7','8','9'], ['','0','DEL']].map((row) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -623,7 +624,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                borderRadius: BorderRadius.circular(28),
+                                borderRadius: BorderRadius.circular(TpixRadius.hero(context)),
                                 onTap: () {
                                   if (pin.length >= 6) return;
                                   setDialogState(() => pin += key);
@@ -672,7 +673,7 @@ class _ThemePickerSheet extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: c.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
         border: Border(
           top: BorderSide(color: c.border, width: 1),
         ),
@@ -698,7 +699,7 @@ class _ThemePickerSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(Icons.palette_rounded, color: c.brandPrimary, size: 20),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Text(
                     locale.isThai ? 'เลือกธีม' : 'Choose Theme',
                     style: TextStyle(
@@ -748,7 +749,7 @@ class _ThemePickerSheet extends StatelessWidget {
               );
             }),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: TpixGap.sm),
 
             // Light/Dark toggle (เฉพาะธีมที่รองรับ)
             if (themeProv.current.supportsLight)
@@ -758,7 +759,7 @@ class _ThemePickerSheet extends StatelessWidget {
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     color: c.surface,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(TpixRadius.sm),
                     border: Border.all(color: c.border),
                   ),
                   child: Row(
@@ -789,7 +790,7 @@ class _ThemePickerSheet extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(Icons.info_outline, size: 14, color: c.textMuted),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: TpixGap.sm),
                     Expanded(
                       child: Text(
                         locale.isThai
@@ -802,7 +803,7 @@ class _ThemePickerSheet extends StatelessWidget {
                 ),
               ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: TpixGap.md),
           ],
         ),
       ),
@@ -865,7 +866,7 @@ class _ThemeCardState extends State<_ThemeCard>
             curve: Curves.easeOutCubic,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(TpixRadius.md),
               gradient: widget.isSelected
                   ? LinearGradient(
                       begin: Alignment.topLeft,
@@ -898,7 +899,7 @@ class _ThemeCardState extends State<_ThemeCard>
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(TpixRadius.sm),
                     gradient: ext.brandGradient,
                     boxShadow: widget.isSelected
                         ? [
@@ -912,7 +913,7 @@ class _ThemeCardState extends State<_ThemeCard>
                   ),
                   child: Icon(widget.bundle.icon, color: Colors.white, size: 26),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: TpixGap.lg),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -925,7 +926,7 @@ class _ThemeCardState extends State<_ThemeCard>
                           color: c.text,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: TpixGap.hair),
                       Text(
                         widget.isThai
                             ? widget.bundle.taglineTh
@@ -994,7 +995,7 @@ class _ModeChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color: active ? c.brandPrimary.withValues(alpha: 0.18) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(TpixRadius.sm),
             border: active
                 ? Border.all(color: c.brandPrimary.withValues(alpha: 0.5))
                 : null,
@@ -1003,7 +1004,7 @@ class _ModeChip extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 16, color: active ? c.brandPrimary : c.textMuted),
-              const SizedBox(width: 6),
+              const SizedBox(width: TpixGap.sm),
               Text(
                 label,
                 style: TextStyle(

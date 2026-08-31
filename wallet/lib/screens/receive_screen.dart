@@ -12,6 +12,7 @@
 /// Developed by Xman Studio
 
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -56,7 +57,7 @@ class ReceiveScreen extends StatelessWidget {
                       onPressed: () => Navigator.pop(context),
                       icon: Icon(Icons.arrow_back_ios, color: c.text),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: TpixGap.sm),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,16 +84,16 @@ class ReceiveScreen extends StatelessWidget {
                 if (address.isEmpty)
                   _buildNoWallet(context, l, c)
                 else ...[
-                  _buildQr(address, c),
-                  const SizedBox(height: 28),
+                  _buildQr(context, address, c),
+                  const SizedBox(height: TpixGap.xxl),
                   Text('TPIX Chain',
                       style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: c.brandPrimary)),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: TpixGap.sm),
                   _buildAddressBar(context, address, l, c),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: TpixGap.lg),
                   _buildWarning(l, c),
                 ],
 
@@ -106,11 +107,11 @@ class ReceiveScreen extends StatelessWidget {
   }
 
   // ── QR + โลโก้กลาง ──
-  Widget _buildQr(String address, AppColors c) {
+  Widget _buildQr(BuildContext context, String address, AppColors c) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(TpixRadius.hero(context)),
         // พื้น QR ต้องขาวเสมอทุกธีม — กล้องอ่านคอนทราสต์สลับสีไม่ได้
         color: Colors.white,
         boxShadow: [
@@ -164,7 +165,7 @@ class ReceiveScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         color: c.glassColor,
         border: Border.all(color: c.glassBorder),
       ),
@@ -178,7 +179,7 @@ class ReceiveScreen extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: TpixGap.sm),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
@@ -195,14 +196,14 @@ class ReceiveScreen extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(TpixRadius.sm),
                 color: c.brandPrimary.withValues(alpha: 0.15),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.copy, size: 16, color: c.brandPrimary),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: TpixGap.xs),
                   Text(l.t('receive.copy'),
                       style: TextStyle(
                           fontSize: 13,
@@ -221,14 +222,14 @@ class ReceiveScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(TpixRadius.sm),
         color: c.brandWarm.withValues(alpha: 0.06),
         border: Border.all(color: c.brandWarm.withValues(alpha: 0.15)),
       ),
       child: Row(
         children: [
           Icon(Icons.info_outline, color: c.brandWarm, size: 18),
-          const SizedBox(width: 8),
+          const SizedBox(width: TpixGap.sm),
           Expanded(
             child: Text(
               l.t('receive.warning'),
@@ -247,13 +248,13 @@ class ReceiveScreen extends StatelessWidget {
       children: [
         Icon(Icons.account_balance_wallet_outlined,
             size: 56, color: c.textMuted),
-        const SizedBox(height: 16),
+        const SizedBox(height: TpixGap.lg),
         Text(
           l.t('receive.noWallet'),
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: TpixGap.sm),
         Text(
           l.t('receive.noWalletHint'),
           textAlign: TextAlign.center,

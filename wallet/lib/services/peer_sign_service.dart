@@ -29,6 +29,7 @@ library;
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import '../core/themes/tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:hex/hex.dart';
 import 'package:provider/provider.dart';
@@ -647,7 +648,7 @@ class _SignConfirmSheet extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
       ),
       padding: EdgeInsets.only(
         top: 16,
@@ -670,19 +671,19 @@ class _SignConfirmSheet extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: TpixGap.xl),
           Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: AppTheme.accent.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                 ),
                 child: const Icon(Icons.draw_rounded,
                     color: AppTheme.accent, size: 20),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               Expanded(
                 child: Text(
                   isThai
@@ -697,20 +698,20 @@ class _SignConfirmSheet extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: TpixGap.md),
           Text(
             isThai
                 ? 'ตรวจข้อความก่อนเซ็น — อย่าเซ็นถ้าไม่แน่ใจ'
                 : 'Review the message before signing — do not sign if unsure',
             style: TextStyle(fontSize: 12, color: textSecondary),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: TpixGap.lg),
           Flexible(
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: textSecondary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(TpixRadius.sm),
                 border: Border.all(
                     color: textSecondary.withValues(alpha: 0.15)),
               ),
@@ -727,7 +728,7 @@ class _SignConfirmSheet extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: TpixGap.xl),
           Row(
             children: [
               Expanded(
@@ -736,7 +737,7 @@ class _SignConfirmSheet extends StatelessWidget {
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(TpixRadius.sm),
                       side: BorderSide(
                           color: textSecondary.withValues(alpha: 0.3)),
                     ),
@@ -750,7 +751,7 @@ class _SignConfirmSheet extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               Expanded(
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(context, true),
@@ -758,7 +759,7 @@ class _SignConfirmSheet extends StatelessWidget {
                     backgroundColor: AppTheme.accent,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(TpixRadius.sm),
                     ),
                   ),
                   child: Text(

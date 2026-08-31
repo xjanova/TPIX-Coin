@@ -6,6 +6,7 @@
 /// Developed by Xman Studio
 
 import 'package:flutter/material.dart';
+import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
@@ -82,13 +83,13 @@ class _PeerAppCardState extends State<PeerAppCard>
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(TpixRadius.md),
         onTap: _open,
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: AppTheme.accent.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(TpixRadius.md),
             border: Border.all(
               color: AppTheme.accent.withValues(alpha: 0.3),
               width: 1,
@@ -101,12 +102,12 @@ class _PeerAppCardState extends State<PeerAppCard>
                 height: 36,
                 decoration: BoxDecoration(
                   color: AppTheme.accent.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(TpixRadius.sm),
                 ),
                 child: const Icon(Icons.candlestick_chart_rounded,
                     color: AppTheme.accent, size: 18),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: TpixGap.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,7 +150,7 @@ class _PeerAppCardState extends State<PeerAppCard>
               AppTheme.primary.withValues(alpha: 0.15),
             ],
           ),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(TpixRadius.md),
           border: Border.all(
             color: AppTheme.accent.withValues(alpha: 0.4),
             width: 1.2,
@@ -165,7 +166,7 @@ class _PeerAppCardState extends State<PeerAppCard>
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(TpixRadius.md),
             onTap: PeerApp.openTradeInstallPage,
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -178,7 +179,7 @@ class _PeerAppCardState extends State<PeerAppCard>
                       gradient: LinearGradient(
                         colors: [AppTheme.accent, AppTheme.primary],
                       ),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(TpixRadius.sm),
                       boxShadow: [
                         BoxShadow(
                           color: AppTheme.accent.withValues(alpha: 0.4),
@@ -190,7 +191,7 @@ class _PeerAppCardState extends State<PeerAppCard>
                     child: const Icon(Icons.candlestick_chart_rounded,
                         color: Colors.white, size: 24),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: TpixGap.lg),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,7 +204,7 @@ class _PeerAppCardState extends State<PeerAppCard>
                             color: c.text,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: TpixGap.hair),
                         Text(
                           l.t('peer.install_trade_desc'),
                           style: TextStyle(fontSize: 11, color: c.textSec),
@@ -211,7 +212,7 @@ class _PeerAppCardState extends State<PeerAppCard>
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: TpixGap.sm),
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 6),
@@ -219,14 +220,14 @@ class _PeerAppCardState extends State<PeerAppCard>
                       gradient: LinearGradient(
                         colors: [AppTheme.accent, AppTheme.primary],
                       ),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(TpixRadius.xs),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(Icons.download_rounded,
                             color: Colors.white, size: 14),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: TpixGap.xs),
                         Text(
                           l.t('common.download'),
                           style: const TextStyle(
