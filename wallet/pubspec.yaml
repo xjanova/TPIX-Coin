@@ -75,9 +75,12 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/logowallet_2048.png"
-  adaptive_icon_background: "#0A0E1A"
-  adaptive_icon_foreground: "assets/icon/logowallet_2048.png"
+  image_path: "assets/icon/tpix_icon_1024.png"
+  # พื้นหลัง adaptive icon = สีพื้นของไทล์ ให้ต่อเนื่องกับตัวมาร์คพอดี
+  adaptive_icon_background: "#05080E"
+  # foreground แยกไฟล์: มาร์คอย่างเดียว พื้นโปร่ง กินพื้นที่ 60% ของกรอบ
+  # แอนดรอยด์ครอปไอคอนเป็นวงกลม/สี่เหลี่ยมมนแล้วแต่เครื่อง ถ้ามาร์คเต็มกรอบจะโดนตัดมุม
+  adaptive_icon_foreground: "assets/icon/tpix_icon_fg.png"
   remove_alpha_ios: true
 
 flutter:
