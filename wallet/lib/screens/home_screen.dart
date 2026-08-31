@@ -186,7 +186,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 controller: _scrollCtrl,
                 physics: const AlwaysScrollableScrollPhysics(),
                 // เว้นล่างไว้ให้แถบเมนู + ปุ่มสแกนที่ยกนูน
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 132),
+                // ที่ว่างท้ายเนื้อหา = ความสูงจริงของแถบเมนูล่าง + safe area
+                // (เดิมฮาร์ดโค้ด 132 ซึ่งสั้นกว่าแถบจริง และไม่ขยายตามขนาดตัวอักษรของเครื่อง)
+                padding: EdgeInsets.fromLTRB(20, 20, 20,
+                    LiquidNavBar.heightFor(context) +
+                        MediaQuery.paddingOf(context).bottom +
+                        16),
                 child: Column(
                   children: [
                     _buildHeader(wallet, l),

@@ -73,6 +73,39 @@ class LocaleProvider extends ChangeNotifier {
       'scanSheet.receive': 'รับเงิน',
       'scanSheet.receiveSub': 'โชว์ QR ของฉัน',
       'scan.invalid': 'อ่าน QR ไม่ได้ — ลองใหม่อีกครั้ง',
+
+      // หน้าสแกน — กรณีกล้องเปิดไม่ได้ ต้องบอกสาเหตุเป็นภาษาคน
+      'scan.torch': 'ไฟฉาย',
+      'scan.retry': 'ลองอีกครั้ง',
+      'scan.noPermission': 'ยังไม่ได้อนุญาตให้ใช้กล้อง',
+      'scan.noPermissionHint':
+          'เปิดสิทธิ์กล้องให้ TPIX Wallet ที่ ตั้งค่า > แอป > TPIX Wallet > สิทธิ์ > กล้อง แล้วกลับมากดลองอีกครั้ง',
+      'scan.unsupported': 'เครื่องนี้สแกนไม่ได้',
+      'scan.unsupportedHint': 'ไม่พบกล้องที่ใช้สแกนได้ ลองพิมพ์ที่อยู่เองแทน',
+      'scan.cameraError': 'เปิดกล้องไม่สำเร็จ',
+      'scan.cameraErrorHint': 'ปิดแอปอื่นที่กำลังใช้กล้องอยู่ แล้วลองใหม่',
+
+      // รายการโปรด (สมุดที่อยู่)
+      'contacts.title': 'รายการโปรด',
+      'contacts.search': 'ค้นหาชื่อ หรือ ที่อยู่',
+      'contacts.empty': 'ยังไม่มีรายการโปรด',
+      'contacts.emptyHint':
+          'กดรูปดาวข้างช่องที่อยู่เพื่อบันทึกว่าที่อยู่นั้นคือใคร ครั้งหน้าจะได้ไม่ต้องพิมพ์ใหม่',
+      'contacts.noMatch': 'ไม่พบรายการที่ค้นหา',
+      'contacts.edit': 'แก้ไขชื่อ',
+      'contacts.delete': 'ลบ',
+      'contacts.deleteTitle': 'ลบรายการโปรด?',
+      'contacts.deleteBody': 'ลบ "{name}" ออกจากรายการโปรด (ไม่กระทบเงินหรือประวัติการโอน)',
+      'contacts.saveTitle': 'บันทึกเป็นรายการโปรด',
+      'contacts.editTitle': 'แก้ไขรายการโปรด',
+      'contacts.nameLabel': 'ที่อยู่นี้คือใคร',
+      'contacts.nameHint': 'เช่น น้องเอ, กระเป๋าตัวเอง',
+      'contacts.noteLabel': 'โน้ต (ไม่บังคับ)',
+      'contacts.save': 'บันทึก',
+      'contacts.saved': 'บันทึก "{name}" แล้ว',
+      'contacts.nameRequired': 'ใส่ชื่อก่อนนะ',
+      'contacts.saveFailed': 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง',
+      'contacts.saveRecipient': 'บันทึกผู้รับนี้ไว้',
       'home.blockTime': 'Block Time',
       'home.blockTimeVal': '2 วินาที',
       'home.gasFee': 'Gas Fee',
@@ -114,6 +147,7 @@ class LocaleProvider extends ChangeNotifier {
       'send.scanHint': 'วาง QR Code ที่อยู่ผู้รับในกรอบ',
       'send.confirmTitle': 'ยืนยันการส่ง',
       'send.confirmTo': 'ผู้รับ',
+      'send.confirmAddress': 'ที่อยู่',
       'send.confirmAmount': 'จำนวน',
       'send.confirmButton': 'ยืนยันส่ง TPIX',
       'send.cancel': 'ยกเลิก',
@@ -126,6 +160,8 @@ class LocaleProvider extends ChangeNotifier {
       'receive.copied': 'คัดลอกที่อยู่แล้ว!',
       'receive.copy': 'คัดลอก',
       'receive.warning': 'ส่งเฉพาะ TPIX (Chain ID: 4289) มาที่อยู่นี้เท่านั้น',
+      'receive.noWallet': 'ยังไม่มีกระเป๋าให้รับเงิน',
+      'receive.noWalletHint': 'สร้างหรือนำเข้ากระเป๋าก่อน แล้วค่อยกลับมาที่หน้านี้',
 
       // Backup
       'backup.title': 'สำรองกระเป๋า',
@@ -416,6 +452,39 @@ class LocaleProvider extends ChangeNotifier {
       'scanSheet.receive': 'Receive',
       'scanSheet.receiveSub': 'Show my QR',
       'scan.invalid': 'Could not read that QR — please try again',
+
+      // Scanner — camera failures must say why, not show a blank screen
+      'scan.torch': 'Flashlight',
+      'scan.retry': 'Try again',
+      'scan.noPermission': 'Camera permission not granted',
+      'scan.noPermissionHint':
+          'Allow camera access for TPIX Wallet in Settings > Apps > TPIX Wallet > Permissions > Camera, then come back and tap Try again',
+      'scan.unsupported': 'Scanning is not supported here',
+      'scan.unsupportedHint': 'No usable camera was found. Type the address instead.',
+      'scan.cameraError': 'Could not open the camera',
+      'scan.cameraErrorHint': 'Close any other app using the camera and try again',
+
+      // Contacts / favourites (address book)
+      'contacts.title': 'Favourites',
+      'contacts.search': 'Search name or address',
+      'contacts.empty': 'No favourites yet',
+      'contacts.emptyHint':
+          'Tap the star next to the address field to save who an address belongs to — no retyping next time',
+      'contacts.noMatch': 'No matching entries',
+      'contacts.edit': 'Edit name',
+      'contacts.delete': 'Delete',
+      'contacts.deleteTitle': 'Delete favourite?',
+      'contacts.deleteBody': 'Remove "{name}" from favourites (your funds and history are untouched)',
+      'contacts.saveTitle': 'Save as favourite',
+      'contacts.editTitle': 'Edit favourite',
+      'contacts.nameLabel': 'Who is this address?',
+      'contacts.nameHint': 'e.g. Alice, My other wallet',
+      'contacts.noteLabel': 'Note (optional)',
+      'contacts.save': 'Save',
+      'contacts.saved': 'Saved "{name}"',
+      'contacts.nameRequired': 'Please enter a name',
+      'contacts.saveFailed': 'Could not save — please try again',
+      'contacts.saveRecipient': 'Save this recipient',
       'home.swapSub': 'Exchange',
       'home.blockTime': 'Block Time',
       'home.blockTimeVal': '2 Seconds',
@@ -458,6 +527,7 @@ class LocaleProvider extends ChangeNotifier {
       'send.scanHint': 'Place recipient QR Code in frame',
       'send.confirmTitle': 'Confirm Send',
       'send.confirmTo': 'To',
+      'send.confirmAddress': 'Address',
       'send.confirmAmount': 'Amount',
       'send.confirmButton': 'Confirm Send TPIX',
       'send.cancel': 'Cancel',
@@ -470,6 +540,8 @@ class LocaleProvider extends ChangeNotifier {
       'receive.copied': 'Address copied!',
       'receive.copy': 'Copy',
       'receive.warning': 'Only send TPIX (Chain ID: 4289) to this address',
+      'receive.noWallet': 'No wallet to receive into yet',
+      'receive.noWalletHint': 'Create or import a wallet first, then come back here',
 
       // Backup
       'backup.title': 'Backup Wallet',

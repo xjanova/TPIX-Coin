@@ -46,6 +46,17 @@ class LiquidNavBar extends StatefulWidget {
     required this.scanLabel,
   });
 
+  static const double barHeight = 64;
+  static const double scanSize = 66;
+
+  /// ความสูงที่แถบนี้กินจริง (ไม่รวม safe-area ล่าง)
+  /// ใช้เว้นที่ว่างท้ายเนื้อหาในหน้าที่ตั้ง `extendBody: true`
+  /// ไม่งั้นรายการสุดท้ายจะถูกแถบบัง — และยิ่งผู้ใช้ตั้งตัวอักษรใหญ่ยิ่งบังมาก
+  static double heightFor(BuildContext context) {
+    final labelHeight = MediaQuery.textScalerOf(context).scale(10) * 1.35;
+    return barHeight - scanSize * 0.42 + (scanSize + 26) + 1 + labelHeight;
+  }
+
   @override
   State<LiquidNavBar> createState() => _LiquidNavBarState();
 }
@@ -55,8 +66,8 @@ class _LiquidNavBarState extends State<LiquidNavBar>
   late final AnimationController _pulse;
   bool _scanPressed = false;
 
-  static const double _barHeight = 64;
-  static const double _scanSize = 66;
+  static const double _barHeight = LiquidNavBar.barHeight;
+  static const double _scanSize = LiquidNavBar.scanSize;
 
   @override
   void initState() {
@@ -82,28 +93,30 @@ class _LiquidNavBarState extends State<LiquidNavBar>
 
     return SafeArea(
       top: false,
-      child: SizedBox(
-        // สูงกว่าแถบจริงเพราะปุ่มกลางยื่นขึ้นไปเหนือแถบ
-        height: _barHeight + _scanSize * 0.52 + 12,
-        child: Stack(
-          alignment: Alignment.bottomCenter,
-          clipBehavior: Clip.none,
-          children: [
-            // ── แถบเมนู (พื้นหลัง 3D) ──
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: 6,
-              child: _buildBar(t, isDark),
-            ),
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        clipBehavior: Clip.none,
+        children: [
+          // ── แถบเมนู (พื้นหลัง 3D) ── วาดก่อน = อยู่ชั้นล่าง
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: 6,
+            child: _buildBar(t, isDark),
+          ),
 
-            // ── ปุ่มสแกนตรงกลาง (ยกนูนคร่อมแถบ) ──
-            Positioned(
-              bottom: _barHeight - _scanSize * 0.42,
-              child: _buildScanButton(t, isDark),
-            ),
-          ],
-        ),
+          // ── ปุ่มสแกนตรงกลาง (ยกนูนคร่อมแถบ) ──
+          // จงใจไม่ใช้ Positioned: Stack วัดความสูงตัวเองจากลูกที่ไม่ Positioned
+          // → กรอบของแถบเมนูครอบปุ่มทั้งใบเสมอ แม้ผู้ใช้ตั้งขนาดตัวอักษรใหญ่
+          //
+          // 🔴 ห้ามเปลี่ยนกลับไปเป็น SizedBox(height: ค่าคงที่) + Positioned
+          // Flutter ไม่ hit-test ส่วนที่ล้นนอกกรอบพ่อ (Clip.none วาดให้เห็นก็จริง แต่กดไม่ติด)
+          // ของเดิมกรอบสูง 110px ปุ่มต้องการ 142px → ยอดปุ่มที่โผล่พ้นแถบกดไม่ติดทั้งแถบ
+          Padding(
+            padding: EdgeInsets.only(bottom: _barHeight - _scanSize * 0.42),
+            child: _buildScanButton(t, isDark),
+          ),
+        ],
       ),
     );
   }
@@ -212,6 +225,9 @@ class _LiquidNavBarState extends State<LiquidNavBar>
   // ── ปุ่มสแกนวงกลมใหญ่ (3D) ──
   Widget _buildScanButton(TpixThemeExtension t, bool isDark) {
     return GestureDetector(
+      // opaque = กดที่ช่องว่างรอบวงกลม/ป้ายก็ติด (ค่าเริ่มต้น deferToChild
+      // จะรับเฉพาะพิกเซลที่ลูกวาดจริง → ขอบปุ่มกดไม่ติด)
+      behavior: HitTestBehavior.opaque,
       onTap: widget.onScanTap,
       onTapDown: (_) => setState(() => _scanPressed = true),
       onTapUp: (_) => setState(() => _scanPressed = false),

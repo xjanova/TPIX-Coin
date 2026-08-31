@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/tx_record.dart';
 import '../models/token_info.dart';
+import '../models/contact.dart';
 
 /// SQLite database service for TPIX Wallet
 /// Stores transactions and custom tokens persistently
@@ -20,7 +21,7 @@ class DbService {
 
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -36,6 +37,9 @@ class DbService {
         }
         if (oldVersion < 5) {
           await _createSignHistoryTable(db);
+        }
+        if (oldVersion < 6) {
+          await _createContactsTable(db);
         }
       },
     );
@@ -70,6 +74,27 @@ class DbService {
 
     // Sign history table (cross-app sign audit log)
     await _createSignHistoryTable(db);
+
+    // Contacts / รายการโปรด (สมุดที่อยู่)
+    await _createContactsTable(db);
+  }
+
+  /// สมุดที่อยู่ — จงใจไม่มี wallet_slot เพราะเป็นข้อมูล "ผู้รับ" ไม่ใช่ "ผู้ส่ง"
+  /// บันทึกจากกระเป๋าไหนก็เห็นได้จากทุกกระเป๋า และการล้างกระเป๋าไม่ลบสมุดที่อยู่
+  static Future<void> _createContactsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS contacts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        address TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        note TEXT,
+        used_count INTEGER NOT NULL DEFAULT 0,
+        last_used_at INTEGER,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_contacts_recent ON contacts(last_used_at DESC)');
   }
 
   static Future<void> _createSignHistoryTable(Database db) async {
@@ -483,6 +508,74 @@ class DbService {
           LIMIT ?
         )
     ''', [walletSlot, walletSlot, keepLast]);
+  }
+
+  // ================================================================
+  // Contacts CRUD (รายการโปรด / สมุดที่อยู่)
+  // ================================================================
+
+  /// บันทึก/แก้ไขรายการโปรด — ที่อยู่ซ้ำถือเป็นการแก้ชื่อของเดิม
+  /// คืน id ของแถวที่บันทึก
+  static Future<int> saveContact(Contact contact) async {
+    final db = await database;
+    final address = contact.address.toLowerCase();
+
+    final existing = await db.query('contacts',
+        where: 'address = ?', whereArgs: [address], limit: 1);
+
+    if (existing.isNotEmpty) {
+      final id = existing.first['id'] as int;
+      // แก้เฉพาะชื่อ/โน้ต — สถิติการใช้งานกับวันที่สร้างของเดิมต้องไม่หาย
+      await db.update(
+        'contacts',
+        {'name': contact.name, 'note': contact.note},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return id;
+    }
+
+    return db.insert('contacts', contact.toRow()..['address'] = address);
+  }
+
+  /// รายการโปรดทั้งหมด — ใช้ล่าสุด/บ่อยสุดขึ้นก่อน แล้วค่อยเรียงตามชื่อ
+  static Future<List<Contact>> getContacts({int? limit}) async {
+    final db = await database;
+    final rows = await db.query(
+      'contacts',
+      orderBy: 'COALESCE(last_used_at, 0) DESC, used_count DESC, name COLLATE NOCASE ASC',
+      limit: limit,
+    );
+    return rows.map(Contact.fromRow).toList();
+  }
+
+  /// หาว่าที่อยู่นี้เคยบันทึกชื่อไว้ไหม (ใช้โชว์ชื่อแทนเลข 0x…)
+  static Future<Contact?> findContact(String address) async {
+    final trimmed = address.trim();
+    if (trimmed.isEmpty) return null;
+    final db = await database;
+    final rows = await db.query('contacts',
+        where: 'address = ?', whereArgs: [trimmed.toLowerCase()], limit: 1);
+    if (rows.isEmpty) return null;
+    return Contact.fromRow(rows.first);
+  }
+
+  /// ลบรายการโปรด
+  static Future<void> deleteContact(int id) async {
+    final db = await database;
+    await db.delete('contacts', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// นับการใช้งาน 1 ครั้ง (เรียกหลังส่งสำเร็จ) — ไม่สร้างแถวใหม่ถ้ายังไม่เคยบันทึก
+  static Future<void> markContactUsed(String address) async {
+    final db = await database;
+    await db.rawUpdate(
+      'UPDATE contacts SET used_count = used_count + 1, last_used_at = ? WHERE address = ?',
+      [
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        address.trim().toLowerCase(),
+      ],
+    );
   }
 
   // ================================================================

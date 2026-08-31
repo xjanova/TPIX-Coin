@@ -64,6 +64,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # รัน sqflite บนเดสก์ท็อปได้ เพื่อทดสอบ schema + การอัปเกรดฐานข้อมูล
+  sqflite_common_ffi: ^2.3.4
   flutter_launcher_icons: ^0.14.3
 
 flutter_launcher_icons:
