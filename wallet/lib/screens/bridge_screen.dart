@@ -624,14 +624,23 @@ class _BridgeScreenState extends State<BridgeScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              Text(
-                'Min: ${_route!.minAmount.toInt()} ${_route!.tokenSymbol}',
-                style: TextStyle(fontSize: 11, color: c.textMuted),
+              // ยอดขั้นต่ำ/สูงสุดเป็นตัวเลขจากเชนจริง ยาวเท่าไรก็ได้
+              Flexible(
+                child: Text(
+                  'Min: ${_route!.minAmount.toInt()} ${_route!.tokenSymbol}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: c.textMuted),
+                ),
               ),
               const SizedBox(width: 12),
-              Text(
-                'Max: ${_route!.maxAmount.toInt()} ${_route!.tokenSymbol}',
-                style: TextStyle(fontSize: 11, color: c.textMuted),
+              Flexible(
+                child: Text(
+                  'Max: ${_route!.maxAmount.toInt()} ${_route!.tokenSymbol}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: c.textMuted),
+                ),
               ),
             ],
           ),
@@ -875,13 +884,16 @@ class _BridgeScreenState extends State<BridgeScreen> {
               children: [
                 Icon(Icons.verified_rounded, color: AppTheme.primary.withValues(alpha: 0.7), size: 14),
                 const SizedBox(width: 6),
-                Text(
+                Flexible(
+                  child: Text(
                   l.t('bridge.feeSource'),
+                  maxLines: 2,
                   style: TextStyle(
                     fontSize: 11,
                     color: AppTheme.primary.withValues(alpha: 0.8),
                     fontWeight: FontWeight.w600,
                   ),
+                ),
                 ),
               ],
             ),

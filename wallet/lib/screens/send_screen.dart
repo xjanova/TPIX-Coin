@@ -786,7 +786,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                   if (_txHash != null)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: glassCard(borderRadius: 12),
+                      decoration: adaptiveGlassCard(context, borderRadius: 12),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

@@ -372,7 +372,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   Widget _buildHintSection(LocaleProvider l, AppColors c) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: glassCard(borderRadius: 16),
+      decoration: adaptiveGlassCard(context, borderRadius: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

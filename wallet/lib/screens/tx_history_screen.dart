@@ -90,21 +90,32 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
   }
 
   Widget _buildHeader(LocaleProvider l) {
+    // สีในหัวหน้าจอเดิมฮาร์ดโค้ดขาว → บนธีมสว่างกลายเป็นขาวบนขาว มองไม่เห็น
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           IconButton(
             onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+            icon: Icon(Icons.arrow_back_ios, color: c.text),
           ),
           const SizedBox(width: 8),
-          Column(
+          // Expanded — หัวข้อไทยยาวกว่าอังกฤษ ไม่ครอบไว้ก็ดันปุ่มขวาตกขอบ
+          Expanded(
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(l.t('tx.title'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-              Text(l.t('tx.subtitle'), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+              Text(l.t('tx.title'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
+              Text(l.t('tx.subtitle'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: c.textMuted)),
             ],
+            ),
           ),
           const Spacer(),
           Consumer<WalletProvider>(
@@ -159,7 +170,7 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
-      decoration: glassCard(borderRadius: 16),
+      decoration: adaptiveGlassCard(context, borderRadius: 16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => _showTxDetail(tx, l),

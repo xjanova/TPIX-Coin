@@ -91,7 +91,7 @@ void main() {
       expect(find.text('ตั้งค่า'), findsOneWidget);
       expect(find.text('สแกน'), findsOneWidget);
       // ไอคอนปุ่มกลาง
-      expect(find.byIcon(Icons.qr_code_scanner_rounded), findsOneWidget);
+      expect(find.byKey(LiquidNavBar.scanButtonKey), findsOneWidget);
     });
 
     testWidgets('กดปุ่มสแกนตรงกลางแล้วยิง callback', (tester) async {
@@ -101,7 +101,7 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.byIcon(Icons.qr_code_scanner_rounded));
+      await tester.tap(find.byKey(LiquidNavBar.scanButtonKey));
       await tester.pump();
 
       expect(tapped, 1);

@@ -247,6 +247,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         LiquidNavItem(
           icon: Icons.home_outlined,
           activeIcon: Icons.home_rounded,
+          assetIcon: 'assets/images/icons/home.png',
           label: l.t('nav.home'),
           // อยู่หน้านี้แล้ว — เลื่อนกลับบนสุดแทน (ไม่ push ซ้ำ)
           onTap: () => _scrollCtrl.hasClients
@@ -258,6 +259,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         LiquidNavItem(
           icon: Icons.receipt_long_outlined,
           activeIcon: Icons.receipt_long_rounded,
+          assetIcon: 'assets/images/icons/history.png',
           label: l.t('home.history'),
           onTap: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => const TxHistoryScreen())),
@@ -265,6 +267,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         LiquidNavItem(
           icon: Icons.swap_horiz_outlined,
           activeIcon: Icons.swap_horiz_rounded,
+          assetIcon: 'assets/images/icons/swap.png',
           label: l.t('home.swap'),
           onTap: () => Navigator.push(
               context, MaterialPageRoute(builder: (_) => const SwapScreen())),
@@ -272,6 +275,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         LiquidNavItem(
           icon: Icons.settings_outlined,
           activeIcon: Icons.settings_rounded,
+          assetIcon: 'assets/images/icons/settings.png',
           label: l.t('nav.settings'),
           onTap: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => const SettingsScreen())),

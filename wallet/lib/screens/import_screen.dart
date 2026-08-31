@@ -112,7 +112,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
                 // Toggle
                 Container(
-                  decoration: glassCard(borderRadius: 14),
+                  decoration: adaptiveGlassCard(context, borderRadius: 14),
                   padding: const EdgeInsets.all(4),
                   child: Row(
                     children: [

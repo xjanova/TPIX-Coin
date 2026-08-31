@@ -76,14 +76,22 @@ class _BackupScreenState extends State<BackupScreen> {
                       icon: Icon(Icons.arrow_back_ios, color: c.text),
                     ),
                     const SizedBox(width: 8),
-                    Column(
+                    Expanded(
+                      child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(l.t('backup.title'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
-                        Text(l.t('backup.subtitle'), style: TextStyle(fontSize: 12, color: c.textMuted)),
+                        Text(l.t('backup.title'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
+                        Text(l.t('backup.subtitle'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: c.textMuted)),
                       ],
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     // Countdown
                     if (!_cleared)
                       Container(
@@ -153,13 +161,20 @@ class _BackupScreenState extends State<BackupScreen> {
                           ),
                           itemCount: words.length,
                           itemBuilder: (_, i) => Container(
-                            decoration: glassCard(borderRadius: 12),
+                            decoration: adaptiveGlassCard(context, borderRadius: 12),
                             alignment: Alignment.center,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text('${i + 1}. ', style: TextStyle(fontSize: 12, color: c.textMuted)),
-                                Text(words[i], style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text)),
+                                // คำกู้คืนบางคำยาว (เช่น "irresistible") ช่องกริดแคบ
+                                // ไม่ครอบ Flexible = ล้นขอบช่องทุกใบ
+                                Flexible(
+                                  child: Text(words[i],
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text)),
+                                ),
                               ],
                             ),
                           ),

@@ -882,7 +882,13 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     const options = [0.5, 1.0, 3.0];
     return Row(
       children: [
-        Text('${l.t('swap.slippage')}:', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+        // ป้าย "ค่าคลาดเคลื่อน" ภาษาไทยยาวกว่าอังกฤษ ดันชิป 3 ตัวตกขอบ
+        Flexible(
+          child: Text('${l.t('swap.slippage')}:',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: AppColors.of(context).textMuted)),
+        ),
         const SizedBox(width: 8),
         ...options.map((s) {
           final isActive = _slippagePercent == s;

@@ -15,18 +15,28 @@ import '../core/themes/widgets/luxe_texture.dart';
 class LiquidNavItem {
   final IconData icon;
   final IconData activeIcon;
+
+  /// ไอคอนเจลลี่ 3D — ถ้ามี ใช้แทนไอคอนเวกเตอร์
+  /// วัดแล้วอ่านออกตั้งแต่ 28px ขึ้นไป ต่ำกว่านั้นกลายเป็นก้อนเบลอ
+  final String? assetIcon;
+
   final String label;
   final VoidCallback onTap;
 
   const LiquidNavItem({
     required this.icon,
     required this.activeIcon,
+    this.assetIcon,
     required this.label,
     required this.onTap,
   });
 }
 
 class LiquidNavBar extends StatefulWidget {
+  /// กุญแจถาวรของปุ่มสแกนกลาง — ใช้ค้นในเทสต์
+  /// อย่าค้นด้วยไอคอน เพราะไอคอนเปลี่ยนได้ (เคยเปลี่ยนจาก Material icon เป็นไฟล์ภาพมาแล้ว)
+  static const Key scanButtonKey = Key('nav-scan-button');
+
   /// ต้องมี 4 ช่อง (ซ้าย 2 / ขวา 2) — ปุ่มสแกนแทรกตรงกลางเอง
   final List<LiquidNavItem> items;
 
@@ -138,14 +148,15 @@ class _LiquidNavBarState extends State<LiquidNavBar>
                   Color.lerp(t.card, Colors.black, 0.12)!,
                 ]
               : [
-                  Colors.white,
-                  Color.lerp(t.surface, Colors.white, 0.35)!,
+                  // ธีมสว่างใช้แคปซูล "สีเข้มลอยบนพื้นสว่าง" ไม่ใช่แคปซูลขาว
+                  // เพราะไอคอนเจลลี่เป็นโทนพาสเทล วางบนขาวยังไงก็คอนทราสต์ต่ำ
+                  // ด็อกเข้มลอยอยู่เหนือหน้าเป็นแพตเทิร์นที่ทั้งอ่านง่ายและดูพรีเมียม
+                  Color.lerp(t.textPrimary, t.brandPrimary, 0.16)!,
+                  Color.lerp(t.textPrimary, Colors.black, 0.14)!,
                 ],
         ),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.10)
-              : Colors.white.withValues(alpha: 0.95),
+          color: Colors.white.withValues(alpha: isDark ? 0.10 : 0.16),
           width: 1.2,
         ),
         boxShadow: [
@@ -175,8 +186,9 @@ class _LiquidNavBarState extends State<LiquidNavBar>
             // ลายเส้นสานบนผิวแถบ — ให้รู้สึกเป็นวัสดุ ไม่ใช่พลาสติกทาสี
             Positioned.fill(
               child: LuxeTexture(
-                isDark: isDark,
-                lineColor: isDark ? Colors.white : t.brandPrimary,
+                // แคปซูลเป็นสีเข้มทั้งสองธีม ลายจึงต้องเป็นเส้นสีอ่อนเสมอ
+                isDark: true,
+                lineColor: Colors.white,
                 scale: LuxeTextureScale.card,
               ),
             ),
@@ -193,7 +205,7 @@ class _LiquidNavBarState extends State<LiquidNavBar>
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.white.withValues(alpha: isDark ? 0.07 : 0.55),
+                        Colors.white.withValues(alpha: isDark ? 0.07 : 0.10),
                         Colors.white.withValues(alpha: 0.0),
                       ],
                     ),
@@ -219,9 +231,11 @@ class _LiquidNavBarState extends State<LiquidNavBar>
 
   // ── ช่องเมนูหนึ่งช่อง ──
   Widget _navSlot(TpixThemeExtension t, int index) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final item = widget.items[index];
     final active = widget.currentIndex == index;
-    final color = active ? t.brandPrimary : t.textMuted;
+    // แคปซูลเป็นสีเข้มทั้งสองธีม ป้ายจึงใช้ชุดสีเดียวกันได้
+    final color = active ? t.brandPrimary : Colors.white.withValues(alpha: 0.62);
 
     return Material(
       color: Colors.transparent,
@@ -241,7 +255,26 @@ class _LiquidNavBarState extends State<LiquidNavBar>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(active ? item.activeIcon : item.icon, size: 21, color: color),
+              if (item.assetIcon != null)
+                // ตัวที่ไม่ได้เลือกหรี่ลง ให้ตัวที่เลือกเด่นขึ้นมาเอง
+                Opacity(
+                  // ธีมสว่างหรี่ได้น้อยกว่า เพราะไอคอนพาสเทลบนพื้นสว่างคอนทราสต์ต่ำอยู่แล้ว
+                  opacity: active ? 1.0 : 0.62,
+                  child: Image.asset(
+                    item.assetIcon!,
+                    width: 28,
+                    height: 28,
+                    cacheWidth: 84,
+                    cacheHeight: 84,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, __, ___) => Icon(
+                        active ? item.activeIcon : item.icon,
+                        size: 21,
+                        color: color),
+                  ),
+                )
+              else
+                Icon(active ? item.activeIcon : item.icon, size: 21, color: color),
               const SizedBox(height: 2),
               Text(
                 item.label,
@@ -263,6 +296,7 @@ class _LiquidNavBarState extends State<LiquidNavBar>
   // ── ปุ่มสแกนวงกลมใหญ่ (3D) ──
   Widget _buildScanButton(TpixThemeExtension t, bool isDark) {
     return GestureDetector(
+      key: LiquidNavBar.scanButtonKey,
       // opaque = กดที่ช่องว่างรอบวงกลม/ป้ายก็ติด (ค่าเริ่มต้น deferToChild
       // จะรับเฉพาะพิกเซลที่ลูกวาดจริง → ขอบปุ่มกดไม่ติด)
       behavior: HitTestBehavior.opaque,
@@ -400,10 +434,18 @@ class _LiquidNavBarState extends State<LiquidNavBar>
               ),
             ),
           ),
-          const Icon(
-            Icons.qr_code_scanner_rounded,
-            color: Colors.white,
-            size: 30,
+          Image.asset(
+            'assets/images/icons/scan.png',
+            width: 32,
+            height: 32,
+            cacheWidth: 96,
+            cacheHeight: 96,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.qr_code_scanner_rounded,
+              color: Colors.white,
+              size: 30,
+            ),
           ),
         ],
       ),

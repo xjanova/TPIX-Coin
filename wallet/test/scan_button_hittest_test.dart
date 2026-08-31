@@ -49,7 +49,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       final bar = tester.getRect(find.byType(LiquidNavBar));
-      final icon = tester.getRect(find.byIcon(Icons.qr_code_scanner_rounded));
+      final icon = tester.getRect(find.byKey(LiquidNavBar.scanButtonKey));
 
       // 1) ปุ่มต้องอยู่ในกรอบแถบทั้งใบ ไม่ล้นออกไปข้างบน
       expect(icon.top, greaterThanOrEqualTo(bar.top),
