@@ -21,11 +21,20 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <!--
+            singleTask (ไม่ใช่ singleTop) และไม่ตั้ง taskAffinity ว่าง — สำคัญกับโปรโตคอลเซ็นข้ามแอป
+
+            เดิม singleTop + taskAffinity="" ทำให้ตอน TPIX Trade เปิด tpixwallet://sign
+            Android สร้าง MainActivity ของกระเป๋า "ตัวใหม่" ซ้อนใน task ของ Trade
+            (ถ้ากระเป๋าเปิดอยู่แล้วก็กลายเป็นสองอินสแตนซ์ ต้องปลดล็อกซ้ำ) และตอนส่ง
+            ผลกลับ Trade ก็โดนแบบเดียวกัน — สองแอปสลับกันเด้งจนยืนยันไม่จบ
+
+            singleTask = คำขอเซ็น/wc: เข้า instance เดิมผ่าน onNewIntent (app_links uriLinkStream)
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
-            android:taskAffinity=""
+            android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
