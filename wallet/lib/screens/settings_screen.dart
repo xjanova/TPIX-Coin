@@ -17,6 +17,7 @@ import 'pin_screen.dart';
 import 'onboarding_screen.dart';
 import 'dapp_connect_screen.dart';
 import 'sign_history_screen.dart';
+import '../widgets/bug_report_sheet.dart';
 import '../services/walletconnect_service.dart';
 import '../services/update_service.dart';
 import '../providers/update_provider.dart';
@@ -113,6 +114,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             builder: (_) => const SignHistoryScreen(),
                           ),
                         ),
+                      ),
+                      const SizedBox(height: TpixGap.sm),
+                      // รายงานปัญหา — ส่งสภาพแอป + เหตุการณ์ล่าสุดเข้าระบบรายงานบั๊กกลางทันที
+                      _buildTile(
+                        icon: Icons.bug_report_outlined,
+                        color: AppTheme.accent,
+                        title: l.isThai ? 'รายงานปัญหา' : 'Report a problem',
+                        subtitle: l.isThai
+                            ? 'ส่งให้ทีมงานพร้อมสภาพแอปตอนนี้ (ไม่มีข้อมูลลับ)'
+                            : 'Send to the team with the current app state (no secrets)',
+                        onTap: () => showBugReportSheet(context, isThai: l.isThai),
                       ),
 
                       const SizedBox(height: TpixGap.xxl),

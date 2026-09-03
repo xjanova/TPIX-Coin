@@ -39,6 +39,7 @@ import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../models/chain_config.dart';
 import '../providers/wallet_provider.dart';
+import 'bug_reporter.dart';
 import 'db_service.dart';
 
 class PeerSignService {
@@ -566,10 +567,22 @@ class PeerSignService {
       ...callback.queryParameters,
       ...params,
     });
+    final outcome = signature != null ? 'signature' : (txHash != null ? 'txhash' : 'error=$error');
+    BugReporter.I.breadcrumb('peer callback → ${callback.scheme}://${callback.host} $outcome');
     try {
-      await launchUrl(outUri, mode: LaunchMode.externalApplication);
+      final opened = await launchUrl(outUri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        BugReporter.I.report(
+          title: 'ส่งผลกลับ ${callback.scheme} ไม่ได้ (launchUrl=false)',
+          description: 'เซ็น/ปฏิเสธเสร็จแล้วแต่เปิดแอปปลายทางไม่ได้ ผลลัพธ์: $outcome',
+        );
+      }
     } catch (e) {
       debugPrint('PeerSignService.sendCallback: ${e.runtimeType}');
+      BugReporter.I.report(
+        title: 'ส่งผลกลับ ${callback.scheme} ล้มเหลว: ${e.runtimeType}',
+        description: 'launchUrl โยน ${e.runtimeType} ผลลัพธ์: $outcome',
+      );
     }
   }
 

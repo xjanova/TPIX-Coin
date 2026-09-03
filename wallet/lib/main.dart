@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,11 +7,21 @@ import 'core/locale_provider.dart';
 import 'core/theme_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/update_provider.dart';
+import 'services/bug_reporter.dart';
 import 'services/walletconnect_service.dart';
 import 'screens/splash_screen.dart';
 
-void main() {
+Future<void> main() async {
+  // error ที่หลุดจาก async ใดๆ ถูกส่งเข้าระบบรายงานบั๊กกลาง — ไม่ต้องเดาว่าแอปพังตรงไหน
+  await runZonedGuarded(
+    _boot,
+    (error, stack) => BugReporter.I.reportError(error, stack, context: 'zone', fatal: true),
+  );
+}
+
+Future<void> _boot() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await BugReporter.I.install(product: 'tpix-wallet');
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   final localeProvider = LocaleProvider();

@@ -27,6 +27,7 @@ import 'swap_screen.dart';
 import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
 import '../services/walletconnect_service.dart';
+import '../services/bug_reporter.dart';
 import '../services/peer_link_service.dart';
 import '../services/peer_sign_service.dart';
 import '../services/update_service.dart';
@@ -107,6 +108,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   /// Handle WalletConnect deep links (wc: URI scheme).
   void _initDeepLinks() {
+    // สภาพกระเป๋าที่แนบไปกับทุกรายงานบั๊ก — ห้ามมี mnemonic/กุญแจ/PIN โดยเด็ดขาด
+    BugReporter.I.snapshot = () {
+      final w = context.read<WalletProvider>();
+      final a = w.address;
+      return {
+        'unlocked': w.isUnlocked,
+        'has_wallet': a != null,
+        'address': a == null ? null : '${a.substring(0, 6)}…${a.substring(a.length - 4)}',
+        'chain': w.activeChainId,
+      };
+    };
+
     final appLinks = AppLinks();
 
     // Handle link that opened the app
@@ -122,6 +135,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _handleDeepLink(Uri uri) {
     final uriStr = uri.toString();
+    // scheme+host เท่านั้น — wc: URI มี symKey, sign มีข้อความ ห้ามลง breadcrumb
+    BugReporter.I.breadcrumb('deeplink ${uri.scheme}://${uri.host}');
     if (uriStr.startsWith('wc:')) {
       // WalletConnect URI — open dApp connect screen
       if (!mounted) return;

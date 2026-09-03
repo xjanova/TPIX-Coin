@@ -24,6 +24,7 @@ import '../core/theme.dart';
 import '../core/themes/tokens.dart';
 import '../providers/wallet_provider.dart';
 import '../utils/peer_app.dart';
+import 'bug_reporter.dart';
 
 class PeerLinkService {
   PeerLinkService._();
@@ -42,6 +43,7 @@ class PeerLinkService {
     final wallet = context.read<WalletProvider>();
     final isThai = context.read<LocaleProvider>().isThai;
 
+    BugReporter.I.breadcrumb('connect request from trade unlocked=${wallet.isUnlocked}');
     if (!wallet.isUnlocked || wallet.address == null) {
       _snack(
         context,
@@ -53,6 +55,7 @@ class PeerLinkService {
     }
 
     final approved = await _confirm(context, address: wallet.address!, isThai: isThai);
+    BugReporter.I.breadcrumb('connect confirm → ${approved ? 'approved' : 'rejected'}');
     if (!approved || !context.mounted) return;
 
     final opened = await connectToTrade(context);
@@ -78,7 +81,9 @@ class PeerLinkService {
 
     // เซ็นข้อความยืนยันของ Trade ให้เลย — ล้มเหลวก็ไม่เป็นไร Trade จะขอแยกทีหลัง
     final challenge = await _requestChallenge(address);
-    if (challenge != null && wallet.isUnlocked) {
+    if (challenge == null) {
+      BugReporter.I.breadcrumb('connect: challenge unavailable → link without signature');
+    } else if (wallet.isUnlocked) {
       try {
         final signature = await wallet.signPersonalMessage(challenge.message);
         if (RegExp(r'^0x[a-fA-F0-9]{130}$').hasMatch(signature)) {
@@ -87,10 +92,22 @@ class PeerLinkService {
         }
       } catch (e) {
         debugPrint('PeerLinkService.sign: ${e.runtimeType}');
+        BugReporter.I.report(
+          title: 'เซ็นข้อความยืนยันให้ TPIX Trade ล้มเหลว: ${e.runtimeType}',
+          description: 'signPersonalMessage โยน ${e.runtimeType} — ส่งเชื่อมโดยไม่มีลายเซ็นแทน',
+        );
       }
     }
 
-    return PeerApp.openTrade(path: 'connect', params: params);
+    final opened = await PeerApp.openTrade(path: 'connect', params: params);
+    BugReporter.I.breadcrumb('open trade connect signed=${params.containsKey('signature')} opened=$opened');
+    if (!opened) {
+      BugReporter.I.report(
+        title: 'เปิด TPIX Trade ไม่ได้ (launchUrl=false)',
+        description: 'tpixtrade://connect เปิดไม่ได้ — Trade ไม่ได้ติดตั้ง หรือระบบไม่ยอมเปิด',
+      );
+    }
+    return opened;
   }
 
   /// ข้อความยืนยันจากเซิร์ฟเวอร์ TPIX Trade (nonce อายุ 5 นาที ใช้ครั้งเดียว)
