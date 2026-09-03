@@ -27,6 +27,7 @@ import 'swap_screen.dart';
 import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
 import '../services/walletconnect_service.dart';
+import '../services/peer_link_service.dart';
 import '../services/peer_sign_service.dart';
 import '../services/update_service.dart';
 import '../providers/update_provider.dart';
@@ -138,6 +139,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         if (!mounted) return;
         // Fire-and-forget — PeerSignService handles UI + callback internally
         PeerSignService().tryHandle(context, uri);
+        return;
+      }
+      // tpixwallet://connect — TPIX Trade ขอเชื่อมกระเป๋า
+      // เดิมไม่มีใครรับ host นี้ แอปเปิดขึ้นมาเฉยๆ ผู้ใช้เข้าใจว่าค้าง
+      // → ยืนยันหนึ่งครั้งแล้วส่ง address + ลายเซ็นยืนยันกลับให้ Trade ในฮอปเดียว
+      if (uri.host == 'connect') {
+        if (!mounted) return;
+        PeerLinkService().handleConnect(context, uri);
         return;
       }
       // tpixwallet://open — peer app re-launch (from Trade's "Open Wallet"

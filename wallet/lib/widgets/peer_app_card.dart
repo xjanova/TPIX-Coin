@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../providers/wallet_provider.dart';
+import '../services/peer_link_service.dart';
 import '../utils/peer_app.dart';
 
 class PeerAppCard extends StatefulWidget {
@@ -51,19 +52,15 @@ class _PeerAppCardState extends State<PeerAppCard>
     if (mounted) setState(() => _installed = installed);
   }
 
+  /// ผู้ใช้กดเอง = ไม่ต้องถามซ้ำ — เซ็นข้อความยืนยันของ Trade ให้แล้วส่งไปพร้อมกัน
+  /// (Trade เชื่อมและยืนยันจบในฮอปเดียว ไม่เด้งกลับมาขอลายเซ็นอีก)
   Future<void> _open() async {
     final wallet = context.read<WalletProvider>();
-    final params = <String, String>{};
-    if (wallet.address != null) {
-      params['address'] = wallet.address!;
-      params['chain'] = wallet.activeChainId.toString();
-      // Source app name — Trade ใช้แสดง "Linked from TPIX Wallet"
-      params['wallet'] = 'TPIX Wallet';
+    if (wallet.address == null) {
+      await PeerApp.openTrade(path: 'connect');
+      return;
     }
-    await PeerApp.openTrade(
-      path: 'connect',
-      params: params.isEmpty ? null : params,
-    );
+    await PeerLinkService().connectToTrade(context);
   }
 
   @override
