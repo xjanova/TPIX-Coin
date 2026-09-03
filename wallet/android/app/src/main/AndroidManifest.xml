@@ -47,6 +47,19 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!--
+                ปิด deep link ในตัวของ Flutter — ให้ app_links (HomeScreen._initDeepLinks) เป็นทางเข้าทางเดียว
+
+                Flutter รุ่นนี้ถือว่า flutter_deeplinking_enabled=true เมื่อไม่ระบุ: ทุก intent
+                tpixwallet://sign / connect / open ถูกส่งเข้า Navigator เป็น pushNamed("/?message=...")
+                อีกทางหนึ่ง — MaterialApp ของกระเป๋าไม่มี onGenerateRoute จึงล้มเงียบทุกครั้ง
+                (ในโหมด debug โยน "Could not find a generator for route") และ TPIX Trade ก็เคยพัง
+                จากทางเดียวกันนี้ (router ถูกยัด "/?address=..." แล้วรีสตาร์ตทั้งแอป)
+                คำขอเซ็นข้ามแอปต้องมีทางเข้าเดียวที่คาดเดาได้
+            -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
