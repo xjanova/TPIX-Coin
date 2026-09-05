@@ -76,6 +76,22 @@ deploy: WTPIX (ตัวห่อสำหรับการขาย) → wrap 
 >   - สร้างคู่เทรดจาก **ทุกพูล** ที่มีบน factory (X/WTPIX → คู่ X-TPIX, X/USDT → คู่ X-USDT)
 >   - เก็บราคาพูลเป็นแท่ง 1 นาที ให้กราฟหน้าเทรด และตั้ง trading.tpix_price ตามพูล TPIX/USDT
 
+**วิธีที่แนะนำ (Windows) — คำสั่งเดียวจบ ถามคีย์แบบซ่อน ไม่เข้า history ไม่ลงไฟล์:**
+
+```powershell
+cd D:\Code\TPIX\TPIX-Coin\contracts
+.\scripts\deploy-dex.ps1
+```
+
+สคริปต์ดึงโทเคนทะเบียนสัญญาและกระเป๋ารับค่าธรรมเนียมจากเซิร์ฟเวอร์ให้เอง ตรวจด่านโอปโค้ดก่อนส่งจริง
+ขอคำยืนยันก่อน deploy แล้วตรวจผลจาก `/api/v1/dex/config` ให้ท้ายสุด · คีย์ถูกล้างออกจากหน่วยความจำทุกกรณี
+
+⚠️ **กระเป๋าที่ใช้ deploy จะเป็นเจ้าของถาวรของ `USDT_TPIX` (สิทธิ์ mint ผ่าน `setBridge` และสั่ง `pause` ได้)
+และเป็น `feeToSetter` ของ factory** — ต้องเป็นกระเป๋าที่คุณถือคีย์เองและเก็บระยะยาวได้เท่านั้น
+ห้ามใช้กระเป๋าชั่วคราวหรือให้คนอื่น deploy แทน
+
+<details><summary>ทำเองทีละขั้น (ทุกระบบปฏิบัติการ)</summary>
+
 ```bash
 export TPIX_SITE_URL=https://tpix.online
 export CONTRACT_REGISTRY_TOKEN=$(ssh admin@123.253.62.251 "grep '^CONTRACT_REGISTRY_TOKEN=' /home/admin/domains/tpix.online/.env | cut -d= -f2")
@@ -85,6 +101,8 @@ export FEE_COLLECTOR=0x0B263D083969946fA2bB44Af2DeBA69d3D3D0220   # = trading.fe
 # export LIQ_USDT=200000
 npx hardhat run scripts/deploy-dex.js --network tpix
 ```
+
+</details>
 
 ซ้อมก่อนได้โดยไม่ต้องมีคีย์/ไม่เสียอะไร: `npx hardhat run scripts/deploy-dex.js --network hardhat`
 
