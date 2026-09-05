@@ -8,10 +8,12 @@
  *   1. ตรวจก่อนว่า bytecode ทุกตัว deploy ขึ้นเชนนี้ได้จริง (ด่าน PUSH0)
  *   2. deploy ValidatorKYC + NodeRegistryV2 แล้วผูกเข้าหากัน
  *   3. deploy ชุด Token Factory (creator 7 ตัว + factory 2 ตัว)
- *   4. เติมพูลรางวัลมาสเตอร์โหนด (ถ้าตั้ง FUND_REWARD_POOL ไว้)
- *   5. ซ้อมใช้งานจริง — สร้างเหรียญทดสอบ 1 ใบ
- *   6. บันทึกลง deployed-contracts.json
- *   7. **ลงทะเบียนที่อยู่กับเว็บให้เอง** → ไม่ต้อง ssh ไปแก้ .env แล้ว config:cache อีก
+ *   4. deploy ชุด DEX (WTPIX + USDT_TPIX + Factory + Router) — ทุกเหรียญบนเชนเทรดได้
+ *   5. เติมพูลรางวัลมาสเตอร์โหนด (ถ้าตั้ง FUND_REWARD_POOL ไว้)
+ *   6. ซ้อมใช้งานจริง — สร้างเหรียญทดสอบ 1 ใบ
+ *   7. บันทึกลง deployed-contracts.json
+ *   8. **ลงทะเบียนที่อยู่กับเว็บให้เอง** → ไม่ต้อง ssh ไปแก้ .env แล้ว config:cache อีก
+ *      (เว็บจะเปิดเชน 4289 เป็น live และสร้างคู่เทรดจากพูล DEX เองภายใน 1 นาที)
  *
  * ─────────────────────────────────────────────────────────────────────
  *  ตัวแปรที่ต้องตั้ง
@@ -22,8 +24,11 @@
  *   CONTRACT_REGISTRY_TOKEN   ค่าเดียวกับใน .env ของเว็บ   ← แล้วจะลงทะเบียนให้อัตโนมัติ
  *
  *   FUND_REWARD_POOL          จำนวน TPIX ที่จะเติมพูลรางวัล (ไม่ตั้ง = ข้าม)
+ *   FEE_COLLECTOR             กระเป๋ารับส่วนแบ่งค่าธรรมเนียม DEX (แนะนำ = fee_collector_wallet ของเว็บ)
+ *   LIQ_TPIX + LIQ_USDT       เติมพูล TPIX/USDT ตั้งราคาเปิด (ไม่ตั้ง = เติมทีหลังที่หน้า /liquidity)
  *   SKIP_TOKEN_FACTORY=1      ข้ามชุดสร้างเหรียญ
  *   SKIP_MASTERNODE=1         ข้ามชุดมาสเตอร์โหนด
+ *   SKIP_DEX=1                ข้ามชุด DEX
  * ─────────────────────────────────────────────────────────────────────
  *
  * ⚠️ เชน TPIX รับได้แค่ถึง london — hardhat.config.js ตั้ง evmVersion "london" ไว้แล้ว
@@ -33,6 +38,8 @@
 const fs = require("fs");
 const path = require("path");
 const { ethers, network } = require("hardhat");
+const { registerWithSite: postToSite, printEnvFallback } = require("./lib/register-with-site");
+const { deployDex, dexRegistryPayload, writeSiteConfigs } = require("./deploy-dex");
 
 const REGISTRY_PATH = path.join(__dirname, "..", "deployed-contracts.json");
 const EIP170 = 24576;
@@ -40,6 +47,7 @@ const EIP170 = 24576;
 const DEPLOY_KYC = process.env.DEPLOY_KYC !== "0";
 const SKIP_MASTERNODE = process.env.SKIP_MASTERNODE === "1";
 const SKIP_TOKEN_FACTORY = process.env.SKIP_TOKEN_FACTORY === "1";
+const SKIP_DEX = process.env.SKIP_DEX === "1";
 const FUND_REWARD_POOL = process.env.FUND_REWARD_POOL || "";
 
 const DEFAULT_CONSENT_TEXT =
@@ -58,6 +66,9 @@ function artifactPathFor(name) {
         `src/masternode/${name}.sol/${name}.json`,
         `src/token-factory/${name}.sol/${name}.json`,
         `src/token-factory/creators/${name}.sol/${name}.json`,
+        `src/dex/amm/${name}.sol/${name}.json`,
+        `src/sale/WTPIX_ERC20.sol/${name}.json`,
+        `src/bridge/${name}.sol/${name}.json`,
     ];
     for (const r of roots) {
         const full = path.join(__dirname, "..", "artifacts", r);
@@ -123,67 +134,21 @@ async function preflight(names) {
     console.log("      ผ่านหมด");
 }
 
-/** ลงทะเบียนที่อยู่กับเว็บ — ขั้นตอนที่เคยต้องทำมือแล้วลืมบ่อยที่สุด */
+/** ลงทะเบียนที่อยู่กับเว็บ — ใช้ตัวเดียวกับ deploy-dex.js (scripts/lib/register-with-site.js) */
 async function registerWithSite() {
-    const siteUrl = (process.env.TPIX_SITE_URL || "").replace(/\/+$/, "");
-    const token = process.env.CONTRACT_REGISTRY_TOKEN || "";
-
-    if (!siteUrl || !token) {
-        console.log("\n[ข้าม] ไม่ได้ตั้ง TPIX_SITE_URL + CONTRACT_REGISTRY_TOKEN");
-        console.log("       ตั้งสองตัวนี้แล้วรันใหม่ สคริปต์จะลงทะเบียนที่อยู่ให้เว็บเอง");
-        console.log("       (หรือเอาที่อยู่ด้านล่างไปใส่ .env เองก็ได้)");
-        return false;
-    }
-
     const payload = {};
-    if (deployed.masternode_registry) payload.masternode_registry = deployed.masternode_registry;
-    if (deployed.validator_kyc) payload.validator_kyc = deployed.validator_kyc;
-    if (deployed.token_factory_v2) payload.token_factory_v2 = deployed.token_factory_v2;
-    if (deployed.nft_factory) payload.nft_factory = deployed.nft_factory;
-
-    if (Object.keys(payload).length === 0) return false;
-
-    console.log(`\nลงทะเบียนที่อยู่กับ ${siteUrl} ...`);
-
-    try {
-        const res = await fetch(`${siteUrl}/api/infra/contracts`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-                "User-Agent": "TPIX-deploy/1.0",
-            },
-            body: JSON.stringify({ contracts: payload }),
-        });
-
-        const text = await res.text();
-        let body;
-        try {
-            body = JSON.parse(text);
-        } catch {
-            console.log(`      ❌ เว็บตอบไม่ใช่ JSON (HTTP ${res.status}): ${text.slice(0, 120)}`);
-            return false;
-        }
-
-        if (!res.ok || !body.ok) {
-            console.log(`      ❌ ลงทะเบียนไม่สำเร็จ (HTTP ${res.status})`);
-            for (const [k, why] of Object.entries(body.rejected || {})) {
-                console.log(`         ${k}: ${why}`);
-            }
-            if (body.error) console.log(`         ${body.error}`);
-            return false;
-        }
-
-        for (const [k, info] of Object.entries(body.applied || {})) {
-            const from = info.previous ? ` (เดิม ${info.previous})` : "";
-            console.log(`      ✅ ${k} → ${info.address}${from}`);
-        }
-        console.log("      เว็บรับที่อยู่แล้ว — ไม่ต้องแก้ .env หรือ config:cache");
-        return true;
-    } catch (e) {
-        console.log(`      ❌ ยิงไปที่เว็บไม่สำเร็จ: ${e.message}`);
-        return false;
+    for (const key of [
+        "masternode_registry", "validator_kyc", "token_factory_v2", "nft_factory",
+        "wtpix", "usdt_tpix", "dex_factory", "dex_router",
+    ]) {
+        if (deployed[key]) payload[key] = deployed[key];
     }
+    if (Object.keys(payload).length === 0) return false;
+    return postToSite(payload);
+}
+
+function dexRegistryPayloadToConfig(a) {
+    return { WTPIX: a.WTPIX, USDT: a.USDT, FACTORY: a.FACTORY, ROUTER: a.ROUTER };
 }
 
 function saveRegistry(entries) {
@@ -236,13 +201,17 @@ async function main() {
             "FactoryERC721Creator", "NFTCollectionCreator"
         );
     }
+    if (!SKIP_DEX) preflightNames.push("WTPIX", "USDT_TPIX", "TPIXDEXPair");
     await preflight(preflightNames);
 
     const entries = [];
     const add = (name, address, sourceFile) => {
         entries.push({
             name,
-            category: sourceFile.includes("masternode") ? "masternode" : "token-factory",
+            category: sourceFile.includes("masternode") ? "masternode"
+                : sourceFile.includes("dex") ? "dex"
+                : (sourceFile.includes("sale") || sourceFile.includes("bridge")) ? "dex-token"
+                : "token-factory",
             address,
             sourceFile: `contracts/src/${sourceFile}`,
             compilerVersion: sourceFile.includes("token-factory") ? "0.8.24" : "0.8.20",
@@ -325,6 +294,29 @@ async function main() {
         console.log("      เหรียญทดสอบ :", created.args.tokenAddress, `(${await token.symbol()})`);
     }
 
+    // ── ชุด DEX ────────────────────────────────────────────────────
+    // เขียนลง deployed-contracts.json ผ่าน registry object ที่ deployDex upsert ให้ (แยกจาก entries)
+    let dexAddresses = null;
+    if (!SKIP_DEX) {
+        console.log("\n[3b/5] TPIX DEX (WTPIX + USDT_TPIX + Factory + Router) ...");
+        const reg = JSON.parse(fs.readFileSync(REGISTRY_PATH, "utf8"));
+        dexAddresses = await deployDex({ deployer, registry: reg });
+        deployed.wtpix = dexAddresses.WTPIX;
+        deployed.usdt_tpix = dexAddresses.USDT;
+        deployed.dex_factory = dexAddresses.FACTORY;
+        deployed.dex_router = dexAddresses.ROUTER;
+        if (!isDryRun) {
+            reg.updated = new Date().toISOString().slice(0, 10);
+            fs.writeFileSync(REGISTRY_PATH, JSON.stringify(reg, null, 2) + "\n");
+            writeSiteConfigs({
+                chainId: 4289,
+                rpc: "https://rpc.tpix.online",
+                updated: new Date().toISOString(),
+                ...dexRegistryPayloadToConfig(dexAddresses),
+            });
+        }
+    }
+
     // ── เติมพูลรางวัล ───────────────────────────────────────────────
     console.log("\n[4/5] พูลรางวัลมาสเตอร์โหนด ...");
     if (registry && FUND_REWARD_POOL) {
@@ -365,12 +357,7 @@ async function main() {
     }
 
     if (!registered && !isDryRun) {
-        console.log("\n" + "─".repeat(72));
-        console.log("ยังไม่ได้ลงทะเบียนกับเว็บ — เอาบรรทัดนี้ไปใส่ .env แล้วรัน php artisan config:cache");
-        console.log("─".repeat(72));
-        if (deployed.masternode_registry) console.log(`MASTERNODE_REGISTRY_ADDRESS=${deployed.masternode_registry}`);
-        if (deployed.token_factory_v2) console.log(`TOKEN_FACTORY_V2_ADDRESS=${deployed.token_factory_v2}`);
-        if (deployed.nft_factory) console.log(`NFT_FACTORY_ADDRESS=${deployed.nft_factory}`);
+        printEnvFallback(deployed);
     }
 
     console.log("\n" + "─".repeat(72));

@@ -67,15 +67,32 @@ deploy: WTPIX (ตัวห่อสำหรับการขาย) → wrap 
 
 พารามิเตอร์ที่ฝังไว้แล้ว: ราคาเริ่ม $0.10 → จบ $1.00 · เกณฑ์ย้าย $5M / 350M TPIX
 
-### ขั้นที่ 2 — DEX
+### ขั้นที่ 2 — DEX (ทำให้ทุกเหรียญบนเชน TPIX เทรดได้)
+
+> อัปเดต 2026-09-05 — ขั้นนี้ **จบในตัว** ไม่ต้องแตะ .env ของเว็บอีก
+> สคริปต์ลงทะเบียนที่อยู่ 4 ตัว (wtpix / usdt_tpix / dex_factory / dex_router) กับเว็บเอง
+> จากนั้น `dex:sync` บนเว็บ (รันทุกนาที) จะ
+>   - เปิดเชน 4289 เป็น **live** ในตัวเลือกเชนของเว็บ+แอป
+>   - สร้างคู่เทรดจาก **ทุกพูล** ที่มีบน factory (X/WTPIX → คู่ X-TPIX, X/USDT → คู่ X-USDT)
+>   - เก็บราคาพูลเป็นแท่ง 1 นาที ให้กราฟหน้าเทรด และตั้ง trading.tpix_price ตามพูล TPIX/USDT
 
 ```bash
-export FEE_COLLECTOR=0x...         # กระเป๋าที่รับค่าธรรมเนียม
-# ใส่สองบรรทัดนี้เฉพาะเมื่อพร้อมกำหนดราคาเปิด
+export TPIX_SITE_URL=https://tpix.online
+export CONTRACT_REGISTRY_TOKEN=$(ssh admin@123.253.62.251 "grep '^CONTRACT_REGISTRY_TOKEN=' /home/admin/domains/tpix.online/.env | cut -d= -f2")
+export FEE_COLLECTOR=0x0B263D083969946fA2bB44Af2DeBA69d3D3D0220   # = trading.fee_collector_wallet ของเว็บ
+# ใส่สองบรรทัดนี้เฉพาะเมื่อพร้อมกำหนดราคาเปิด TPIX/USDT (ราคาเปิด = LIQ_USDT ÷ LIQ_TPIX)
 # export LIQ_TPIX=1000000
-# export LIQ_USDT=100000
+# export LIQ_USDT=200000
 npx hardhat run scripts/deploy-dex.js --network tpix
 ```
+
+ซ้อมก่อนได้โดยไม่ต้องมีคีย์/ไม่เสียอะไร: `npx hardhat run scripts/deploy-dex.js --network hardhat`
+
+**ถ้าไม่ seed พูล TPIX/USDT ตรงนี้** ยังเทรดได้ทันทีเมื่อมีใครเติมพูล X/TPIX ที่หน้า
+https://tpix.online/liquidity (ผู้ใช้ทั่วไปเติม/ถอนได้เอง) — คู่ X-TPIX จะโผล่ในหน้าเทรดภายใน 1 นาที
+
+ตรวจหลัง deploy: `curl -s https://tpix.online/api/v1/dex/config` ต้องได้ `"ready":true`
+แล้วรอ 1 นาที `curl -s https://tpix.online/api/v1/chains | grep -o '"chainId":4289[^}]*status":"[a-z_]*"'` ต้องเป็น `live`
 
 ### ขั้นที่ 3 — masternode / identity
 
