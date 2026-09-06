@@ -10,7 +10,8 @@ enum ThemeId {
   classic('classic'),
   liquid('liquid'),
   synthwave('synthwave'),
-  terminal('terminal');
+  terminal('terminal'),
+  xpSilver('xp_silver');
 
   final String key;
   const ThemeId(this.key);

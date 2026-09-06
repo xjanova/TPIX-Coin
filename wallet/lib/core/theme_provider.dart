@@ -1,5 +1,5 @@
 /// TPIX Wallet — Theme Provider
-/// เก็บ + persist theme ที่ user เลือก (classic / synthwave / terminal)
+/// เก็บ + persist theme ที่ user เลือก (classic / liquid / synthwave / terminal / xp_silver)
 /// — เลียน pattern จาก LocaleProvider
 ///
 /// Developed by Xman Studio
@@ -11,6 +11,7 @@ import 'themes/classic_theme.dart';
 import 'themes/liquid_theme.dart';
 import 'themes/synthwave_theme.dart';
 import 'themes/terminal_theme.dart';
+import 'themes/xp_silver_theme.dart';
 
 class ThemeProvider extends ChangeNotifier {
   static const String _key = 'app_theme_id_v2';
@@ -21,6 +22,7 @@ class ThemeProvider extends ChangeNotifier {
     LiquidTheme(),
     SynthwaveTheme(),
     TerminalTheme(),
+    XpSilverTheme(),
   ];
 
   ThemeId _id = ThemeId.classic;
