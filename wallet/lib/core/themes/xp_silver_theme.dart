@@ -119,14 +119,13 @@ class XpSilverTheme extends ThemeBundle {
       ElevatedButton.styleFrom(
         backgroundColor: fill,
         foregroundColor: text,
-        elevation: 1,
-        shadowColor: Colors.black.withValues(alpha: 0.35),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        textStyle: GoogleFonts.notoSans(fontSize: 15, fontWeight: FontWeight.w600),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(_radius - 2),
-          side: BorderSide(color: edge, width: 1),
-        ),
+        elevation: 2,
+        shadowColor: Colors.black.withValues(alpha: 0.4),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
+        textStyle: GoogleFonts.notoSans(fontSize: 15, fontWeight: FontWeight.w700),
+        // ทรงแคปซูลตามปุ่ม Start ของ XP — ลายเซ็นของมันคือรูปทรงกับผิวเจล
+        // ไม่ใช่สีเขียว สีจึงอิงโทนของเราเอง
+        shape: StadiumBorder(side: BorderSide(color: edge, width: 1)),
       );
 
   /// ช่องกรอกทรง XP — พื้นขาว ขอบจม ไม่มีมุมมนเยอะ
@@ -179,11 +178,15 @@ class XpSilverTheme extends ThemeBundle {
       glassColor: _chrome,
       glassBorder: _chromeEdge,
       glassHighlight: _chromeHi,
+      // โค้งแสงบนผิวโลหะ — ห้ามเป็นไล่สองสีเรียบ ๆ
+      // ของ XP มีแถบสว่างเด้งใกล้ยอด (8%) ค่อย ๆ คล้ำลง แล้วจบด้วยเส้นเข้ม
+      // คมที่ก้นสุด นั่นคือขอบล่างของแผ่นที่รับแสงไม่ถึง — ตัดสต็อปไหนออก
+      // ก็เหลือแค่ "เทา ๆ" ไม่ใช่โลหะ
       brandGradient: const LinearGradient(
-        colors: [_chromeHi, _chromeMid, _chromeLo],
+        colors: [_chromeHi, Color(0xFFF4F4F9), _chrome, _chromeMid, _chromeLo],
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        stops: [0.0, 0.55, 1.0],
+        stops: [0.0, 0.08, 0.55, 0.94, 1.0],
       ),
       // การ์ดยอดเงินใช้ฟ้าไฮไลต์ ไม่ใช่เงิน — โครเมียมเงินเป็นสีของ "กรอบ"
       // ถ้าเอามาเป็นพื้นการ์ดพระเอกด้วย ตัวเลขยอดเงินจะจมหายไปกับกรอบ
@@ -284,10 +287,13 @@ class XpSilverTheme extends ThemeBundle {
       glassBorder: _chromeDarkLo,
       glassHighlight: _chromeDarkHi,
       brandGradient: const LinearGradient(
-        colors: [_chromeDarkHi, _chromeDark, _chromeDarkLo],
+        colors: [
+          Color(0xFF6C6C80), _chromeDarkHi, _chromeDark,
+          Color(0xFF2C2C38), _chromeDarkLo,
+        ],
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        stops: [0.0, 0.55, 1.0],
+        stops: [0.0, 0.08, 0.55, 0.94, 1.0],
       ),
       balanceGradient: const LinearGradient(
         colors: [Color(0xFF2F5FA8), Color(0xFF224881), Color(0xFF16305F)],
