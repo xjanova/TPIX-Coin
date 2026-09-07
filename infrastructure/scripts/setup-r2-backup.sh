@@ -39,17 +39,29 @@ die()  { echo -e "${RED}✗${NC} $*" >&2; exit 1; }
 [[ -x "$UPLOADER" ]]  || die "ไม่พบ $UPLOADER — ติดตั้ง backup-upload-r2.sh ก่อน"
 command -v rclone >/dev/null || die "ไม่มี rclone — apt-get install -y rclone"
 
+# ค่าที่มีอยู่แล้วในไฟล์ ใช้เป็นค่าตั้งต้น — กด Enter เฉย ๆ = คงค่าเดิมไว้
+# (Account ID ไม่ใช่ความลับและมักถูกเติมไว้ล่วงหน้าอยู่แล้ว จะได้ไม่ต้องหามาพิมพ์ซ้ำ)
+cur() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-; }
+CUR_ACCOUNT="$(cur TPIX_R2_ACCOUNT_ID)"
+CUR_ACCESS="$(cur TPIX_R2_ACCESS_KEY_ID)"
+CUR_SECRET="$(cur TPIX_R2_SECRET_ACCESS_KEY)"
+hint() { [[ -n "$1" ]] && printf ' [มีค่าเดิม กด Enter = ใช้ค่าเดิม]' || true; }
+
 echo
 echo "ตั้งค่า R2 สำหรับสำรองข้อมูลเชน TPIX (bucket: $BUCKET)"
 echo "พิมพ์แล้วจะไม่แสดงบนจอ — วางแล้วกด Enter ได้เลย"
 echo
 
-read -rsp "  1/3 Account ID           : " ACCOUNT_ID; echo
-read -rsp "  2/3 Access Key ID        : " ACCESS_KEY; echo
-read -rsp "  3/3 Secret Access Key    : " SECRET_KEY; echo
+read -rsp "  1/3 Account ID$(hint "$CUR_ACCOUNT") : " ACCOUNT_ID; echo
+read -rsp "  2/3 Access Key ID$(hint "$CUR_ACCESS") : " ACCESS_KEY; echo
+read -rsp "  3/3 Secret Access Key$(hint "$CUR_SECRET") : " SECRET_KEY; echo
 echo
 
-[[ -n "$ACCOUNT_ID" && -n "$ACCESS_KEY" && -n "$SECRET_KEY" ]] || die "มีช่องที่เว้นว่าง — ยกเลิก"
+ACCOUNT_ID="${ACCOUNT_ID:-$CUR_ACCOUNT}"
+ACCESS_KEY="${ACCESS_KEY:-$CUR_ACCESS}"
+SECRET_KEY="${SECRET_KEY:-$CUR_SECRET}"
+
+[[ -n "$ACCOUNT_ID" && -n "$ACCESS_KEY" && -n "$SECRET_KEY" ]] || die "มีช่องที่เว้นว่างและไม่มีค่าเดิมให้ใช้ — ยกเลิก"
 
 # ── ทดสอบด้วยไฟล์เล็กก่อน ไม่เอาไฟล์ 650MB มาลองผิดลองถูก ──────────────────
 TMP="$(mktemp -t tpix-r2-test.XXXXXX)"
