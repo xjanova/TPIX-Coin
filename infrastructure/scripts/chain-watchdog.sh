@@ -61,6 +61,8 @@ BLOCK_FULL_PCT="${TPIX_BLOCK_FULL_PCT:-80}"    # gasUsed/gasLimit ที่ถ�
 # ต้องเป็น path เดียวกับที่ backup-chain.sh สร้าง ไม่งั้นทั้งสองตัวจะไม่เห็นกัน
 BACKUP_LOCK="${TPIX_BACKUP_LOCK:-/run/tpix-backup.lock}"
 BACKUP_LOCK_MAX_AGE="${TPIX_BACKUP_LOCK_MAX_AGE:-1800}"   # 30 นาที
+# คิวบำรุงรักษาร่วมกับ backup-chain.sh — ต้องเป็น path เดียวกันทั้งสองสคริปต์
+MAINT_LOCK="${TPIX_MAINT_LOCK:-/run/tpix-chain-maint.lock}"
 VALIDATORS=(tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4)
 
 # Optional integrations (empty = skip)
@@ -385,12 +387,37 @@ main() {
         exit 1
     fi
 
+    # ── เข้าคิวบำรุงรักษาร่วมกับ backup-chain.sh ────────────────────────────
+    #
+    # ทำไมธง BACKUP_LOCK ข้างล่างอย่างเดียวไม่พอ: มันเป็น test-then-act ที่ไม่
+    # atomic — 2026-09-03 cron ทั้งสองยิงพร้อมกันที่ 19:17:00 พอดี รอบนั้นอ่านธง
+    # ก่อนที่ backup จะเขียนเสร็จ จึงไม่เห็นอะไร แล้วสั่ง `compose up -d` ทับตอน
+    # tar กำลังอ่าน LevelDB อยู่ → ไฟล์สำรองของวันนั้นเสียทั้งชุด
+    #
+    # flock ปิดช่องนั้นเพราะ "ขอคิว" กับ "ได้คิว" เป็นก้าวเดียวกัน
+    # -n = ไม่รอ ข้ามรอบนี้ไปเลย (อีกนาทีเดียวก็มาใหม่ ไม่ต้องต่อคิว)
+    # -E 75 = แยก "จับคิวไม่ได้" ออกจาก "ตัวเองล้มเหลว"
+    # ไม่มี flock บนเครื่อง = ทำงานต่อแบบเดิม ธง BACKUP_LOCK ยังกันอีกชั้น
+    if command -v flock >/dev/null 2>&1 && [ -z "${TPIX_WATCHDOG_FLOCKED:-}" ]; then
+        export TPIX_WATCHDOG_FLOCKED=1
+        flock -n -E 75 "$MAINT_LOCK" "$0" "$@"
+        local rc=$?
+        if [ "$rc" -eq 75 ]; then
+            log "SKIP: มีงานบำรุงรักษาถือคิวอยู่ (flock $MAINT_LOCK) — ข้ามรอบนี้"
+            hc_ping
+            exit 0
+        fi
+        exit "$rc"
+    fi
+
     # ── ยอมให้งานสำรองข้อมูลหยุด validator ได้ 1 ตัวโดยไม่โดน restart ทับ ──────
     #
     # backup-chain.sh หยุด tpix-validator-4 ชั่วคราวเพื่อคัดลอกข้อมูลให้สอดคล้องกัน
     # (IBFT 4 ตัวทนพังได้ 1 เชนจึงเดินต่อ) แต่ check_containers เห็นแล้วจะสั่ง
     # restart ทั้งวง = ข้อมูลถูกคัดลอกกลางคันจนไฟล์สำรองเสีย และเชนสะดุดฟรี ๆ
     #
+    # ชั้นนี้ยังอยู่เป็น defense-in-depth: กันกรณี flock ใช้ไม่ได้ และเป็นตัวจับ
+    # "backup ตายกลางทางจนลบล็อกไม่ทัน" ซึ่ง flock บอกไม่ได้ (ล็อกหลุดตอนโปรเซสตาย)
     # ล็อกมีอายุ ถ้า backup ตายกลางทางจนลบล็อกไม่ทัน watchdog จะกลับมาทำงานเองใน
     # 30 นาที ไม่ใช่เงียบไปตลอดกาล
     if [ -f "$BACKUP_LOCK" ]; then
