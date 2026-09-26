@@ -12,11 +12,11 @@
 #   2. ตรวจว่าเชนยังผลิตบล็อกอยู่ และ validator ครบ
 #   3. หยุด validator เพียง "ตัวเดียว" — quorum 3/4 ยังอยู่ เชนไม่หยุด
 #      แล้ว "รอจนหยุดสนิทจริง" ก่อนแตะไฟล์
-#   4. tar ข้อมูล + เข้ารหัสด้วย gpg (symmetric)
+#   4. tar ข้อมูลส่งตรงเข้า gpg (symmetric) — ไม่มีไฟล์ดิบลงดิสก์
 #   5. เปิด validator กลับ แล้วรอจน healthy + บล็อกเดินต่อ
 #   6. ส่งไฟล์ออกนอกเครื่อง แล้วลบไฟล์เก่าตามอายุที่กำหนด
 #
-# ถ้าสคริปต์ตายกลางทาง trap จะเปิด validator กลับให้เสมอ + ทำลายไฟล์ดิบทิ้ง
+# ถ้าสคริปต์ตายกลางทาง trap จะเปิด validator กลับให้เสมอ + ลบไฟล์ .gpg ที่เขียนไม่จบทิ้ง
 #
 # Usage (as root):
 #   sudo TPIX_BACKUP_PASS='...' bash backup-chain.sh
@@ -43,6 +43,9 @@ VALIDATOR="${TPIX_BACKUP_VALIDATOR:-tpix-validator-4}"
 VALIDATOR_DATA="${TPIX_BACKUP_VALIDATOR_DATA:-$CHAIN_DIR/data/validator-4}"
 RPC="${TPIX_RPC_URL:-http://127.0.0.1:8545}"
 KEEP_DAYS="${TPIX_BACKUP_KEEP_DAYS:-14}"
+# เพดานเวลาขั้นบีบอัด+เข้ารหัส (ปกติราว 1.5 นาที) — เกินนี้ถือว่าค้าง ยอมทิ้งรอบนี้
+# ดีกว่าถือคิวบำรุงรักษาไว้ทั้งคืน เพราะตลอดเวลาที่คิวถูกถือ watchdog จะข้ามการตรวจ
+PIPE_TIMEOUT="${TPIX_BACKUP_TIMEOUT:-1200}"
 # คำสั่งส่งไฟล์ออกนอกเครื่อง — ใช้ {file} เป็นตัวแทนพาธไฟล์
 UPLOAD_CMD="${TPIX_BACKUP_UPLOAD:-}"
 
@@ -150,13 +153,13 @@ fi
 #    ข้ามการตรวจ 30 นาทีทุกคืนโดยไม่มีใครรู้ (เจอจริง 2026-08-28)
 #    ใช้ธง VALIDATOR_STOPPED_BY_US ตัดสินแทนว่าจะเปิด validator กลับไหม
 VALIDATOR_STOPPED_BY_US=0
-ARCHIVE=""
+PARTIAL=""
 cleanup() {
-    # ไฟล์ดิบมี validator.key / validator-bls.key / libp2p.key อยู่ข้างใน
-    # ตายตรงไหนก็ตามห้ามทิ้งไว้เด็ดขาด
-    if [[ -n "$ARCHIVE" && -f "$ARCHIVE" ]]; then
-        warn "ทำลายไฟล์ดิบที่ยังไม่ได้เข้ารหัสทิ้ง: $ARCHIVE"
-        shred -u "$ARCHIVE" 2>/dev/null || rm -f "$ARCHIVE"
+    # .gpg ที่เขียนไม่จบ (ตายกลางสตรีม) เข้ารหัสอยู่แล้วแต่ใช้กู้ไม่ได้ — ทิ้งเลย
+    # ไม่ให้ค้างกินดิสก์ และไม่ให้ใครหยิบไปใช้เพราะคิดว่าเป็นไฟล์สำรองที่ดี
+    if [[ -n "$PARTIAL" && -f "$PARTIAL" ]]; then
+        warn "ทิ้งไฟล์สำรองที่เขียนไม่จบ: $PARTIAL"
+        rm -f "$PARTIAL"
     fi
     if [[ "$VALIDATOR_STOPPED_BY_US" -eq 1 ]] && ! docker ps --format '{{.Names}}' | grep -qx "$VALIDATOR"; then
         log "เปิด $VALIDATOR กลับ"
@@ -194,8 +197,7 @@ if [[ -n "$STRAY" ]]; then
 fi
 
 STAMP="$(date '+%Y%m%d-%H%M%S')"
-ARCHIVE="$BACKUP_DIR/tpix-chain-$STAMP.tar.gz"
-ENCRYPTED="$ARCHIVE.gpg"
+ENCRYPTED="$BACKUP_DIR/tpix-chain-$STAMP.tar.gz.gpg"
 
 # ── 2. หยุด validator ตัวเดียว (quorum 3/4 ยังอยู่) ────────────────────────
 log "หยุด $VALIDATOR ชั่วคราวเพื่อคัดลอกข้อมูลให้สอดคล้องกัน"
@@ -212,7 +214,7 @@ done
 [[ "$STOPPED" -eq 1 ]] || fail "$VALIDATOR ยังไม่หยุดภายใน 30 วินาที — ยกเลิก ไม่คัดลอกข้อมูลที่ยังมีคนเขียนอยู่"
 STOPPED_MARK="$(container_started_at "$VALIDATOR")"
 
-# ── 3. บีบอัด + เข้ารหัส ───────────────────────────────────────────────────
+# ── 3. บีบอัด + เข้ารหัสแบบสตรีม ───────────────────────────────────────────
 # genesis ต้องอยู่ในไฟล์เดียวกับ block data — ถ้ามีแต่ block data ก็กู้เชนไม่ได้
 # (ต่อไฟล์เข้า .tar.gz ทีหลังไม่ได้ จึงต้องใส่ให้ครบตั้งแต่ตอนสร้าง)
 TAR_ARGS=(-C "$(dirname "$VALIDATOR_DATA")" "$(basename "$VALIDATOR_DATA")")
@@ -224,8 +226,19 @@ else
         "ไฟล์สำรองรอบนี้ไม่มี genesis.json ($CHAIN_DIR/genesis.json หาย) — มีแต่ block data กู้เชนไม่ได้"
 fi
 
-log "กำลังบีบอัดข้อมูลจาก $VALIDATOR_DATA"
-tar -czf "$ARCHIVE" "${TAR_ARGS[@]}" || fail "บีบอัดไม่สำเร็จ (ดูบรรทัดของ tar ข้างบนประกอบ)"
+# tar ส่งตรงเข้า gpg — ไม่มีไฟล์ดิบลงดิสก์เลย (เดิม tar ลงไฟล์ก่อนแล้วค่อยเข้ารหัส)
+# - ดิสก์ช่วงสำรองโตแค่ .gpg ไฟล์เดียว จากเดิมไฟล์ดิบ + .gpg ค้างพร้อมกัน (~2.2G)
+#   2026-09-26 02:18 VMware พัก VM ทั้งตัว 10 ชม. 1 วินาทีหลังเริ่มเข้ารหัส ซึ่งเป็น
+#   จังหวะที่ดิสก์โตเร็วที่สุดของวัน — datastore เต็มเมื่อไรจังหวะนี้โดนก่อนเพื่อน
+# - คีย์ validator ไม่เคยลงดิสก์แบบไม่เข้ารหัส แม้สคริปต์ตายกลางทาง
+# - รหัสส่งทาง fd 3 ไม่ใช่ argv — argv ใครในเครื่องก็อ่านได้จาก ps / /proc/*/cmdline
+#   --no-symkey-cache กัน gpg-agent จำรหัสค้างไว้ในหน่วยความจำหลังสคริปต์จบ
+PARTIAL="$ENCRYPTED.partial"
+log "กำลังบีบอัดและเข้ารหัสข้อมูลจาก $VALIDATOR_DATA (สตรีมตรงลง .gpg)"
+timeout "$PIPE_TIMEOUT" tar -czf - "${TAR_ARGS[@]}" \
+    | timeout "$PIPE_TIMEOUT" gpg --batch --yes --pinentry-mode loopback --no-symkey-cache \
+        --passphrase-fd 3 --symmetric --cipher-algo AES256 --output "$PARTIAL" 3<<<"$TPIX_BACKUP_PASS" \
+    || fail "บีบอัด/เข้ารหัสไม่สำเร็จหรือเกิน ${PIPE_TIMEOUT}s (ดูบรรทัดของ tar/gpg ข้างบนประกอบ)"
 
 # ── ยืนยันว่าไม่มีใครแอบเปิด validator ระหว่าง tar ────────────────────────────
 # ถ้ามี = ที่เพิ่ง tar มาคือ snapshot ของ LevelDB ที่กำลังถูกเขียน = ใช้กู้ไม่ได้
@@ -234,13 +247,8 @@ if container_running "$VALIDATOR" || [[ "$(container_started_at "$VALIDATOR")" !
     fail "$VALIDATOR ถูกเปิดกลับระหว่างคัดลอกข้อมูล — ไฟล์รอบนี้ใช้กู้ไม่ได้ ทิ้งทั้งชุด (ตรวจว่า watchdog แย่งคิวหรือมีคนสั่งด้วยมือ)"
 fi
 
-log "กำลังเข้ารหัสไฟล์สำรอง"
-gpg --batch --yes --symmetric --cipher-algo AES256 \
-    --passphrase "$TPIX_BACKUP_PASS" \
-    --output "$ENCRYPTED" "$ARCHIVE" || fail "เข้ารหัสไม่สำเร็จ"
-
-shred -u "$ARCHIVE" 2>/dev/null || rm -f "$ARCHIVE"
-ARCHIVE=""          # ทำลายแล้ว — อย่าให้ trap ไปตามหาอีก
+mv "$PARTIAL" "$ENCRYPTED"
+PARTIAL=""          # กลายเป็นไฟล์จริงแล้ว — อย่าให้ trap ลบทิ้ง
 chmod 600 "$ENCRYPTED"
 
 # ── 4. เปิด validator กลับ แล้วรอจนเชนเดินต่อจริง ──────────────────────────
@@ -270,7 +278,8 @@ fi
 
 # ── 5. ตรวจว่าไฟล์สำรองใช้ได้จริง (ไม่ใช่แค่มีไฟล์) ───────────────────────
 log "ตรวจสอบไฟล์สำรองว่าถอดรหัสและอ่านได้"
-if ! gpg --batch --yes --quiet --decrypt --passphrase "$TPIX_BACKUP_PASS" "$ENCRYPTED" 2>/dev/null | tar -tzf - >/dev/null 2>&1; then
+if ! gpg --batch --yes --quiet --pinentry-mode loopback --no-symkey-cache --passphrase-fd 3 \
+        --decrypt "$ENCRYPTED" 3<<<"$TPIX_BACKUP_PASS" 2>/dev/null | tar -tzf - >/dev/null 2>&1; then
     fail "ไฟล์สำรองเสียหรือถอดรหัสไม่ได้ — ถือว่าล้มเหลว"
 fi
 
