@@ -1,7 +1,7 @@
 {
   "_doc": "Registry of deployed contracts on TPIX Chain (4289). Keep in sync after each deploy. Feeds scripts/verify-sources.js and external explorers/aggregators.",
   "_schema_version": 2,
-  "updated": "2026-08-22",
+  "updated": "2026-10-10",
   "chain": {
     "chainId": 4289,
     "name": "TPIX Chain",
@@ -14,8 +14,85 @@
     "genesisEpoch": "2026-08-06",
     "_genesisNote": "The chain was re-genesised on 2026-08-06 and moved to a new host. All contract state from before that date was discarded."
   },
-  "contracts": [],
-  "_contractsNote": "EMPTY ON PURPOSE — verified 2026-08-22 against the live chain: eth_getCode returns 0x for every address below, and Blockscout reports total_transactions = 0 across all ~620k blocks. No contract has ever been deployed on the post-regenesis chain. Do not list an address here until eth_getCode returns bytecode for it.",
+  "contracts": [
+    {
+      "name": "WTPIX",
+      "category": "wrapper",
+      "address": "0x0A3dB168aF6b85e61D81CA78C608BDadAC832DFF",
+      "sourceFile": "contracts/src/sale/WTPIX_ERC20.sol",
+      "description": "Wrapped TPIX (ERC-20) — WETH9 pattern. 1:1 backed by native TPIX.",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": true,
+      "deployedAt": "2026-10-11",
+      "deployTx": "nonce 0 of 0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7 (run interrupted by RPC 520, bytecode verified equal to artifact)"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": true,
+      "deployedAt": "2026-10-10",
+      "name": "USDT_TPIX",
+      "category": "bridge-token",
+      "address": "0x0A4Ee87551eF041f3EecFBBfdcfFC1B46a4878f1",
+      "sourceFile": "contracts/src/bridge/USDT_TPIX.sol",
+      "description": "Bridged Tether บน TPIX Chain (6 decimals) — mint/burn เฉพาะ relayer whitelist."
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": true,
+      "deployedAt": "2026-10-10",
+      "name": "TPIXDEXFactory",
+      "category": "dex",
+      "address": "0x94b1254acE355559611890D4EB2d07332eD1fB8A",
+      "sourceFile": "contracts/src/dex/amm/TPIXDEXFactory.sol",
+      "description": "Uniswap V2-style factory — ทะเบียน liquidity pair ทั้งหมดของ TPIX DEX"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": true,
+      "deployedAt": "2026-10-10",
+      "name": "TPIXDEXRouter02",
+      "category": "dex",
+      "address": "0x8aF94D36Ea0C14C40CDaff5bddE017269A9ccc04",
+      "sourceFile": "contracts/src/dex/amm/TPIXDEXRouter02.sol",
+      "description": "Uniswap V2-style router — swap + add/remove liquidity (WETH = WTPIX)"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": false,
+      "deployedAt": "2026-10-10",
+      "name": "TPIXDEXPair_WTPIX_USDT",
+      "category": "dex",
+      "address": "0x3684E0eBD1bd7eF7B7783e695639BADCD04BC4f0",
+      "sourceFile": "contracts/src/dex/amm/TPIXDEXPair.sol",
+      "description": "Liquidity pair WTPIX/USDT — pool หลักของกระดาน TPIX/USDT",
+      "verifyNote": "created by TPIXDEXFactory via CREATE2 — explorer has no creator/internal-tx record yet, so standard-input verification cannot match"
+    }
+  ],
   "retired": [
     {
       "name": "TPIXTokenFactoryV2",
@@ -23,7 +100,10 @@
       "address": "0xCdE5792A556A2D8571Efb31843CF6C15c3BDdfF2",
       "sourceFile": "contracts/token-factory/TPIXTokenFactoryV2.sol",
       "compilerVersion": "0.8.20",
-      "optimizer": { "enabled": true, "runs": 200 },
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
       "verified": false,
       "retiredOn": "2026-08-06",
       "retiredReason": "Deployed on the pre-regenesis chain. eth_getCode = 0x on the current chain — the address holds no code and must be redeployed.",
@@ -35,7 +115,10 @@
       "address": "0x38713C76036eb4Ff438eF8CEC12b6D676ad776F9",
       "sourceFile": "contracts/token-factory/TPIXNFTFactory.sol",
       "compilerVersion": "0.8.20",
-      "optimizer": { "enabled": true, "runs": 200 },
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
       "verified": false,
       "retiredOn": "2026-08-06",
       "retiredReason": "Deployed on the pre-regenesis chain. eth_getCode = 0x on the current chain — the address holds no code and must be redeployed.",
