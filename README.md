@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ethereum-lists/chains/pull/8231"><img src="https://img.shields.io/badge/EIP--155-4289-6366f1?style=flat-square" alt="EIP-155 ID 4289" /></a>
+  <a href="https://chainlist.org/chain/4289"><img src="https://img.shields.io/badge/EIP--155-4289-6366f1?style=flat-square" alt="EIP-155 ID 4289" /></a>
   <img src="https://img.shields.io/badge/Gas-FREE-22c55e?style=flat-square" alt="Gas: FREE" />
   <img src="https://img.shields.io/badge/Block-2s-06b6d4?style=flat-square" alt="Block Time: 2s" />
   <img src="https://img.shields.io/badge/Consensus-IBFT%202.0-f97316?style=flat-square" alt="IBFT 2.0" />
@@ -63,13 +63,13 @@ We believe in public, verifiable infrastructure. Here is the real-time status of
 
 | Registry | Status | Source |
 |----------|--------|--------|
-| **[ethereum-lists/chains](https://github.com/ethereum-lists/chains)** | ⏳ Under review | [PR #8231](https://github.com/ethereum-lists/chains/pull/8231) opened 2026-04-17 — source of truth for chainlist.org, chainid.network, and most EVM wallets |
-| **[chainlist.org](https://chainlist.org)** | ⏳ Pending merge | Auto-populates within hours after ethereum-lists merges PR #8231 |
-| **[chainid.network](https://chainid.network)** | ⏳ Pending merge | Same data source as chainlist.org |
-| **Rabby Wallet** | ⏳ Pending merge | Pulls from ethereum-lists — logo appears automatically after merge |
-| **OKX Web3 Wallet** | ⏳ Pending merge | Pulls from ethereum-lists |
-| **Trust Wallet** | ⏳ Pending merge | Partial — pulls chain data from ethereum-lists; native-icon submission to `trustwallet/assets` is a separate future step |
-| **MetaMask (built-in icon)** | 🔲 Not yet | Requires separate PR to `MetaMask/metamask-extension` — planned after PR #8231 merges |
+| **[ethereum-lists/chains](https://github.com/ethereum-lists/chains)** | ✅ Merged 2026-04-20 | [PR #8148](https://github.com/ethereum-lists/chains/pull/8148) — [`eip155-4289.json`](https://github.com/ethereum-lists/chains/blob/master/_data/chains/eip155-4289.json) (mainnet) + testnet 4290. Source of truth for chainlist.org, chainid.network, and most EVM wallets. (PR #8231 was a duplicate and was closed unmerged.) |
+| **[chainlist.org](https://chainlist.org/chain/4289)** | ✅ Listed | [chainlist.org/chain/4289](https://chainlist.org/chain/4289) · testnet [4290](https://chainlist.org/chain/4290) |
+| **[chainid.network](https://chainid.network/chain/4289/)** | ✅ Listed | [chainid.network/chain/4289](https://chainid.network/chain/4289/) (also mirrored at chainlist.wtf) |
+| **Rabby Wallet** | ℹ️ Source merged | Pulls from ethereum-lists — not yet checked in-app |
+| **OKX Web3 Wallet** | ℹ️ Source merged | Pulls from ethereum-lists — not yet checked in-app |
+| **Trust Wallet** | ℹ️ Source merged | Partial — pulls chain data from ethereum-lists; native-icon submission to `trustwallet/assets` is a separate future step |
+| **MetaMask (built-in icon)** | 🔲 Not yet | Requires separate PR to `MetaMask/metamask-extension` (ethereum-lists entry is now merged, so this is unblocked) |
 | **CoinGecko** | 🔲 Not yet | Listing application requires active market data from at least one exchange |
 | **CoinMarketCap** | 🔲 Not yet | Listing application requires verified circulating supply + exchange listings |
 | **DeFiLlama** | 🔲 Not yet | Requires TVL data via subgraph or adapter |
@@ -104,7 +104,7 @@ Implementation reference: [`resources/js/utils/web3.js`](https://github.com/xjan
 
 | Gap | Effort | Blocker |
 |-----|--------|---------|
-| MetaMask built-in chain icon | Medium (SVG + PR) | Waiting for ethereum-lists/chains#8231 to merge first |
+| MetaMask built-in chain icon | Medium (SVG + PR) | Unblocked — ethereum-lists/chains#8148 merged 2026-04-20 |
 | Trust Wallet native asset entry | Medium (PR to `trustwallet/assets`) | Low priority — chain already visible via chainlist import |
 | CoinGecko listing | High (needs DEX volume + supply proof) | Launch liquidity on external CEX/DEX needed |
 | CoinMarketCap listing | High (needs verified supply audit) | Token contract audit + exchange listings |
@@ -598,9 +598,9 @@ npm run verify
 ### Registry & Listings
 | Resource | URL |
 |----------|-----|
-| **ethereum-lists/chains PR** | [pull/8231](https://github.com/ethereum-lists/chains/pull/8231) |
-| **Chain ID Registry** | [chainid.network/chain/4289](https://chainid.network/chain/4289) (post-merge) |
-| **Chainlist** | [chainlist.org/chain/4289](https://chainlist.org/chain/4289) (post-merge) |
+| **ethereum-lists/chains PR** | [pull/8148](https://github.com/ethereum-lists/chains/pull/8148) (merged 2026-04-20) |
+| **Chain ID Registry** | [chainid.network/chain/4289](https://chainid.network/chain/4289/) |
+| **Chainlist** | [chainlist.org/chain/4289](https://chainlist.org/chain/4289) |
 | **IPFS Logo (CID)** | `bafybeiby5mwnwdi53fye4iurjxlddfzonsj67ejl4sjy7qda53za6jlgo4` |
 
 ---
