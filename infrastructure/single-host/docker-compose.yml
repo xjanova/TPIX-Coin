@@ -207,7 +207,23 @@ services:
       # debug_traceBlockByNumber + callTracer ได้ (เดิมปิดไว้เพราะเข้าใจว่าไม่รองรับ)
       # ต้องเปิดก่อนขึ้นสัญญา DEX/masternode ไม่งั้นการโอนที่เกิดจากสัญญาเรียกสัญญา
       # จะไม่โผล่ในหน้า address เลย — ยอดขยับแต่หาที่มาไม่เจอ
-      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "false"
+      #
+      # ⛔ ปิดกลับ 2026-10-11 — ข้อความ 2026-08-08 ข้างบนผิด: ตอนนั้นเชนยังไม่มีสัญญาเลย
+      #    trace ว่างจึงดูเหมือนผ่าน พอมีสัญญาจริงวันแรก:
+      #    · polygon-edge 0.9.0 ไม่สน tracer:callTracer — ตอบ structLogs (opcode) เสมอ
+      #      → โหมด call_tracer ล้มทุกบล็อก (FunctionClauseError parse_call_tracer_calls)
+      #    · structLogs ของ edge ผิดรูป: stack ตอน CALL เหลือ 1–4 ค่า (ต้องมี 7) และ step ของ
+      #      ผู้ถูกเรียกมาก่อน op CALL ของผู้เรียก → โหมด polygon_edge แกะธุรกรรมที่มีการเรียก
+      #      สัญญาซ้อน (ทุก swap ผ่าน Router) ไม่ได้ (MatchError) ได้แค่ชั้นนอกสุด
+      #    · บล็อกที่แกะไม่ได้ถูกลองซ้ำทุก ~2 วินาทีไม่มีวันจบ ขอ trace ~25MB จาก validator-1
+      #      ทุกรอบ → validator-1 CPU 60% ขณะตัวอื่น <1% (เสี่ยงต่อการผลิตบล็อก)
+      #    ไม่เสียอะไรเรื่อง verify: Blockscout verify สัญญาที่สัญญาสร้าง (พูล/เหรียญจาก
+      #    Token Factory) ได้จาก runtime bytecode โดยไม่ต้องรู้ creator — พิสูจน์แล้วกับพูล DEX
+      #    เปิดกลับได้เมื่อมีโหนด RPC แยกที่ไม่ใช่ validator ไว้ให้ trace (ชี้ TRACE_URL ไปที่นั่น)
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+      # ใช้เมื่อเปิด fetcher กลับเท่านั้น — polygon_edge = EthereumJSONRPC.Geth.PolygonTracer
+      # ห้ามใช้ CHAIN_TYPE=polygon_edge แทน — มันเปิดระบบ bridge + ตาราง DB ของ edge เพิ่มด้วย
+      INDEXER_INTERNAL_TRANSACTIONS_TRACER_TYPE: "polygon_edge"
       INDEXER_DISABLE_BLOCK_REWARD_FETCHER: "true"
       INDEXER_DISABLE_WITHDRAWALS_FETCHER: "true"
       INDEXER_COIN_BALANCES_BATCH_SIZE: "50"
