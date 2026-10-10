@@ -53,11 +53,42 @@ $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
 try { $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
 finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 
-if ($plainKey -notmatch '^0x[0-9a-fA-F]{64}$') {
-    Say "รูปแบบคีย์ไม่ถูกต้อง — ต้องเป็น 0x ตามด้วยเลขฐานสิบหก 64 ตัว" Red
+# วางคำกู้กระเป๋า (12/24 คำ) ผิดช่องเกิดขึ้นจริงแล้ว — บอกตรง ๆ ว่าช่องนี้ต้องการอะไร
+if (($plainKey.Trim() -split '\s+').Count -ge 12 -and $plainKey -match '^[\sa-zA-Z]+$') {
+    Say "นี่คือคำกู้กระเป๋า (12/24 คำ) ไม่ใช่ private key — ไม่ได้ใช้ ไม่ได้เก็บ และไม่ได้ส่งไปไหน" Red
+    Say "  ช่องนี้ต้องการ private key ของบัญชีที่จะ deploy:" Red
+    Say "  MetaMask → เลือกบัญชี → ⋮ → Account details → Show private key" Red
     $plainKey = $null
     exit 1
 }
+
+# MetaMask ส่งออก private key แบบไม่มี 0x นำหน้า และการวางมักติดช่องว่าง/ขึ้นบรรทัด/เครื่องหมายคำพูดมาด้วย
+# → ตัดของเกินออกแล้วเติม 0x ให้เอง แทนที่จะบังคับให้คนพิมพ์ใหม่
+$plainKey = ($plainKey -replace '[\s"''`]', '')
+if ($plainKey -match '^[0-9a-fA-F]{64}$') { $plainKey = "0x$plainKey" }
+
+if ($plainKey -notmatch '^0x[0-9a-fA-F]{64}$') {
+    # บอกแค่ความยาว ไม่สะท้อนเนื้อคีย์กลับขึ้นจอ
+    Say "รูปแบบคีย์ไม่ถูกต้อง — ได้รับ $($plainKey.Length) ตัวอักษร" Red
+    Say "  ต้องเป็นเลขฐานสิบหก 64 ตัว (มีหรือไม่มี 0x นำหน้าก็ได้) — ลองคัดลอกจาก MetaMask ใหม่อีกครั้ง" Red
+    $plainKey = $null
+    exit 1
+}
+
+# แปลงคีย์เป็นที่อยู่ให้เห็นก่อนยืนยัน — กันวางคีย์ของกระเป๋าผิดใบ
+$env:DEPLOYER_KEY = $plainKey
+try {
+    $deployerAddress = (node -e "const { Wallet } = require('ethers'); console.log(new Wallet(process.env.DEPLOYER_KEY).address)" 2>$null | Select-Object -First 1)
+} finally {
+    $env:DEPLOYER_KEY = $null
+}
+if (-not $deployerAddress) {
+    Say "แปลงคีย์เป็นที่อยู่ไม่ได้ — คีย์นี้ใช้ไม่ได้" Red
+    $plainKey = $null
+    exit 1
+}
+Say "  กระเป๋าที่จะใช้ deploy: $deployerAddress" Cyan
+Say "  ตรวจว่าตรงกับกระเป๋า deploy ของคุณก่อนไปต่อ" DarkGray
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2) ค่าจากเซิร์ฟเวอร์ — ดึงให้เอง ไม่ต้องพิมพ์
