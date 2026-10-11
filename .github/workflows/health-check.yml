@@ -10,8 +10,14 @@ name: TPIX Chain Health Check (4h backup)
 #   - healthchecks.io alert ไม่ส่ง (email โดน spam filter)
 #   - หรือลูกค้าอยากกด manual ผ่าน Actions UI
 #
-# 4 ชม. = 6 รอบ/วัน — เปลือง GH minutes น้อย แต่ก็ยังเห็น chain healthy ผ่าน
-# UI ได้ถี่พอ
+# 2026-10-11 — เปลี่ยนเป็น "ตรวจอย่างเดียว ไม่สั่งรีสตาร์ต" ผ่านอุโมงค์ SSH ส่วนตัว (เจ้าของเลือก)
+#   - ของเดิมใช้กุญแจ tpixadmin (sudo) — บนเครื่องเชนใหม่ไม่เคยมีกุญแจนี้ workflow จึงล้มที่ SSH
+#     ทุกรอบตั้งแต่ย้ายเครื่อง โดยไม่ได้ตรวจอะไรเลย
+#   - ให้ GitHub ถือกุญแจที่ sudo ได้ = secret หลุดเมื่อไรคุมเครื่องเชนได้ทั้งเครื่อง
+#   - ตอนนี้ใช้ผู้ใช้ tpixtunnel: ไม่มี shell, authorized_keys บังคับ restrict + permitopen=127.0.0.1:8545
+#     ทำได้อย่างเดียวคือส่งต่อพอร์ต RPC ของ validator-1 · การรีสตาร์ตเป็นหน้าที่ของ chain-watchdog บนเครื่อง
+#   - Cloudflare บล็อก IP ของเครื่อง GitHub ที่ rpc/rpc1.tpix.online — จึงต้องผ่านอุโมงค์ ไม่ใช่ RPC สาธารณะ
+#   - เชนหยุด/เครื่องดับ/ต่ออุโมงค์ไม่ได้ = workflow ล้ม → GitHub ส่งอีเมลแจ้งเจ้าของ
 on:
   schedule:
     - cron: '0 */4 * * *'  # 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
@@ -20,121 +26,61 @@ on:
 jobs:
   health-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      # ── ด่านกัน automation ล้าสมัยไปสั่งงานเครื่องผิด (เพิ่ม 2026-08-05) ──────────
-      # workflow นี้ SSH เข้า secrets.SSH_HOST ซึ่งเป็นค่าเดี่ยว และสมมติว่า validator
-      # ทุกตัวอยู่ที่ /opt/tpix บนเครื่องนั้น วันที่ย้าย validator
-      # ออกไปคนละ VPS สมมติฐานนี้พัง แต่ workflow จะไม่ error — มันจะไปทำงานกับ
-      # เครื่องเก่าอย่างมั่นใจ ดูรายละเอียดใน infrastructure/TOPOLOGY
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Check chain health via private tunnel (read-only)
+        env:
+          CHAIN_TUNNEL_KEY: ${{ secrets.CHAIN_TUNNEL_KEY }}
+          CHAIN_TUNNEL_KNOWN_HOSTS: ${{ secrets.CHAIN_TUNNEL_KNOWN_HOSTS }}
+          # ที่อยู่เครื่องเชน — ถ้าย้ายเครื่อง ต้องแก้ตรงนี้ + infrastructure/CHAIN_HOST
+          # + secret CHAIN_TUNNEL_KNOWN_HOSTS (host key ใหม่) พร้อมกัน ไม่งั้นต่อไม่ติดแล้วล้มดัง ๆ (ตั้งใจ)
+          CHAIN_TUNNEL_HOST: 123.253.62.252
+        run: |
+          set -u
+          if [ -z "${CHAIN_TUNNEL_KEY:-}" ] || [ -z "${CHAIN_TUNNEL_KNOWN_HOSTS:-}" ]; then
+            echo "::error::ยังไม่ได้ตั้ง secret CHAIN_TUNNEL_KEY / CHAIN_TUNNEL_KNOWN_HOSTS"
+            exit 1
+          fi
+          umask 077
+          KEY="$RUNNER_TEMP/tpix_tunnel"; KH="$RUNNER_TEMP/tpix_known_hosts"
+          printf '%s\n' "$CHAIN_TUNNEL_KEY" > "$KEY"
+          printf '%s\n' "$CHAIN_TUNNEL_KNOWN_HOSTS" > "$KH"
+          # host key ถูกตรึง (StrictHostKeyChecking=yes) — ต่อผิดเครื่อง = ล้ม ไม่ใช่ไปตรวจเครื่องเก่าอย่างมั่นใจ
+          ssh -i "$KEY" -o UserKnownHostsFile="$KH" -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+              -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o BatchMode=yes \
+              -N -L 18545:127.0.0.1:8545 "tpixtunnel@${CHAIN_TUNNEL_HOST}" &
+          TUNNEL_PID=$!
+          trap 'kill $TUNNEL_PID 2>/dev/null || true; rm -f "$KEY" "$KH"' EXIT
 
-      - name: Assert chain topology
-        uses: ./.github/actions/assert-topology
-        with:
-          expects: single-host
+          rpc() {
+            curl -s -m 10 -X POST http://127.0.0.1:18545 -H 'content-type: application/json' \
+              -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":${2:-[]}}"
+          }
+          hexfield() { python3 -c "import sys,json;r=json.load(sys.stdin).get('result');print(int((r if isinstance(r,str) else r['$1']),16))"; }
 
-      - name: Read expected chain host
-        id: chain-host
-        uses: ./.github/actions/chain-host
+          for i in $(seq 1 20); do
+            rpc eth_chainId | grep -q '"0x10c1"' && break
+            sleep 1
+          done
 
-      - name: Check chain health and auto-restart if stalled
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          command_timeout: 3m
-          script: |
-            # ── ด่านเช็คว่า SSH มาโผล่เครื่องถูกตัวไหม (เพิ่ม 2026-08-06) ────────────
-            # ดู infrastructure/CHAIN_HOST — workflow นี้ auto-restart ได้เอง ถ้าไปโดน
-            # เครื่องเก่าจะเท่ากับปลุกเชนเก่าขึ้นมาซ้อน chainId 4289 กับเชนจริง
-            EXPECT_HOST="${{ steps.chain-host.outputs.host }}"
-            if [ "$(hostname)" != "$EXPECT_HOST" ]; then
-              echo "::error::SSH มาโผล่เครื่อง '$(hostname)' แต่เชนอยู่ที่ '$EXPECT_HOST' — หยุดทันที"
-              echo "แก้ secrets.SSH_HOST หรือ infrastructure/CHAIN_HOST ให้ตรงกันก่อน"
-              exit 1
-            fi
+          echo "=== TPIX Health Check — $(date -u) ==="
+          CHAIN_ID=$(rpc eth_chainId | hexfield result 2>/dev/null || echo 0)
+          if [ "$CHAIN_ID" != "4289" ]; then
+            echo "::error::ต่ออุโมงค์/อ่าน RPC ไม่ได้ หรือ chainId ผิด ($CHAIN_ID) — เครื่องเชนอาจดับ"
+            exit 1
+          fi
 
-            echo "=== TPIX Health Check — $(date) ==="
+          B1=$(rpc eth_blockNumber | hexfield result)
+          sleep 10
+          B2=$(rpc eth_blockNumber | hexfield result)
+          DIFF=$((B2 - B1))
+          TS=$(rpc eth_getBlockByNumber '["latest",false]' | hexfield timestamp)
+          AGE=$(( $(date +%s) - TS ))
+          echo "Block: $B1 → $B2 (+$DIFF ใน 10 วิ) · บล็อกล่าสุดอายุ ${AGE}s"
 
-            # Get current block
-            B1=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
-              -H "Content-Type: application/json" \
-              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-              | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
-
-            if [ "$B1" = "0" ]; then
-              echo "⚠️ RPC unavailable — checking containers..."
-              RUNNING=$(sudo docker ps --filter "name=tpix-validator" --format '{{.Names}}' | wc -l)
-              if [ "$RUNNING" -lt 4 ]; then
-                echo "🔴 Only $RUNNING/4 validators running — starting all..."
-                cd "/opt/tpix"
-                sudo docker compose up -d 2>/dev/null || sudo docker compose -f docker-compose.yml up -d 2>/dev/null
-                sleep 15
-              else
-                echo "Containers running but RPC down — restarting..."
-                sudo docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4
-                sleep 15
-              fi
-              B1=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
-                -H "Content-Type: application/json" \
-                -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-                | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
-              echo "After recovery attempt: Block=$B1"
-              exit 0
-            fi
-
-            # Wait and check if blocks are advancing
-            sleep 10
-
-            B2=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
-              -H "Content-Type: application/json" \
-              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-              | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
-
-            DIFF=$((B2 - B1))
-            echo "Block: $B1 → $B2 (diff: $DIFF in 10s)"
-
-            if [ "$DIFF" -le 0 ]; then
-              echo "🔴 CHAIN STALLED — blocks not advancing!"
-              echo ""
-
-              # Check for round escalation (consensus stall indicator)
-              echo "--- Consensus state ---"
-              sudo docker logs --tail 50 tpix-validator-1 2>&1 | grep -iE "round started: round=[^0]|round change" | tail -5
-
-              echo ""
-              echo "🔄 Auto-restarting all validators..."
-              sudo docker restart tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4
-
-              echo "Waiting 20s for consensus..."
-              sleep 20
-
-              B3=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
-                -H "Content-Type: application/json" \
-                -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-                | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
-
-              sleep 6
-
-              B4=$(curl -s -m 10 -X POST http://127.0.0.1:8545 \
-                -H "Content-Type: application/json" \
-                -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-                | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result'],16))" 2>/dev/null || echo "0")
-
-              DIFF2=$((B4 - B3))
-              if [ "$DIFF2" -gt 0 ]; then
-                echo "✅ Chain recovered! Block: $B3 → $B4 (diff: $DIFF2)"
-              else
-                echo "❌ Chain still not producing blocks after restart!"
-                echo "Manual intervention required."
-                sudo docker logs --tail 20 tpix-validator-1 2>&1 | tail -10
-                exit 1
-              fi
-            else
-              echo "✅ Chain healthy — producing ~$((DIFF * 6)) blocks/min"
-            fi
-
-            echo "=== Done ==="
+          if [ "$DIFF" -le 0 ] || [ "$AGE" -gt 60 ]; then
+            echo "::error::🔴 เชนหยุดเดิน — บล็อกไม่ขยับใน 10 วิ หรือบล็อกล่าสุดเก่าเกิน 60 วิ"
+            echo "workflow นี้ไม่สั่งรีสตาร์ต — chain-watchdog บนเครื่องควรกู้เอง ถ้ายังหยุดอยู่ต้องเข้าไปดูด้วยมือ"
+            exit 1
+          fi
+          echo "✅ เชนปกติ — ~$((DIFF * 6)) บล็อก/นาที"
