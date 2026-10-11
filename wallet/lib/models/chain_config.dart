@@ -68,6 +68,13 @@ class ChainConfig {
   /// All available tokens (native + known)
   List<TokenDef> get allTokens => [nativeToken, ...knownTokens];
 
+  /// RPC ทั้งหมดตามลำดับที่ควรลอง: ตัวหลักก่อน แล้วค่อยสำรอง (ไม่ซ้ำ)
+  /// RpcClient ใช้ลิสต์นี้สลับเองเมื่อตัวหลักติดต่อไม่ได้
+  List<String> get rpcUrls => [
+        rpcUrl,
+        ...fallbackRpcs.where((u) => u != rpcUrl),
+      ];
+
   /// Chain logo URL from Trust Wallet CDN
   String? get chainLogoUrl => trustWalletSlug != null
       ? 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/$trustWalletSlug/info/logo.png'
@@ -93,17 +100,34 @@ class ChainConfig {
 
   static final List<ChainConfig> all = [tpix, bsc, polygon, ethereum];
 
+  /// USDT บน TPIX Chain (สัญญาหลัง re-genesis — 6 ทศนิยมเหมือน USDT ตัวจริง)
+  static const tpixUsdtAddress = '0x0A4Ee87551eF041f3EecFBBfdcfFC1B46a4878f1';
+
   // --- TPIX Chain ---
   static const tpix = ChainConfig(
     chainId: 4289,
     name: 'TPIX Chain',
     shortName: 'TPIX',
     symbol: 'TPIX',
+    // ตัวหลักอยู่หลัง Cloudflare ซึ่งบางครั้งบล็อกบางเครื่อง
+    // rpc1 ไม่มีตัวกรอง → ใช้เป็นตัวสำรอง (RpcClient สลับให้เอง)
     rpcUrl: 'https://rpc.tpix.online',
+    fallbackRpcs: ['https://rpc1.tpix.online'],
     explorerUrl: 'https://explorer.tpix.online',
     isGasless: true,
     color: Color(0xFF00D4FF),
-    knownTokens: [],
+    // ค่าเริ่มต้นในตัวแอป (แบบเดียวกับ USDT/USDC ของเชนอื่น) — ใช้เมื่อดึง
+    // รายการเหรียญจริงจาก /api/v1/dex/pairs ไม่ได้ (ดู TokenService.tpixChainTokens)
+    knownTokens: [
+      TokenDef(
+        address: tpixUsdtAddress,
+        name: 'Tether USD',
+        symbol: 'USDT',
+        decimals: 6,
+        logoUrl:
+            'https://assets-cdn.trustwallet.com/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
+      ),
+    ],
   );
 
   // --- BNB Smart Chain ---
