@@ -141,6 +141,9 @@ async function main() {
         throw new Error("eth_getCode คืน 0x — สัญญาไม่ได้ขึ้นเชนจริง");
     }
     console.log("      eth_getCode    :", (code.length - 2) / 2, "ไบต์ ✓");
+    // ค่านี้ต้องตรงกับ hash ที่ตรึงไว้ในแอป (wallet knownRegistryCodeHashes / แอป PC) — ไม่ตรง = แอปจะไม่ยอมเขียนธุรกรรม
+    // (metadata ของ solc รวม hash ของไฟล์ต้นฉบับ: checkout แบบ LF กับ CRLF ได้ค่าไม่เท่ากัน)
+    console.log("      code hash      :", ethers.keccak256(code));
 
     // ── อ่านค่าจากเชนกลับมาโชว์ — ถ้าตรงนี้อ่านไม่ได้ เว็บก็อ่านไม่ได้ ──
     console.log("\n[3/3] ค่าบนเชนหลัง deploy");
