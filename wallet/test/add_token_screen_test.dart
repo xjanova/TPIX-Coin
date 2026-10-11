@@ -225,6 +225,17 @@ void main() {
       expect(find.byIcon(Icons.verified), findsNWidgets(3));
     });
 
+    testWidgets('ช่องที่อยู่ (monospace) มีฟอนต์ไทยสำรอง — hint ภาษาไทยไม่เป็นกล่อง', (tester) async {
+      await _open(tester);
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.decoration!.hintText, l.t('token.inputHint'));
+      expect(field.decoration!.hintStyle!.fontFamilyFallback, contains('Noto Sans Thai'));
+      expect(field.style!.fontFamilyFallback, contains('Noto Sans Thai'));
+      // hint รับฟอนต์ monospace มาจาก style ของช่อง → ฟอนต์สำรองต้องติดไปด้วยหลังรวมสไตล์
+      final hint = tester.widget<Text>(find.text(l.t('token.inputHint')));
+      expect(hint.style?.fontFamilyFallback, contains('Noto Sans Thai'));
+    });
+
     testWidgets('พิมพ์ชื่อ → กรองรายการ (ไม่ขึ้นว่าที่อยู่ผิด)', (tester) async {
       await _open(tester);
       await tester.enterText(find.byType(TextField), 'idt');

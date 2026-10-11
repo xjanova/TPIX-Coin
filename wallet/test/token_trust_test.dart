@@ -206,19 +206,24 @@ void main() {
     });
   });
 
-  group('resolveLogo — ลำดับ: ที่บันทึกไว้ → รายการ → DEX → ในตัวแอป', () {
+  group('resolveLogo — ลำดับ: รายการ (ถ้าอยู่ในรายการ) → ที่บันทึกไว้ → DEX → ในตัวแอป', () {
     const stored = 'https://example.com/stored.png';
     const dex = 'https://tpix.online/dex/logo.png';
 
-    test('1. โลโก้ที่บันทึกกับโทเค็นชนะทุกอย่าง', () {
+    test('1. อยู่ในรายการ → โลโก้จากรายการชนะโลโก้ที่บันทึกไว้ (แอดมินเปลี่ยนโลโก้ได้)', () {
       expect(
         TokenTrustService.resolveLogo(_token(_idtc, logo: stored),
             list: _list, dexLogos: {_idtc: dex}),
-        stored,
+        _idtcLogo,
+      );
+      // USDT: บันทึกโลโก้ Trust Wallet ไว้ตอนเพิ่มอัตโนมัติ → รายการชนะ
+      expect(
+        TokenTrustService.resolveLogo(_token(_usdt, logo: _usdtBuiltInLogo), list: _list),
+        'https://tpix.online/images/tokens/usdt.png',
       );
     });
 
-    test('2. ไม่มีที่บันทึก → รายการที่ยืนยันแล้ว (ตามที่อยู่ ไม่สนตัวพิมพ์)', () {
+    test('ที่อยู่ไม่สนตัวพิมพ์', () {
       expect(
         TokenTrustService.resolveLogo(_token(_idtc.toUpperCase().replaceFirst('0X', '0x')),
             list: _list, dexLogos: {_idtc: dex}),
@@ -226,7 +231,27 @@ void main() {
       );
     });
 
-    test('3. ไม่อยู่ในรายการ → โลโก้จากคู่เทรด DEX', () {
+    test('2. ไม่อยู่ในรายการ → โลโก้ที่บันทึกไว้ชนะ DEX/ค่าในตัวแอป', () {
+      expect(
+        TokenTrustService.resolveLogo(_token(_fake, logo: stored),
+            list: _list, dexLogos: {_fake: dex}),
+        stored,
+      );
+      // รายการล่ม → โทเค็นที่เคยอยู่ในรายการก็ใช้โลโก้ที่บันทึกไว้
+      expect(
+        TokenTrustService.resolveLogo(_token(_idtc, logo: stored), list: null, dexLogos: {_idtc: dex}),
+        stored,
+      );
+    });
+
+    test('อยู่ในรายการแต่รายการไม่มีโลโก้ → ใช้โลโก้ที่บันทึกไว้', () {
+      final noLogo = TokenList(name: 'x', tokens: const [
+        TokenListEntry(chainId: 4289, address: _idtc, name: 'IDTC Token', symbol: 'IDTC', decimals: 18),
+      ]);
+      expect(TokenTrustService.resolveLogo(_token(_idtc, logo: stored), list: noLogo), stored);
+    });
+
+    test('3. ไม่อยู่ในรายการ + ไม่มีที่บันทึก → โลโก้จากคู่เทรด DEX', () {
       expect(
         TokenTrustService.resolveLogo(_token(_idtc), list: null, dexLogos: {_idtc: dex}),
         dex,
@@ -239,8 +264,8 @@ void main() {
 
     test('ข้ามลิงก์ที่ไม่ใช่ https (ข้อมูลเก่าในฐานข้อมูล)', () {
       expect(
-        TokenTrustService.resolveLogo(_token(_idtc, logo: 'http://insecure/logo.png'), list: _list),
-        _idtcLogo,
+        TokenTrustService.resolveLogo(_token(_usdt, logo: 'http://insecure/logo.png')),
+        _usdtBuiltInLogo,
       );
     });
 

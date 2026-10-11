@@ -39,6 +39,17 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   /// แสดงในรายการได้ไม่เกินนี้ — ที่เหลือพิมพ์ค้นหาเอา
   static const _pickerLimit = 30;
 
+  /// ช่องที่อยู่ใช้ฟอนต์ monospace ซึ่งบางเครื่องไม่มีอักษรไทย → ระบุฟอนต์ไทยสำรองเอง
+  /// (Android: Noto Sans Thai · iOS: Thonburi · Windows: Leelawadee UI/Tahoma)
+  /// ไม่งั้น hint "หรือชื่อโทเค็น" และชื่อไทยที่พิมพ์ค้นหาอาจกลายเป็นกล่องสี่เหลี่ยม
+  static const thaiFontFallback = [
+    'Noto Sans Thai',
+    'Thonburi',
+    'Leelawadee UI',
+    'Tahoma',
+    'sans-serif',
+  ];
+
   final _controller = TextEditingController();
   bool _isLoading = false;
   bool _isAdding = false;
@@ -397,10 +408,18 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                           Expanded(
                             child: TextField(
                               controller: _controller,
-                              style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'monospace'),
+                              style: TextStyle(
+                                color: c.text,
+                                fontSize: 14,
+                                fontFamily: 'monospace',
+                                fontFamilyFallback: thaiFontFallback,
+                              ),
                               decoration: InputDecoration(
                                 hintText: l.t('token.inputHint'),
-                                hintStyle: TextStyle(color: c.textMuted),
+                                hintStyle: TextStyle(
+                                  color: c.textMuted,
+                                  fontFamilyFallback: thaiFontFallback,
+                                ),
                                 filled: true,
                                 fillColor: c.glassColor,
                                 border: OutlineInputBorder(

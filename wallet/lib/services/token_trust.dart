@@ -190,8 +190,12 @@ class TokenTrustService {
   // โลโก้
   // ================================================================
 
-  /// โลโก้ของโทเค็น ตามลำดับ: ที่บันทึกไว้กับโทเค็น → รายการที่ยืนยันแล้ว →
-  /// คู่เทรด DEX → ค่าในตัวแอป (+ Trust Wallet CDN ของเชนอื่น) · https เท่านั้น
+  /// โลโก้ของโทเค็น ตามลำดับ (https เท่านั้น):
+  /// 1. อยู่ในรายการที่ยืนยันแล้ว → โลโก้จากรายการ (แอดมินเปลี่ยนโลโก้ = ทุกกระเป๋าเห็นทันที
+  ///    แม้จะบันทึกลิงก์เก่าไว้กับโทเค็นตอนเพิ่ม)
+  /// 2. โลโก้ที่บันทึกไว้กับโทเค็น
+  /// 3. คู่เทรด DEX
+  /// 4. ค่าในตัวแอป (+ Trust Wallet CDN ของเชนอื่น)
   static String? resolveLogo(
     TokenInfo token, {
     TokenList? list,
@@ -200,8 +204,8 @@ class TokenTrustService {
     final key = token.contractAddress.toLowerCase();
     final onTpix = token.chainId == _tpixChainId;
     for (final url in [
-      token.logoUrl,
       if (onTpix) list?.byAddress(key)?.logoUri,
+      token.logoUrl,
       if (onTpix) dexLogos[key],
       ..._builtInLogos(token.chainId, key),
     ]) {

@@ -149,7 +149,7 @@ class WalletProvider extends ChangeNotifier {
   /// รายการโทเค็นที่ยืนยันแล้วของ TPIX Chain (null = ยังไม่มี/ดึงไม่ได้)
   TokenList? get tokenList => TokenListService.current;
 
-  /// โลโก้ของโทเค็น: ที่บันทึกไว้ → รายการที่ยืนยันแล้ว → TPIX DEX → ค่าในตัวแอป
+  /// โลโก้ของโทเค็น: รายการที่ยืนยันแล้ว (ถ้าอยู่ในรายการ) → ที่บันทึกไว้ → TPIX DEX → ค่าในตัวแอป
   String? tokenLogo(TokenInfo token) => TokenTrustService.resolveLogo(
         token,
         list: TokenListService.current,

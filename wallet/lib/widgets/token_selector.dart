@@ -329,13 +329,14 @@ class _TokenLogo extends StatelessWidget {
     }
 
     // Determine logo URL
-    String? logoUrl = token.logoUrl;
+    // TPIX Chain: อยู่ในรายการที่ยืนยันแล้ว → โลโก้จากรายการชนะ (แอดมินเปลี่ยนได้)
+    String? logoUrl;
+    if (!token.isNative && chain.chainId == TokenListService.chainId) {
+      logoUrl = TokenListService.current?.byAddress(token.address)?.logoUri;
+    }
+    logoUrl ??= token.logoUrl;
     if (logoUrl == null && token.isNative) {
       logoUrl = chain.chainLogoUrl;
-    }
-    // TPIX Chain: โลโก้จากรายการโทเค็นที่ยืนยันแล้ว (ไม่มีใน Trust Wallet CDN)
-    if (logoUrl == null && !token.isNative && chain.chainId == TokenListService.chainId) {
-      logoUrl = TokenListService.current?.byAddress(token.address)?.logoUri;
     }
     if (logoUrl == null && !token.isNative) {
       logoUrl = chain.tokenLogoUrl(token.address);
