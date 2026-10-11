@@ -29,7 +29,9 @@ const REGISTRY_ABI = [
  * แล้วคืนสถานะพูล + อัตราจ่ายรางวัลต่อปีตอนนี้ (ใช้คำนวณว่าเงินที่เติมพอกี่วัน)
  */
 async function inspectRegistry(provider, address, expectedChainId = 4289) {
-    const chainId = Number((await provider.getNetwork()).chainId);
+    // ถาม eth_chainId จาก RPC ตรง ๆ — fund-reward-pool.js ใช้ staticNetwork ซึ่งทำให้
+    // getNetwork() ตอบเลขที่เราตั้งเองโดยไม่ถาม RPC เลย (ด่านนี้จะผ่านเสมอ)
+    const chainId = Number(BigInt(await provider.send("eth_chainId", [])));
     if (chainId !== expectedChainId) {
         throw new Error(`RPC ตอบ chainId ${chainId} ไม่ใช่ ${expectedChainId}`);
     }

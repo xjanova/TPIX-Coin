@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, network } = require("hardhat");
 const { loadFixture, setBalance } = require("@nomicfoundation/hardhat-network-helpers");
 const { inspectRegistry, runwayDays, fundPool } = require("../scripts/lib/reward-pool");
 
@@ -76,6 +76,16 @@ describe("fund-reward-pool script helpers", function () {
         await v1.waitForDeployment();
         await expect(inspectRegistry(ethers.provider, await v1.getAddress(), 4289))
             .to.be.rejectedWith(/ไม่มี tierAprCapBps/);
+    });
+
+    it("เชนผิดต้องถูกจับแม้ provider ตั้ง staticNetwork (แบบที่ fund-reward-pool.js ใช้)", async function () {
+        const { address } = await loadFixture(fixture);
+        // fund-reward-pool.js สร้าง JsonRpcProvider(url, 4289, { staticNetwork: true })
+        // → getNetwork() ตอบเลขที่เราบอกมันเองโดยไม่ถาม RPC เลย
+        // จำลอง: provider อ้างว่าเป็น 56 แต่ RPC ข้างหลังคือเชน 4289 ของ hardhat
+        const claims56 = new ethers.BrowserProvider(network.provider, 56, { staticNetwork: true });
+        expect((await claims56.getNetwork()).chainId).to.equal(56n);
+        await expect(inspectRegistry(claims56, address, 56)).to.be.rejectedWith(/chainId 4289 ไม่ใช่ 56/);
     });
 
     it("จำนวน 0 ไม่ได้", async function () {
