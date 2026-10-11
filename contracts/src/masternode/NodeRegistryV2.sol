@@ -57,7 +57,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *  set uptime (multiplier on future rewards), slash a node (capped at the slash %
  *  in force when that node registered; slashed TPIX stays in the contract as
  *  reward budget), change tier terms for future registrations (min stake only
- *  while the tier has no active nodes), set APR caps
+ *  while the tier has no active nodes; lock <= 365 days), set APR caps
  *  (<= 50%) and the KYC contract.
  * ─────────────────────────────────────────────────────────────────────────
  */
@@ -726,6 +726,9 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     ) external onlyOwner {
         require(_slashPercent <= 5000, "Max 50% slash");
         require(_minStake > 0, "Min stake must be > 0");
+        // ผู้สมัครกำหนด "ล็อกได้ไม่เกิน" เองไม่ได้ และ owner รัน validator เองจึงแทรก tx ก่อนได้
+        // → ไม่มีเพดาน = ขังเงินต้นคนสมัครใหม่ได้เป็นร้อยปี
+        require(_lockDays <= 365, "Max 365-day lock");
 
         // Reward shares are about to change — settle every tier at the old split
         _syncAllTiers();

@@ -631,6 +631,32 @@ describe("NodeRegistryV2", function () {
         });
     });
 
+    describe("audit 2026-10c: owner ตั้งระยะล็อกยาวไม่จำกัดไม่ได้", function () {
+        const DAY = 24 * 60 * 60;
+
+        it("owner (ซึ่งรัน validator เอง) แทรก lockDays 100 ปีก่อน tx สมัคร → เงินต้นต้องไม่ถูกขังเกิน 365 วัน", async function () {
+            const { registry, owner, alice } = await loadFixture(deployFixture);
+
+            // ผู้ใช้เห็น Light ล็อก 7 วันแล้วกดสมัคร — owner/validator แทรก tx ก่อนในบล็อกเดียวกันได้
+            // registerNode ไม่มีพารามิเตอร์ "ล็อกได้ไม่เกิน" ให้ผู้ใช้กันเอง → ต้องมีเพดานในสัญญา
+            await registry.connect(owner)
+                .updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 36500, 0, 1500)
+                .catch(() => {});
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+
+            const n = await registry.getNodeInfo(alice.address);
+            expect(n.unlockAt - n.registeredAt).to.be.lte(365n * BigInt(DAY));
+        });
+
+        it("lockDays เกิน 365 → revert · 365 พอดีได้", async function () {
+            const { registry, owner } = await loadFixture(deployFixture);
+            await expect(registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 366, 0, 1500))
+                .to.be.revertedWith("Max 365-day lock");
+            await expect(registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 365, 0, 1500))
+                .to.emit(registry, "TierConfigUpdated").withArgs(TIER.LIGHT);
+        });
+    });
+
     // ────────────────────────────────────────────────────────────
     //  7. ปีของ emission
     // ────────────────────────────────────────────────────────────
