@@ -5,6 +5,7 @@
 ///   2. ที่อยู่สัญญาต้องเป็น bytecode ที่แอปตรึงไว้บนเชน 4289 (ตรวจใน MasterNodeService.discover
 ///      และตรวจซ้ำก่อนเขียนทุกครั้ง) — ไม่รู้จัก = ให้อัปเดตแอป, ถามเชนไม่ได้ = ไม่ส่ง
 ///   3. ปุ่มที่ใช้ไม่ได้ต้องบอกเหตุผล (ปิดรับ/เต็ม/ล็อกอยู่/กองรางวัลว่าง/ยอดไม่พอ)
+///      กองรางวัลว่าง = ไม่โชว์ APR เหมือนจะได้จ่ายแน่ บอกตรงๆ ว่ากองยังไม่มีเงิน
 ///   4. กล่องยืนยันโชว์ระดับ จำนวนเต็มทุกหลัก วันล็อก ที่อยู่สัญญา → แล้วค่อยถาม PIN
 ///   5. ยกเลิกที่ PIN = ไม่ส่งอะไรเลย / สลับกระเป๋าระหว่างทาง = ยกเลิก
 ///   6. eth_estimateGas ก่อนเซ็น = ด่านสุดท้าย ถ้าสัญญาจะ revert ผู้ใช้เห็นเหตุผลแทนการเสียธุรกรรม
@@ -265,6 +266,7 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
             info: info,
             registry: snap.registry,
             fromLabel: _fromLabel(wallet, snap.owner),
+            poolFunded: snap.poolFunded,
           ),
         );
         if (endpoint == null || !mounted) return;
@@ -633,6 +635,11 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
                 _banner(l.t('mn.block.paused'), AppTheme.warm, Icons.pause_circle_outline),
                 const SizedBox(height: TpixGap.md),
               ],
+              // กองว่าง = ยังไม่มีรางวัลจ่ายจริง — บอกก่อนผู้ใช้ตัดสินใจสเตค
+              if (!snap.poolFunded) ...[
+                _banner(l.t('mn.poolUnfunded'), AppTheme.warm, Icons.savings_outlined),
+                const SizedBox(height: TpixGap.md),
+              ],
               if (snap.hasNodeCard) ...[
                 _myNodeCard(snap, l),
                 const SizedBox(height: TpixGap.xl),
@@ -934,6 +941,7 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
         : '${info.activeNodes} / ${info.maxNodes}';
     // มีโหนดอยู่แล้ว: ไม่ต้องย้ำเหตุผลซ้ำทุกการ์ด — การ์ดโหนดของฉันอยู่ด้านบนแล้ว
     final showButton = block != MnBlock.hasNode;
+    final apr = snap.aprCapToShow(info.tier);
     return Container(
       padding: const EdgeInsets.all(TpixGap.lg),
       decoration: adaptiveGlassCard(context, borderRadius: TpixRadius.md),
@@ -946,10 +954,15 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
                 child: Text(info.tier.label,
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text)),
               ),
-              if (info.aprCapBps != null)
-                Text('${l.t('mn.aprCap')} ${MasterNodeService.formatBps(info.aprCapBps!)}',
+              // กองว่าง: เพดาน APR ไม่มีความหมาย (จ่ายจริง 0) — โชว์สถานะกองแทน
+              if (apr != null)
+                Text('${l.t('mn.aprCap')} ${MasterNodeService.formatBps(apr)}',
                     style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.success)),
+                        fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.success))
+              else if (!snap.poolFunded)
+                Text(l.t('mn.poolUnfundedBadge'),
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.warm)),
             ],
           ),
           const SizedBox(height: TpixGap.sm),
@@ -1014,10 +1027,14 @@ class _StakeSheet extends StatefulWidget {
   final String registry;
   final String fromLabel;
 
+  /// กองรางวัลมีเงินไหม — ไม่มี = เตือนว่าสเตคตอนนี้ยังไม่ได้รางวัลจริง
+  final bool poolFunded;
+
   const _StakeSheet({
     required this.info,
     required this.registry,
     required this.fromLabel,
+    required this.poolFunded,
   });
 
   @override
@@ -1111,6 +1128,7 @@ class _StakeSheetState extends State<_StakeSheet> {
           value: l.t('send.gasFreeVal'),
           valueColor: AppTheme.success,
         ),
+        if (!widget.poolFunded) _Note(text: l.t('mn.stakePoolEmptyNote'), color: c.brandWarm),
         _Note(text: l.t('mn.lockWarn').replaceAll('{n}', '$lockDays'), color: c.brandWarm),
         if (info.slashPercentBps > BigInt.zero)
           _Note(

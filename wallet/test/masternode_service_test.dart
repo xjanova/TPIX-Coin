@@ -97,6 +97,7 @@ MnTierInfo _tier(
   int maxNodes = 100,
   int active = 0,
   int lockDays = 30,
+  int? aprCapBps,
 }) =>
     MnTierInfo(
       tier: tier,
@@ -106,6 +107,7 @@ MnTierInfo _tier(
       lockDays: BigInt.from(lockDays),
       slashPercentBps: BigInt.from(1000),
       rewardShareBps: BigInt.from(2500),
+      aprCapBps: aprCapBps,
     );
 
 MnNodeInfo _node({
@@ -134,6 +136,7 @@ MnSnapshot _snap({
   bool paused = false,
   BigInt? pending,
   BigInt? claimable,
+  BigInt? funds,
 }) =>
     MnSnapshot(
       registry: '0x00000000000000000000000000000000000000aa',
@@ -149,7 +152,7 @@ MnSnapshot _snap({
       node: node ?? _node(),
       pendingReward: pending ?? BigInt.zero,
       claimableNow: claimable ?? BigInt.zero,
-      availableFunds: BigInt.zero,
+      availableFunds: funds ?? BigInt.zero,
     );
 
 // ── RPC ปลอม ──
@@ -450,6 +453,40 @@ void main() {
     });
   });
 
+  group('กองรางวัลว่าง — ห้ามโชว์ APR เหมือนจะได้จ่าย', () {
+    List<MnTierInfo> withApr() => [
+          _tier(MnTier.guardian, minStake: _t(100000), aprCapBps: 1200),
+          _tier(MnTier.sentinel, minStake: _t(10000), aprCapBps: 900),
+          _tier(MnTier.light, minStake: _t(1000), aprCapBps: 600),
+          _tier(MnTier.validator, minStake: _t(1000000), aprCapBps: 2000),
+        ];
+
+    test('กองว่าง (0) → ไม่มี APR ให้โชว์ทุกระดับ แต่ขั้นต่ำ/ระยะล็อกยังอยู่', () {
+      final s = _snap(tiers: withApr(), funds: BigInt.zero);
+      expect(s.poolFunded, isFalse);
+      for (final t in MnTier.values) {
+        expect(s.aprCapToShow(t), isNull, reason: t.label);
+      }
+      expect(s.tierInfo(MnTier.light).minStake, _t(1000));
+      expect(s.tierInfo(MnTier.light).lockDays, BigInt.from(30));
+      // สเตคได้ตามปกติ — แค่ต้องรู้ว่ายังไม่มีรางวัลจ่ายจริง
+      expect(s.registerBlock(MnTier.light, _t(200000)), isNull);
+    });
+
+    test('กองมีเงิน (แม้ 1 wei) → โชว์เพดาน APR ของระดับนั้น', () {
+      final s = _snap(tiers: withApr(), funds: BigInt.one);
+      expect(s.poolFunded, isTrue);
+      expect(s.aprCapToShow(MnTier.guardian), 1200);
+      expect(s.aprCapToShow(MnTier.light), 600);
+    });
+
+    test('สัญญาไม่มีเพดาน APR → ไม่โชว์ แม้กองมีเงิน', () {
+      final s = _snap(funds: _t(1000));
+      expect(s.poolFunded, isTrue);
+      expect(s.aprCapToShow(MnTier.light), isNull);
+    });
+  });
+
   group('ตรวจ endpoint', () {
     final cases = <String, MnEndpointError?>{
       '203.0.113.10:8545': null,
@@ -741,6 +778,9 @@ void main() {
       expect(s.node.status, MnStatus.active);
       expect(s.pendingReward, _t(3));
       expect(s.claimBlock(), MnBlock.poolEmpty);
+      // availableRewardFunds = 0 → สัญญามีเพดาน 12% แต่ห้ามโชว์
+      expect(s.poolFunded, isFalse);
+      expect(s.aprCapToShow(MnTier.light), isNull);
     });
 
     test('สัญญารุ่นเก่า (ไม่มี registrationPaused/tierAprCapBps) → ใช้ค่าจากเว็บ ไม่พังทั้งหน้า',

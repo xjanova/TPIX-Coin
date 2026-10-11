@@ -289,6 +289,14 @@ class MnSnapshot {
 
   MnTierInfo tierInfo(MnTier tier) => tiers[tier.id];
 
+  /// กองรางวัลมีเงินจ่ายจริงไหม (availableRewardFunds > 0)
+  /// false = ห้ามโชว์ APR/รายได้เหมือนจะได้จ่ายแน่ — สัญญาจ่ายจากเงินที่ฝากเข้ากองจริงเท่านั้น
+  /// (โหลดค่านี้ไม่ได้ = loadSnapshot ล้มทั้งก้อน จึงไม่มีกรณี "ไม่รู้" บนจอ)
+  bool get poolFunded => availableFunds > BigInt.zero;
+
+  /// เพดาน APR ที่การ์ดระดับโชว์ได้ — null = ไม่โชว์ (กองยังว่าง หรือสัญญาไม่มีค่านี้)
+  int? aprCapToShow(MnTier tier) => poolFunded ? tierInfo(tier).aprCapBps : null;
+
   /// มีอะไรให้โชว์ในการ์ด "โหนดของฉัน" (มีโหนด หรือมีรางวัลค้างให้รับ)
   bool get hasNodeCard =>
       node.status != MnStatus.inactive || pendingReward > BigInt.zero;
