@@ -6,7 +6,10 @@
 ///   ไฟล์เดียวกับ https://tpix.online/images/brand/tpix-coin.png (512px, ~93KB)
 library;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
+import '../services/token_logo_cache.dart';
 
 class TpixCoinLogo extends StatelessWidget {
   static const asset = 'assets/images/tpix_coin.png';
@@ -32,7 +35,8 @@ class TpixCoinLogo extends StatelessWidget {
   }
 }
 
-/// โลโก้โทเค็นจาก URL — โหลดไม่ได้/ไม่มี URL → วงกลมตัวอักษรแรกของสัญลักษณ์
+/// โลโก้โทเค็นจาก URL (แคชลงดิสก์) — ระหว่างโหลด/โหลดไม่ได้/ไม่มี URL
+/// → วงกลมตัวอักษรแรกของสัญลักษณ์บนสีแบรนด์ ขนาดเท่ากันทุกสถานะ (ไม่มีกระตุก)
 class TokenAvatar extends StatelessWidget {
   final String symbol;
   final String? logoUrl;
@@ -46,6 +50,13 @@ class TokenAvatar extends StatelessWidget {
     required this.color,
     this.logoUrl,
   });
+
+  /// ที่มาของรูป — เทสต์เปลี่ยนได้ (ไม่แตะดิสก์/ปลั๊กอิน)
+  @visibleForTesting
+  static ImageProvider Function(String url) imageProviderFor = _cachedProvider;
+
+  static ImageProvider _cachedProvider(String url) =>
+      CachedNetworkImageProvider(url, cacheManager: TokenLogoCache.instance);
 
   @override
   Widget build(BuildContext context) {
@@ -68,16 +79,22 @@ class TokenAvatar extends StatelessWidget {
     );
     final url = logoUrl;
     if (url == null || !url.startsWith('https://')) return fallback;
+    // ถอดรหัสตามขนาดที่วาดจริง (size x 3 dpr) ไม่ใช่ขนาดเต็มไฟล์
     final px = (size * 3).round();
-    return ClipOval(
-      child: Image.network(
-        url,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        cacheWidth: px,
-        cacheHeight: px,
-        errorBuilder: (_, _, _) => fallback,
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipOval(
+        child: Image(
+          image: ResizeImage(imageProviderFor(url), width: px, height: px),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          // ยังโหลดไม่เสร็จ → โชว์ตัวอักษรไปก่อน (ขนาดเท่ากัน)
+          frameBuilder: (_, child, frame, sync) =>
+              sync || frame != null ? child : fallback,
+          errorBuilder: (_, _, _) => fallback,
+        ),
       ),
     );
   }

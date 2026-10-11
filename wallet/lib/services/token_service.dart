@@ -10,6 +10,7 @@ import '../models/token_info.dart';
 import '../utils/units.dart';
 import 'db_service.dart';
 import 'rpc_client.dart';
+import 'token_list_service.dart';
 
 /// ผลการดึงยอดโทเค็นหลายตัว — แยก "ดึงได้" กับ "ดึงไม่ได้" ออกจากกัน
 /// ตัวที่ดึงไม่ได้ต้องคงยอดเดิมไว้ (ห้ามกลายเป็น 0)
@@ -67,8 +68,10 @@ class TokenService {
       call(_decimalsSelector),
     ]);
 
-    final name = _decodeString(results[0]);
-    final symbol = _decodeString(results[1]);
+    // ชื่อ/สัญลักษณ์บนสัญญาใครก็ตั้งได้ — ตัดอักขระซ่อน/สลับทิศ และความยาวผิดปกติ
+    // (ยังเป็นค่าจากสัญญา แค่แสดงผลได้อย่างปลอดภัย)
+    final name = TokenListService.sanitizeOnChainText(_decodeString(results[0]), 64);
+    final symbol = TokenListService.sanitizeOnChainText(_decodeString(results[1]), 32);
     final decimals = _decodeUint(results[2]);
 
     if (name == null || symbol == null) return null;

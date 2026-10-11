@@ -38,6 +38,9 @@ dependencies:
   flutter_animate: ^4.5.2
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.0.2
+  # โลโก้โทเค็น: แคชลงดิสก์ เปิดแอปออฟไลน์ก็ยังเห็นโลโก้ ไม่โหลดซ้ำทุกครั้ง
+  cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
 
   # Database
   sqflite: ^2.4.2

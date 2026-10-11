@@ -3,6 +3,7 @@ import '../core/themes/tokens.dart';
 import '../core/theme.dart';
 import '../models/chain_config.dart';
 import '../services/swap_service.dart';
+import '../services/token_list_service.dart';
 import 'tpix_coin_logo.dart';
 
 /// Bottom sheet for selecting a token from the active chain
@@ -332,46 +333,20 @@ class _TokenLogo extends StatelessWidget {
     if (logoUrl == null && token.isNative) {
       logoUrl = chain.chainLogoUrl;
     }
+    // TPIX Chain: โลโก้จากรายการโทเค็นที่ยืนยันแล้ว (ไม่มีใน Trust Wallet CDN)
+    if (logoUrl == null && !token.isNative && chain.chainId == TokenListService.chainId) {
+      logoUrl = TokenListService.current?.byAddress(token.address)?.logoUri;
+    }
     if (logoUrl == null && !token.isNative) {
       logoUrl = chain.tokenLogoUrl(token.address);
     }
 
-    if (logoUrl != null) {
-      return ClipOval(
-        child: Image.network(
-          logoUrl,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _fallbackIcon(),
-          loadingBuilder: (_, child, progress) {
-            if (progress == null) return child;
-            return _fallbackIcon();
-          },
-        ),
-      );
-    }
-
-    return _fallbackIcon();
-  }
-
-  Widget _fallbackIcon() {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: chain.color.withValues(alpha: 0.15),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        token.symbol.isNotEmpty ? token.symbol[0] : '?',
-        style: TextStyle(
-          fontSize: size * 0.4,
-          fontWeight: FontWeight.w700,
-          color: chain.color,
-        ),
-      ),
+    // แคชลงดิสก์ + ตัวอักษรแรกระหว่างโหลด/โหลดไม่ได้ (ตัวเดียวกับหน้าโฮม)
+    return TokenAvatar(
+      symbol: token.symbol,
+      logoUrl: logoUrl,
+      size: size,
+      color: chain.color,
     );
   }
 }

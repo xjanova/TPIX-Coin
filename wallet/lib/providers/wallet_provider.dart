@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import '../models/chain_config.dart';
 import '../models/wallet_info.dart';
 import '../models/token_info.dart';
+import '../models/token_list.dart';
 import '../models/tx_record.dart';
 import '../services/biometric_service.dart';
 import '../services/db_service.dart';
 import '../services/price_service.dart';
 import '../services/rpc_client.dart';
 import '../services/swap_service.dart';
+import '../services/token_list_service.dart';
 import '../services/token_service.dart';
+import '../services/token_trust.dart';
 import '../services/wallet_auth_service.dart';
 import '../services/wallet_service.dart';
 import '../utils/units.dart';
@@ -143,9 +146,19 @@ class WalletProvider extends ChangeNotifier {
   bool isTokenBalanceStale(String contractAddress) =>
       _staleTokenBalances.contains(contractAddress.toLowerCase());
 
-  /// โลโก้ของโทเค็น: ที่บันทึกไว้ก่อน ไม่มีก็ใช้ของ TPIX DEX
-  String? tokenLogo(TokenInfo token) =>
-      token.logoUrl ?? _defaultTokenLogos[token.contractAddress.toLowerCase()];
+  /// รายการโทเค็นที่ยืนยันแล้วของ TPIX Chain (null = ยังไม่มี/ดึงไม่ได้)
+  TokenList? get tokenList => TokenListService.current;
+
+  /// โลโก้ของโทเค็น: ที่บันทึกไว้ → รายการที่ยืนยันแล้ว → TPIX DEX → ค่าในตัวแอป
+  String? tokenLogo(TokenInfo token) => TokenTrustService.resolveLogo(
+        token,
+        list: TokenListService.current,
+        dexLogos: _defaultTokenLogos,
+      );
+
+  /// ยืนยันแล้ว / ไม่ยืนยัน / ชื่อเลียนแบบตัวที่ยืนยันแล้ว (ใช้ติดป้าย)
+  TokenTrust tokenTrust(TokenInfo token) =>
+      TokenTrustService.trustOf(token, TokenListService.current);
 
   // Chain getters
   int get activeChainId => _activeChainId;
@@ -662,6 +675,16 @@ class WalletProvider extends ChangeNotifier {
     // งานที่ต้องรอเน็ต ทำเบื้องหลัง — ไม่ให้รายการโทเค็นรอ API
     unawaited(refreshTokenBalances());
     unawaited(_syncTokensInBackground(slot));
+    unawaited(refreshTokenList());
+  }
+
+  /// โหลดรายการโทเค็นที่ยืนยันแล้ว (แคชในเครื่องก่อน เก่าเกิน 6 ชม.ค่อยดึงใหม่)
+  /// — ได้ชุดใหม่ก็วาดโลโก้/ป้ายใหม่ · ไม่ผูกกับกระเป๋าใบไหน · ไม่ throw
+  Future<void> refreshTokenList({bool force = false}) async {
+    final before = TokenListService.current;
+    final after = await TokenListService.load(forceRefresh: force);
+    if (_disposed || identical(before, after)) return;
+    notifyListeners();
   }
 
   Future<void> _syncTokensInBackground(int slot) async {
