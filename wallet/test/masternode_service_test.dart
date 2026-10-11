@@ -721,6 +721,67 @@ void main() {
     });
   });
 
+  group('กันโอนเข้าสัญญาสเตคตรงๆ (หน้าโอน)', () {
+    const live = '0x9c3662972921705FeFa9E9bF0d91190d7B514A2B';
+
+    RpcClient countingChain(List<int> calls, http.Response Function() respond) => RpcClient(
+          ['https://rpc.test'],
+          timeout: const Duration(seconds: 2),
+          httpClient: MockClient((_) async {
+            calls.add(1);
+            return respond();
+          }),
+        );
+
+    test('ที่อยู่ที่ deploy จริง — ตัวพิมพ์ไหนก็จับได้ ไม่ต้องยิงเน็ต', () async {
+      final calls = <int>[];
+      RpcClient.overrideForChain(4289, countingChain(calls, () => _rpcOk('0x')));
+      expect(MasterNodeService.isKnownRegistryAddress(live), isTrue);
+      expect(MasterNodeService.isKnownRegistryAddress(live.toLowerCase()), isTrue);
+      expect(MasterNodeService.isKnownRegistryAddress(' ${live.toUpperCase().replaceFirst('0X', '0x')} '),
+          isTrue);
+      expect(await MasterNodeService.isRegistryRecipient(live), isTrue);
+      expect(calls, isEmpty);
+    });
+
+    test('ที่อยู่ที่ discover ตรวจผ่านในรอบนี้ → นับเป็นสัญญาสเตคด้วย', () async {
+      const other = '0x00000000000000000000000000000000000000aa';
+      expect(MasterNodeService.isKnownRegistryAddress(other), isFalse);
+      MasterNodeService.clientFactory = () => _configClient(200, _config(address: other));
+      RpcClient.overrideForChain(4289, _fakeChain());
+      expect((await MasterNodeService.discover()).availability, MnAvailability.ready);
+      expect(MasterNodeService.isKnownRegistryAddress(other), isTrue);
+    });
+
+    test('ที่อยู่ไม่รู้จักแต่โค้ดเป็น NodeRegistryV2 (redeploy) → บล็อก', () async {
+      RpcClient.overrideForChain(4289, _fakeChain());
+      expect(await MasterNodeService.isRegistryRecipient(_operator), isTrue);
+    });
+
+    test('กระเป๋าธรรมดา / สัญญาอื่น / เน็ตล่ม → ไม่บล็อก', () async {
+      // polygon-edge: กระเป๋าที่มียอดตอบ error แทน "0x"
+      RpcClient.overrideForChain(
+        4289,
+        countingChain(
+            [],
+            () => http.Response(
+                jsonEncode({
+                  'jsonrpc': '2.0',
+                  'id': 1,
+                  'error': {'code': -32600, 'message': 'unable to fetch code'},
+                }),
+                200)),
+      );
+      expect(await MasterNodeService.isRegistryRecipient(_operator), isFalse);
+      RpcClient.overrideForChain(4289, _fakeChain(code: '0x'));
+      expect(await MasterNodeService.isRegistryRecipient(_operator), isFalse);
+      RpcClient.overrideForChain(4289, _fakeChain(code: _otherCode));
+      expect(await MasterNodeService.isRegistryRecipient(_operator), isFalse);
+      RpcClient.overrideForChain(4289, _fakeChain(unreachable: true));
+      expect(await MasterNodeService.isRegistryRecipient(_operator), isFalse);
+    });
+  });
+
   group('ค้นหาสัญญา (discover)', () {
     test('เว็บยังไม่มี endpoint (404) → ยังไม่เปิด', () async {
       MasterNodeService.clientFactory = () => _configClient(404, '<html>Not Found</html>');

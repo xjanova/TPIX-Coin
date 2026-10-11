@@ -11,6 +11,7 @@ import '../models/contact.dart';
 import '../models/token_info.dart';
 import '../providers/wallet_provider.dart';
 import '../widgets/tx_auth.dart';
+import '../services/masternode_service.dart';
 import '../services/rpc_client.dart';
 import '../services/synth_service.dart';
 import '../services/db_service.dart';
@@ -239,6 +240,15 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       _showError(l.t('send.invalidAddress'));
       return;
     }
+
+    // ปลายทางเป็นสัญญาสเตคมาสเตอร์โหนด = โอนเข้าตรงๆ ไม่ใช่การสเตค
+    // TPIX จะถูก receive() นับเป็นเงินบริจาคเข้ากองรางวัล ขอคืนไม่ได้ (โทเค็นก็ติดถาวร)
+    // → หยุดตั้งแต่ก่อนถาม PIN แล้วชี้ไปหน้ามาสเตอร์โหนด
+    if (await MasterNodeService.isRegistryRecipient(address)) {
+      if (mounted) _showError(l.t('send.errRegistry'));
+      return;
+    }
+    if (!mounted) return;
 
     // เหรียญที่เลือกต้องยังอยู่ (เช่นสลับกระเป๋าแล้วกระเป๋าใหม่ไม่มีโทเค็นนี้)
     final token = _selectedTokenInfo(wallet);

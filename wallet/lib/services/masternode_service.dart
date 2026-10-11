@@ -465,6 +465,44 @@ class MasterNodeService {
     _verifiedRegistries.add(key);
   }
 
+  // ================================================================
+  // กันโอนเข้าสัญญาสเตคตรงๆ (หน้าโอน)
+  // ================================================================
+  //
+  // NodeRegistryV2.receive() นับ TPIX ที่โอนเข้าเฉยๆ เป็นเงินบริจาคเข้ากองรางวัล
+  // (totalRewardFunded += msg.value) — ไม่ใช่การสเตค และไม่มีฟังก์ชันขอคืน
+  // โทเค็น ERC-20 ที่โอนเข้าก็ติดอยู่ถาวร (สัญญาไม่มีทางส่งโทเค็นออก)
+  // แอป Master Node บนเดสก์ท็อปบล็อกแบบเดียวกัน (wallet:sendTransaction)
+
+  /// ที่อยู่สัญญาสเตคที่ deploy แล้ว (ตัวเล็ก) — กันได้แม้ยังไม่เคยเปิดหน้ามาสเตอร์โหนดในรอบนี้
+  static const knownRegistryAddresses = <String>{
+    '0x9c3662972921705fefa9e9bf0d91190d7b514a2b',
+  };
+
+  static const _recipientCheckTimeout = Duration(seconds: 5);
+
+  /// ที่อยู่นี้คือสัญญาสเตคที่รู้จักไหม (ไม่ยิงเน็ต): ตัวที่ deploy แล้ว + ตัวที่ตรวจ bytecode ผ่านในรอบนี้
+  static bool isKnownRegistryAddress(String address) {
+    final a = address.trim().toLowerCase();
+    return knownRegistryAddresses.contains(a) || _verifiedRegistries.contains(a);
+  }
+
+  /// ปลายทางของหน้าโอนเป็นสัญญาสเตคไหม — รายการที่รู้จักก่อน แล้วค่อยถามเชนว่า bytecode
+  /// ตรงกับ build ที่ตรึงไว้ไหม (จับตัวที่ redeploy ใหม่ซึ่งแอปยังไม่รู้ที่อยู่ได้ด้วย)
+  ///
+  /// ถามเชนไม่ได้/หมดเวลา = false — ด่านนี้กันโอนผิดที่ ไม่ใช่ด่านความปลอดภัยของเงินสเตค
+  /// (ที่อยู่ตัวจริงอยู่ในรายการแล้ว และถ้าเน็ตล่ม ตัวธุรกรรมโอนก็ส่งไม่ออกอยู่ดี)
+  static Future<bool> isRegistryRecipient(String address) async {
+    if (isKnownRegistryAddress(address)) return true;
+    try {
+      final code = await _rpc.getCode(address.trim()).timeout(_recipientCheckTimeout);
+      return isKnownRegistryCode(code);
+    } catch (_) {
+      // รวม polygon-edge ที่ตอบ error กับกระเป๋าธรรมดาที่มียอด ("unable to fetch code")
+      return false;
+    }
+  }
+
   /// "0x" / ศูนย์ล้วน = ไม่มีโค้ด
   static bool _hasCode(String code) {
     final body = code.startsWith('0x') ? code.substring(2) : code;
