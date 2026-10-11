@@ -1,0 +1,5 @@
+# Solidity sources must compile to the same bytes on every OS.
+# solc embeds keccak256 of each source file in the CBOR metadata at the end of the bytecode, so a Windows
+# checkout with core.autocrlf=true (CRLF) builds different bytecode than Linux/CI (LF): Blockscout then
+# rejects or only partially matches the LF standard-JSON inputs ThaiXTrade submits for factory tokens.
+*.sol text eol=lf
