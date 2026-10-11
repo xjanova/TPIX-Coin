@@ -8,13 +8,19 @@ import '../models/tx_record.dart';
 import '../services/biometric_service.dart';
 import '../services/db_service.dart';
 import '../services/price_service.dart';
+import '../services/rpc_client.dart';
 import '../services/swap_service.dart';
 import '../services/token_service.dart';
 import '../services/wallet_auth_service.dart';
 import '../services/wallet_service.dart';
+import '../utils/units.dart';
 
 class WalletProvider extends ChangeNotifier {
-  final WalletService _walletService = WalletService();
+  /// [walletService] ให้เทสต์ส่งตัวปลอมเข้ามาได้ — แอปจริงใช้ค่าเริ่มต้น
+  WalletProvider({WalletService? walletService})
+      : _walletService = walletService ?? WalletService();
+
+  final WalletService _walletService;
   bool _disposed = false;
 
   @override
@@ -34,7 +40,6 @@ class WalletProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isUnlocked = false;
   bool _hasWallet = false;
-  double _balance = 0;
   String? _address;
   String? _mnemonic;
   String? _error;
@@ -42,16 +47,27 @@ class WalletProvider extends ChangeNotifier {
   List<TxRecord> _txHistory = [];
   bool _isScanning = false;
 
-  // Token state
+  // ── ยอด TPIX ──
+  // เก็บเป็น wei (BigInt) — null = ยังไม่เคยดึงสำเร็จ (ไม่ใช่ "0")
+  // ดึงไม่สำเร็จ → คงค่าเดิม + ติดป้าย stale ห้ามทับด้วย 0
+  BigInt? _balanceWei;
+  bool _balanceStale = false;
+  DateTime? _balanceUpdatedAt;
+
+  // ── โทเค็น ──
   List<TokenInfo> _tokens = [];
-  Map<String, double> _tokenBalances = {};
+  Map<String, BigInt> _tokenBalancesRaw = {}; // ที่อยู่ (ตัวเล็ก) → หน่วยย่อย
+  Set<String> _staleTokenBalances = {}; // ดึงรอบล่าสุดไม่สำเร็จ (โชว์ค่าเดิม + ป้าย)
+  Set<String> _missingContracts = {}; // สัญญาไม่มีบนเชนแล้ว (ซ่อนจากยอด)
+  Map<String, String> _defaultTokenLogos = {}; // โลโก้จาก TPIX DEX
 
   // Multi-chain state
   int _activeChainId = 4289; // default: TPIX Chain
   Map<int, BigInt> _chainBalances = {}; // chainId → native balance (wei)
 
-  // Price state
-  double _tpixPrice = PriceService.defaultPrice;
+  // ── ราคา ── null = ยังไม่เคยได้ราคาจริงเลย (ห้ามเดา)
+  PriceQuote? _priceQuote;
+  bool _priceStale = false;
 
   Timer? _balanceTimer;
   Timer? _txPollTimer;
@@ -66,7 +82,6 @@ class WalletProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isUnlocked => _isUnlocked;
   bool get hasWallet => _hasWallet;
-  double get balance => _balance;
   String? get address => _address;
   String? get mnemonic => _mnemonic;
   String? get error => _error;
@@ -75,6 +90,20 @@ class WalletProvider extends ChangeNotifier {
   List<TxRecord> get txHistory => _txHistory;
   bool get isScanning => _isScanning;
 
+  /// ยอด TPIX แบบทศนิยม (แสดงผล) — ยังไม่รู้ยอด = 0 (ดู [hasBalance] ก่อนเสมอ)
+  double get balance =>
+      _balanceWei == null ? 0 : Units.toDouble(_balanceWei!, 18);
+
+  /// ยอด TPIX หน่วย wei — ใช้เทียบ/ส่งเงิน (ไม่ผ่าน double)
+  BigInt? get balanceWei => _balanceWei;
+
+  /// เคยดึงยอดสำเร็จแล้วหรือยัง
+  bool get hasBalance => _balanceWei != null;
+
+  /// ยอดที่โชว์อยู่ไม่ใช่ล่าสุด (ดึงรอบหลังไม่สำเร็จ)
+  bool get isBalanceStale => _balanceStale;
+  DateTime? get balanceUpdatedAt => _balanceUpdatedAt;
+
   // Multi-wallet getters
   List<WalletInfo> get wallets => _walletService.wallets;
   int get walletCount => _walletService.walletCount;
@@ -82,9 +111,41 @@ class WalletProvider extends ChangeNotifier {
   WalletInfo? get activeWallet => _walletService.activeWallet;
 
   // Token getters
+  /// โทเค็นทั้งหมดที่บันทึกไว้ (รวมตัวที่สัญญาหายแล้ว — ใช้ในส่วนจัดการโทเค็น)
   List<TokenInfo> get tokens => _tokens;
-  Map<String, double> get tokenBalances => _tokenBalances;
-  double getTokenBalance(String contractAddress) => _tokenBalances[contractAddress.toLowerCase()] ?? 0;
+
+  /// โทเค็นที่ใช้งานได้ (สัญญายังอยู่) — ใช้แสดงยอด/เลือกส่ง
+  List<TokenInfo> get activeTokens => _tokens
+      .where((t) => !_missingContracts.contains(t.contractAddress.toLowerCase()))
+      .toList();
+
+  /// โทเค็นที่สัญญาไม่มีบนเชนแล้ว (ต้องติดป้าย + ให้ลบได้แบบยืนยัน)
+  List<TokenInfo> get missingContractTokens => _tokens
+      .where((t) => _missingContracts.contains(t.contractAddress.toLowerCase()))
+      .toList();
+
+  bool isTokenContractMissing(String contractAddress) =>
+      _missingContracts.contains(contractAddress.toLowerCase());
+
+  Map<String, double> get tokenBalances => {
+        for (final t in activeTokens)
+          if (_tokenBalancesRaw[t.contractAddress.toLowerCase()] case final raw?)
+            t.contractAddress.toLowerCase(): Units.toDouble(raw, t.decimals),
+      };
+
+  double getTokenBalance(String contractAddress) =>
+      tokenBalances[contractAddress.toLowerCase()] ?? 0;
+
+  /// ยอดโทเค็นหน่วยย่อย — null = ยังไม่รู้
+  BigInt? getTokenBalanceRaw(String contractAddress) =>
+      _tokenBalancesRaw[contractAddress.toLowerCase()];
+
+  bool isTokenBalanceStale(String contractAddress) =>
+      _staleTokenBalances.contains(contractAddress.toLowerCase());
+
+  /// โลโก้ของโทเค็น: ที่บันทึกไว้ก่อน ไม่มีก็ใช้ของ TPIX DEX
+  String? tokenLogo(TokenInfo token) =>
+      token.logoUrl ?? _defaultTokenLogos[token.contractAddress.toLowerCase()];
 
   // Chain getters
   int get activeChainId => _activeChainId;
@@ -100,23 +161,53 @@ class WalletProvider extends ChangeNotifier {
   }
 
   // Price getters
-  double get tpixPrice => _tpixPrice;
-  double get portfolioValueUSD => _balance * _tpixPrice;
+  /// ราคา TPIX/USD — null = ยังไม่เคยได้ราคาจริง (UI ต้องโชว์ "ไม่พร้อมใช้งาน")
+  double? get tpixPrice => _priceQuote?.price;
 
-  String get formattedBalance {
-    if (_balance >= 1000000) return '${(_balance / 1000000).toStringAsFixed(2)}M';
-    if (_balance >= 1000) return '${(_balance / 1000).toStringAsFixed(2)}K';
-    return _balance.toStringAsFixed(4);
+  /// ราคาที่โชว์เป็นราคาเก่า (ดึงล่าสุดไม่สำเร็จ)
+  bool get isPriceStale => _priceStale;
+  DateTime? get priceUpdatedAt => _priceQuote?.fetchedAt;
+
+  /// มูลค่า TPIX ในกระเป๋าเป็น USD — null เมื่อยังไม่รู้ยอดหรือไม่รู้ราคา
+  double? get portfolioValueUSD {
+    final price = tpixPrice;
+    if (price == null || _balanceWei == null) return null;
+    return balance * price;
   }
 
-  /// Initialize — check if wallet exists + seed price data
+  /// ยอดย่อสำหรับแสดงผล — ยังไม่เคยดึงสำเร็จ = "—" (ไม่ใช่ 0 ที่ทำให้ตกใจ)
+  String get formattedBalance {
+    if (_balanceWei == null) return '—';
+    final b = balance;
+    if (b >= 1000000) return '${(b / 1000000).toStringAsFixed(2)}M';
+    if (b >= 1000) return '${(b / 1000).toStringAsFixed(2)}K';
+    return b.toStringAsFixed(4);
+  }
+
+  /// Initialize — check if wallet exists + load last real price
   Future<void> init() async {
     _hasWallet = await _walletService.hasWallet();
-    // Load last known price & seed initial chart data
+    // ราคาจริงล่าสุดที่เคยได้ (ถ้ามี) — ติดป้ายว่าเก่าจนกว่าจะดึงใหม่สำเร็จ
     await PriceService.loadLastPrice();
-    _tpixPrice = PriceService.lastPrice;
-    await PriceService.seedInitialData();
+    _priceQuote = PriceService.lastQuote;
+    _priceStale = _priceQuote != null;
     notifyListeners();
+  }
+
+  /// ล้างข้อมูลที่ผูกกับกระเป๋าใบปัจจุบัน — เรียกทุกครั้งที่เปลี่ยน/ลบ/ล็อกกระเป๋า
+  ///
+  /// ★ ไม่ล้าง = หลังสลับกระเป๋า ถ้าดึงยอดใบใหม่ไม่สำเร็จ ระบบ "คงยอดเดิม"
+  ///   ซึ่งเป็นยอดของอีกใบ — ผู้ใช้เห็นเงินผิดกระเป๋า
+  void _clearWalletScopedState() {
+    _balanceWei = null;
+    _balanceStale = false;
+    _balanceUpdatedAt = null;
+    _tokens = [];
+    _tokenBalancesRaw = {};
+    _staleTokenBalances = {};
+    _missingContracts = {};
+    _chainBalances = {};
+    _txHistory = [];
   }
 
   /// Clear mnemonic from memory after a timeout (for security)
@@ -138,6 +229,7 @@ class WalletProvider extends ChangeNotifier {
       final result = await _walletService.createWallet(name: name);
       _mnemonic = result['mnemonic'];
       _address = result['address'];
+      _clearWalletScopedState();
       _scheduleMnemonicClear();
       return result;
     } catch (e) {
@@ -158,6 +250,7 @@ class WalletProvider extends ChangeNotifier {
     try {
       _address = await _walletService.importFromMnemonic(mnemonic, name: name);
       _mnemonic = mnemonic;
+      _clearWalletScopedState();
       _scheduleMnemonicClear();
     } catch (e) {
       _error = _sanitizeError(e);
@@ -176,6 +269,7 @@ class WalletProvider extends ChangeNotifier {
 
     try {
       _address = await _walletService.importFromPrivateKey(key, name: name);
+      _clearWalletScopedState();
     } catch (e) {
       _error = _sanitizeError(e);
       rethrow;
@@ -275,18 +369,50 @@ class WalletProvider extends ChangeNotifier {
     await _walletService.clearBiometricToken();
   }
 
-  /// Refresh balance + price
+  /// Refresh balance + price (ไม่ throw — ล้มแล้วคงค่าเดิม + ติดป้าย)
   Future<void> refreshBalance() async {
-    try {
-      _balance = await _walletService.getBalance();
-      // Fetch latest price in background
-      _tpixPrice = await PriceService.fetchPrice();
-      notifyListeners();
-    } catch (_) {}
+    await Future.wait([_refreshNativeBalance(), refreshPrice()]);
   }
 
-  /// Send TPIX
-  Future<String> sendTPIX(String toAddress, double amount) async {
+  Future<void> _refreshNativeBalance() async {
+    final address = _walletService.address;
+    if (address == null) return;
+    try {
+      final wei = await _walletService.getBalanceWei();
+      // สลับกระเป๋าระหว่างรอ → ยอดนี้เป็นของอีกใบ ทิ้ง
+      if (_walletService.address != address || _disposed) return;
+      _balanceWei = wei;
+      _balanceStale = false;
+      _balanceUpdatedAt = DateTime.now();
+    } catch (e) {
+      if (_walletService.address != address || _disposed) return;
+      // ★ คงยอดเดิมไว้ — แค่ติดป้ายว่าไม่อัปเดต (ห้ามกลายเป็น 0)
+      _balanceStale = true;
+      debugPrint('refreshBalance failed: ${e.runtimeType}');
+    }
+    notifyListeners();
+  }
+
+  /// ดึงราคาใหม่ — ไม่ได้ก็ใช้ราคาจริงล่าสุด + ติดป้ายว่าเก่า (ห้ามเดาราคา)
+  Future<void> refreshPrice() async {
+    final quote = await PriceService.fetchPrice();
+    if (_disposed) return;
+    if (quote != null) {
+      _priceQuote = quote;
+      _priceStale = false;
+    } else {
+      _priceQuote ??= PriceService.lastQuote;
+      _priceStale = _priceQuote != null;
+    }
+    notifyListeners();
+  }
+
+  /// Send TPIX — [amountWei] หน่วย wei (BigInt), [expectedFrom] = ที่อยู่ที่ผู้ใช้ยืนยัน
+  Future<String> sendTPIX(
+    String toAddress,
+    BigInt amountWei, {
+    String? expectedFrom,
+  }) async {
     _isLoading = true;
     _error = null;
     _lastTxHash = null;
@@ -295,10 +421,47 @@ class WalletProvider extends ChangeNotifier {
     try {
       final txHash = await _walletService.sendTPIX(
         toAddress: toAddress,
-        amount: amount,
+        amountWei: amountWei,
+        expectedFrom: expectedFrom,
       );
       _lastTxHash = txHash;
       await refreshBalance();
+      await loadTxHistory();
+      _startTxPolling(txHash);
+      return txHash;
+    } catch (e) {
+      _error = _sanitizeError(e);
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// ส่งโทเค็น ERC-20 — [amount] หน่วยย่อยของโทเค็น
+  Future<String> sendToken(
+    TokenInfo token,
+    String toAddress,
+    BigInt amount, {
+    String? expectedFrom,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    _lastTxHash = null;
+    notifyListeners();
+
+    try {
+      final txHash = await _walletService.sendToken(
+        tokenAddress: token.contractAddress,
+        tokenSymbol: token.symbol,
+        tokenDecimals: token.decimals,
+        toAddress: toAddress,
+        amount: amount,
+        chainId: token.chainId,
+        expectedFrom: expectedFrom,
+      );
+      _lastTxHash = txHash;
+      await refreshTokenBalances();
       await loadTxHistory();
       _startTxPolling(txHash);
       return txHash;
@@ -325,6 +488,7 @@ class WalletProvider extends ChangeNotifier {
     Uint8List? data,
     int? maxGas,
     BigInt? gasPrice,
+    String? expectedFrom,
   }) async {
     return _walletService.sendEvmTransaction(
       rpcUrl: rpcUrl,
@@ -334,6 +498,7 @@ class WalletProvider extends ChangeNotifier {
       data: data,
       maxGas: maxGas,
       gasPrice: gasPrice,
+      expectedFrom: expectedFrom,
     );
   }
 
@@ -359,20 +524,23 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// Load native balances for all supported chains in parallel
+  /// ดึงไม่ได้ → คงยอดเดิมของเชนนั้น (ห้ามทับด้วย 0)
   Future<void> loadChainBalances() async {
-    if (_address == null) return;
+    final address = _address;
+    if (address == null) return;
     final chains = ChainConfig.all.where((c) => c.chainId != 4289).toList();
     final results = await Future.wait(
       chains.map((chain) async {
         try {
-          return MapEntry(chain.chainId, await SwapService.getNativeBalance(chain, _address!));
+          return MapEntry(chain.chainId, await RpcClient.forChain(chain).getBalance(address));
         } catch (_) {
-          return MapEntry(chain.chainId, BigInt.zero);
+          return null;
         }
       }),
     );
+    if (_address != address) return; // สลับกระเป๋าระหว่างรอ
     for (final entry in results) {
-      _chainBalances[entry.key] = entry.value;
+      if (entry != null) _chainBalances[entry.key] = entry.value;
     }
     notifyListeners();
   }
@@ -390,9 +558,12 @@ class WalletProvider extends ChangeNotifier {
       WalletAuthService.clearSession(); // Clear auth on wallet switch
       await _walletService.switchWallet(slot);
       _address = _walletService.address;
+      _clearWalletScopedState();
+      notifyListeners();
       await refreshBalance();
       await loadTxHistory();
       await loadTokens();
+      unawaited(loadChainBalances());
     } catch (e) {
       _error = _sanitizeError(e);
     } finally {
@@ -410,9 +581,11 @@ class WalletProvider extends ChangeNotifier {
     try {
       final result = await _walletService.createWallet(name: name);
       _address = result['address'];
+      _clearWalletScopedState();
       await _walletService.persistWallets(); // Save wallet list (PIN already set)
       await refreshBalance();
       await loadTxHistory();
+      await loadTokens();
       return result;
     } catch (e) {
       _error = _sanitizeError(e);
@@ -432,14 +605,16 @@ class WalletProvider extends ChangeNotifier {
   /// Delete a wallet
   Future<void> deleteWalletBySlot(int slot) async {
     WalletAuthService.clearSession(); // Clear auth on slot delete
+    final previousAddress = _address;
     await _walletService.deleteWalletBySlot(slot);
     _address = _walletService.address;
+    if (_address != previousAddress) _clearWalletScopedState();
     if (_walletService.walletCount > 0) {
       await refreshBalance();
       await loadTxHistory();
+      await loadTokens();
     } else {
-      _balance = 0;
-      _txHistory = [];
+      _clearWalletScopedState();
     }
     _hasWallet = _walletService.walletCount > 0;
     notifyListeners();
@@ -451,18 +626,21 @@ class WalletProvider extends ChangeNotifier {
 
   /// Load tx history from local storage
   Future<void> loadTxHistory() async {
-    _txHistory = await _walletService.getActiveTxHistory();
+    final slot = _walletService.activeSlot;
+    final list = await _walletService.getActiveTxHistory();
+    if (_walletService.activeSlot != slot) return;
+    _txHistory = list;
     notifyListeners();
   }
 
-  /// Scan blockchain for recent transactions
+  /// ดึงประวัติจาก explorer (ถอยไปสแกนบล็อกถ้า explorer ใช้ไม่ได้)
   Future<void> scanTransactions({int blockCount = 50}) async {
     if (_isScanning) return;
     _isScanning = true;
     notifyListeners();
 
     try {
-      await _walletService.scanRecentTransactions(blockCount: blockCount);
+      await _walletService.syncHistory(blockCount: blockCount);
       await loadTxHistory();
     } catch (_) {}
 
@@ -474,28 +652,67 @@ class WalletProvider extends ChangeNotifier {
   //  Custom Tokens
   // ═══════════════════════════════════════════════════════════
 
-  /// Load tokens from SQLite
+  /// Load tokens from SQLite (+ โทเค็นมาตรฐานของ TPIX Chain ครั้งแรก, ตรวจสัญญาที่หายไป)
   Future<void> loadTokens() async {
-    _tokens = await DbService.getTokensForSlot(_walletService.activeSlot);
+    final slot = _walletService.activeSlot;
+    final list = await DbService.getTokensForSlot(slot);
+    if (_walletService.activeSlot != slot || _disposed) return;
+    _tokens = list;
     notifyListeners();
-    // Refresh balances in background
-    refreshTokenBalances();
+    // งานที่ต้องรอเน็ต ทำเบื้องหลัง — ไม่ให้รายการโทเค็นรอ API
+    unawaited(refreshTokenBalances());
+    unawaited(_syncTokensInBackground(slot));
   }
 
-  /// Refresh all token balances
+  Future<void> _syncTokensInBackground(int slot) async {
+    try {
+      // 1. เพิ่ม USDT ฯลฯ ของ TPIX Chain ให้ครั้งเดียวต่อกระเป๋า
+      final before = _tokens.length;
+      final defaults = await TokenService.ensureDefaultTokens(slot);
+      if (_walletService.activeSlot != slot || _disposed) return;
+      _defaultTokenLogos = {
+        for (final d in defaults)
+          if (d.logoUrl != null) d.address.toLowerCase(): d.logoUrl!,
+      };
+      final list = await DbService.getTokensForSlot(slot);
+      if (_walletService.activeSlot != slot || _disposed) return;
+      _tokens = list;
+
+      // 2. ตรวจว่าสัญญายังอยู่ไหม — ตัวที่ตรวจไม่ได้คงสถานะเดิม
+      final check = await TokenService.checkContracts(list);
+      if (_walletService.activeSlot != slot || _disposed) return;
+      _missingContracts = {
+        ..._missingContracts.difference(check.present),
+        ...check.missing,
+      };
+      notifyListeners();
+      if (list.length != before || check.missing.isNotEmpty) {
+        await refreshTokenBalances();
+      }
+    } catch (e) {
+      debugPrint('syncTokens: ${e.runtimeType}');
+    }
+  }
+
+  /// Refresh all token balances — ตัวที่ดึงไม่ได้คงยอดเดิม + ติดป้าย stale
   Future<void> refreshTokenBalances() async {
-    if (_address == null || _tokens.isEmpty) return;
-    _tokenBalances = await TokenService.getAllTokenBalances(
-      _walletService.activeSlot,
-      _address!,
-    );
+    final address = _walletService.address;
+    final targets = activeTokens;
+    if (address == null || targets.isEmpty) return;
+    final result = await TokenService.getBalances(targets, address);
+    if (_walletService.address != address || _disposed) return;
+    _tokenBalancesRaw = {..._tokenBalancesRaw, ...result.balances};
+    _staleTokenBalances = result.failed;
     notifyListeners();
   }
 
-  /// Remove a token
+  /// Remove a token (UI ต้องถามยืนยันก่อนเรียกเสมอ)
   Future<void> removeToken(String contractAddress) async {
     await DbService.removeToken(contractAddress, _walletService.activeSlot);
-    _tokenBalances.remove(contractAddress.toLowerCase());
+    final key = contractAddress.toLowerCase();
+    _tokenBalancesRaw.remove(key);
+    _staleTokenBalances.remove(key);
+    _missingContracts.remove(key);
     await loadTokens();
   }
 
@@ -526,6 +743,7 @@ class WalletProvider extends ChangeNotifier {
             await _walletService.updateTxStatus(_pendingTxHash!, status, slot: pollSlot);
             await loadTxHistory();
             await refreshBalance();
+            await refreshTokenBalances();
             _txPollTimer?.cancel();
             _pendingTxHash = null;
           }
@@ -546,9 +764,7 @@ class WalletProvider extends ChangeNotifier {
     _txPollTimer?.cancel();
     _mnemonicClearTimer?.cancel();
     _pendingTxHash = null;
-    _tokens = [];
-    _tokenBalances = {};
-    _chainBalances = {};
+    _clearWalletScopedState();
     _activeChainId = 4289;
     notifyListeners();
   }
@@ -560,12 +776,8 @@ class WalletProvider extends ChangeNotifier {
     _hasWallet = false;
     _isUnlocked = false;
     _address = null;
-    _balance = 0;
     _mnemonic = null;
-    _txHistory = [];
-    _tokens = [];
-    _tokenBalances = {};
-    _chainBalances = {};
+    _clearWalletScopedState();
     _activeChainId = 4289;
     _balanceTimer?.cancel();
     _txPollTimer?.cancel();

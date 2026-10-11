@@ -9,6 +9,8 @@ import '../core/themes/widgets/screen_background.dart';
 import '../models/tx_record.dart';
 import '../providers/wallet_provider.dart';
 import '../services/wallet_service.dart';
+import '../widgets/tpix_coin_logo.dart';
+
 class TxHistoryScreen extends StatefulWidget {
   const TxHistoryScreen({super.key});
 
@@ -190,10 +192,10 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
                       shape: BoxShape.circle,
                       color: color.withValues(alpha: 0.08),
                     ),
-                    child: ClipOval(
-                      // ถอดรหัสที่ 126px (42 logical x 3 dpr)
-                      child: Image.asset('assets/images/logowallet.png', width: 42, height: 42, fit: BoxFit.cover, cacheWidth: 126, cacheHeight: 126),
-                    ),
+                    // TPIX = โลโก้เหรียญ, โทเค็น/เชนอื่น = ตัวอักษรแรกของสัญลักษณ์
+                    child: tx.isTpix
+                        ? const TpixCoinLogo(size: 42)
+                        : TokenAvatar(symbol: tx.symbol, size: 42, color: color),
                   ),
                   Positioned(
                     right: 0,
@@ -247,10 +249,10 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '$sign${tx.valueInTPIX.toStringAsFixed(4)}',
+                  '$sign${tx.amount.toStringAsFixed(4)}',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color),
                 ),
-                const Text('TPIX', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                Text(tx.symbol, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted)),
               ],
             ),
           ],
@@ -301,8 +303,9 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
             const SizedBox(height: TpixGap.xl),
             Row(
               children: [
-                // ถอดรหัสที่ 84px (28 logical x 3 dpr)
-                ClipOval(child: Image.asset('assets/images/logowallet.png', width: 28, height: 28, fit: BoxFit.cover, cacheWidth: 84, cacheHeight: 84)),
+                tx.isTpix
+                    ? const TpixCoinLogo(size: 28)
+                    : TokenAvatar(symbol: tx.symbol, size: 28, color: AppTheme.accent),
                 const SizedBox(width: TpixGap.md),
                 Text(l.t('tx.detail'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
               ],
@@ -316,7 +319,10 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
             }),
             _detailRow(l.t('tx.from'), tx.shortFrom),
             _detailRow(l.t('tx.to'), tx.shortTo),
-            _detailRow(l.t('tx.amount'), '${tx.valueInTPIX.toStringAsFixed(6)} TPIX'),
+            _detailRow(l.t('tx.amount'), '${tx.amount.toStringAsFixed(6)} ${tx.symbol}'),
+            if (tx.tokenAddress != null)
+              _detailRow(l.t('token.contractAddress'),
+                  '${tx.tokenAddress!.substring(0, 8)}...${tx.tokenAddress!.substring(tx.tokenAddress!.length - 6)}'),
             _detailRow(l.t('tx.status'), tx.status.toUpperCase()),
             if (tx.blockNumber != null)
               _detailRow(l.t('tx.block'), '#${tx.blockNumber}'),

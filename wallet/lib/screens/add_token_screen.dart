@@ -8,6 +8,7 @@ import '../core/themes/widgets/screen_background.dart';
 import '../models/token_info.dart';
 import '../providers/wallet_provider.dart';
 import '../services/db_service.dart';
+import '../services/rpc_client.dart';
 import '../services/token_service.dart';
 import '../services/wallet_service.dart';
 import '../widgets/qr_scanner_screen.dart';
@@ -55,8 +56,8 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
 
-    // Validate address format
-    if (!RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(input)) {
+    // Validate address format (+ checksum EIP-55 ถ้าเป็นตัวพิมพ์ผสม — กันพิมพ์ผิด)
+    if (!WalletService.isValidAddress(input)) {
       setState(() {
         _errorMsg = context.read<LocaleProvider>().t('token.invalidAddress');
         _foundToken = null;
@@ -87,7 +88,18 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     }
 
     // Fetch token info from chain
-    final token = await TokenService.fetchTokenInfo(input, slot);
+    // เน็ตล่ม ≠ "ไม่ใช่โทเค็น" — แยกข้อความ ไม่งั้นผู้ใช้คิดว่าที่อยู่สัญญาผิด
+    final TokenInfo? token;
+    try {
+      token = await TokenService.fetchTokenInfo(input, slot);
+    } on RpcUnavailableException {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMsg = context.read<LocaleProvider>().t('token.networkError');
+      });
+      return;
+    }
     if (!mounted) return;
 
     if (token == null) {

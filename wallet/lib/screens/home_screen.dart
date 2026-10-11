@@ -15,7 +15,9 @@ import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import '../widgets/price_chart.dart';
 import '../models/chain_config.dart';
+import '../models/token_info.dart';
 import '../widgets/token_selector.dart';
+import '../widgets/tpix_coin_logo.dart';
 import 'send_screen.dart';
 import 'receive_screen.dart';
 import 'tx_history_screen.dart';
@@ -198,7 +200,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
-    final c = AppColors.of(context);
     return Scaffold(
       // ให้เนื้อหาไหลลอดใต้แถบเมนูที่ลอยอยู่ (แถบโปร่ง ไม่ใช่ทึบเต็มความกว้าง)
       extendBody: true,
@@ -237,7 +238,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     // Price chart
                     PriceChartWidget(
                       currentPrice: wallet.tpixPrice,
-                      balanceTPIX: wallet.balance,
+                      isPriceStale: wallet.isPriceStale,
+                      balanceTPIX: wallet.hasBalance ? wallet.balance : null,
                     ),
                     const SizedBox(height: TpixGap.xl),
                     _buildActionButtons(context, l),
@@ -844,8 +846,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // ถอดรหัสที่ 66px (22 logical x 3 dpr)
-                          ClipOval(child: Image.asset('assets/images/logowallet.png', width: 22, height: 22, fit: BoxFit.cover, cacheWidth: 66, cacheHeight: 66)),
+                          // โลโก้เหรียญ TPIX (ไม่ใช่ไอคอนแอป)
+                          const TpixCoinLogo(size: 22),
                           const SizedBox(width: TpixGap.xs),
                           const Text('TPIX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppTheme.primary)),
                         ],
@@ -855,9 +857,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: TpixGap.sm),
                 Text(
-                  '≈ \$${wallet.portfolioValueUSD.toStringAsFixed(2)} USD',
+                  // ไม่รู้ราคาหรือยอด = ไม่เดามูลค่า
+                  wallet.portfolioValueUSD != null
+                      ? '≈ \$${wallet.portfolioValueUSD!.toStringAsFixed(2)} USD'
+                      : '≈ — USD',
                   style: TextStyle(fontSize: 14, color: c.textMuted),
                 ),
+                // ดึงยอดรอบล่าสุดไม่สำเร็จ — บอกตรงๆ ว่าเป็นยอดเก่า / ยังไม่มียอด
+                // (ไม่โชว์ระหว่างโหลดครั้งแรก กันข้อความกะพริบ — รอให้ล้มจริงก่อน)
+                if (wallet.isBalanceStale)
+                  Padding(
+                    padding: const EdgeInsets.only(top: TpixGap.xs),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.cloud_off_rounded, size: 13, color: AppTheme.warm),
+                        const SizedBox(width: TpixGap.xs),
+                        Flexible(
+                          child: Text(
+                            l.t(wallet.hasBalance ? 'home.balanceStale' : 'home.balanceUnavailable'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, color: AppTheme.warm),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
               ),
             ),
@@ -940,7 +965,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   /// Token balances list with add button
+  ///
+  /// ส่วนนี้คือ "การจัดการโทเค็น" ของกระเป๋า: เพิ่ม (ปุ่มบน) / ลบ (กดค้าง หรือปุ่มลบ
+  /// ของโทเค็นที่สัญญาหายไปแล้ว) — ลบทุกครั้งต้องผ่านกล่องยืนยัน
   Widget _buildTokenList(WalletProvider wallet, LocaleProvider l) {
+    final missing = wallet.missingContractTokens;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: adaptiveGlassCard(context, borderRadius: 20),
@@ -982,17 +1011,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             name: 'TPIX Chain',
             balance: wallet.formattedBalance,
             isNative: true,
+            isStale: wallet.isBalanceStale,
+            l: l,
           ),
-          // Custom ERC-20 tokens
-          ...wallet.tokens.map((token) {
+          // ERC-20 ที่สัญญายังอยู่ — แสดงยอดตามทศนิยมของแต่ละเหรียญ
+          ...wallet.activeTokens.map((token) {
+            final raw = wallet.getTokenBalanceRaw(token.contractAddress);
             final bal = wallet.getTokenBalance(token.contractAddress);
             return _buildTokenRow(
               symbol: token.symbol,
               name: token.name,
-              balance: bal >= 1000 ? '${(bal / 1000).toStringAsFixed(2)}K' : bal.toStringAsFixed(4),
+              logoUrl: wallet.tokenLogo(token),
+              // ยังไม่เคยดึงยอดได้ = "—" ไม่ใช่ 0
+              balance: raw == null
+                  ? '—'
+                  : bal >= 1000
+                      ? '${(bal / 1000).toStringAsFixed(2)}K'
+                      : bal.toStringAsFixed(4),
+              isStale: wallet.isTokenBalanceStale(token.contractAddress),
+              l: l,
+              // แตะ = ส่งเหรียญนี้ (เลือกไว้ให้เลย), กดค้าง = ลบ (มีกล่องยืนยัน)
+              onTap: token.chainId == 4289
+                  ? () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SendScreen(initialTokenAddress: token.contractAddress),
+                        ),
+                      )
+                  : null,
               onLongPress: () => _confirmRemoveToken(token, wallet, l),
             );
           }),
+          // โทเค็นที่สัญญาไม่มีบนเชนแล้ว (เช่นเพิ่มไว้ก่อน re-genesis) —
+          // ไม่นับยอด ติดป้ายชัดๆ และให้ลบได้ (ต้องยืนยันก่อน ไม่ลบเองเงียบๆ)
+          ...missing.map((token) => _buildMissingTokenRow(token, wallet, l)),
         ],
       ),
     );
@@ -1002,41 +1054,105 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required String symbol,
     required String name,
     required String balance,
+    required LocaleProvider l,
     bool isNative = false,
+    bool isStale = false,
+    String? logoUrl,
+    VoidCallback? onTap,
     VoidCallback? onLongPress,
   }) {
+    final c = AppColors.of(context);
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
-            // Logo
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isNative ? AppTheme.primary.withValues(alpha: 0.12) : AppTheme.accent.withValues(alpha: 0.12),
-              ),
-              child: isNative
-                  // ถอดรหัสที่ 108px (36 logical x 3 dpr)
-                  ? ClipOval(child: Image.asset('assets/images/logowallet.png', width: 36, height: 36, fit: BoxFit.cover, cacheWidth: 108, cacheHeight: 108))
-                  : Center(child: Text(symbol.isNotEmpty ? symbol[0] : '?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.accent))),
-            ),
+            // Logo — เหรียญ TPIX ใช้โลโก้เหรียญ, โทเค็นใช้โลโก้จาก URL (ไม่มีก็ตัวอักษรแรก)
+            isNative
+                ? const TpixCoinLogo(size: 36)
+                : TokenAvatar(symbol: symbol, logoUrl: logoUrl, size: 36, color: AppTheme.accent),
             const SizedBox(width: TpixGap.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(symbol, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.of(context).text)),
-                  Text(name, style: TextStyle(fontSize: 11, color: AppColors.of(context).textMuted)),
+                  Text(symbol, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.text)),
+                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: c.textMuted)),
                 ],
               ),
             ),
-            Text(balance, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.of(context).text)),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(balance, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text)),
+                if (isStale)
+                  Text(l.t('token.balanceStale'), style: const TextStyle(fontSize: 10, color: AppTheme.warm)),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// แถวของโทเค็นที่สัญญาหายไปแล้ว — ป้ายเตือน + ปุ่มลบ (ไม่มียอด)
+  Widget _buildMissingTokenRow(TokenInfo token, WalletProvider wallet, LocaleProvider l) {
+    final c = AppColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Opacity(
+            opacity: 0.5,
+            child: TokenAvatar(symbol: token.symbol, logoUrl: wallet.tokenLogo(token), size: 36, color: c.textMuted),
+          ),
+          const SizedBox(width: TpixGap.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${token.symbol} · ${token.shortAddress}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.textMuted),
+                ),
+                Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, size: 12, color: AppTheme.warm),
+                    const SizedBox(width: TpixGap.xs),
+                    Flexible(
+                      child: Text(
+                        l.t('token.contractMissing'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: AppTheme.warm, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  l.t('token.contractMissingHint'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10, color: c.textMuted),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => _confirmRemoveToken(token, wallet, l),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.danger,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 36),
+            ),
+            child: Text(l.t('token.remove')),
+          ),
+        ],
       ),
     );
   }
@@ -1138,7 +1254,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _confirmRemoveToken(dynamic token, WalletProvider wallet, LocaleProvider l) {
+  void _confirmRemoveToken(TokenInfo token, WalletProvider wallet, LocaleProvider l) {
     showDialog(
       context: context,
       builder: (ctx) {
@@ -1147,7 +1263,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         backgroundColor: dc.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
         title: Text(l.t('token.removeConfirm'), style: const TextStyle(color: AppTheme.danger)),
-        content: Text('${token.name} (${token.symbol})', style: TextStyle(color: dc.textSec)),
+        content: Text(
+          '${token.name} (${token.symbol})\n${token.contractAddress}\n\n'
+          '${l.t('token.removeBody').replaceAll('{symbol}', token.symbol)}',
+          style: TextStyle(color: dc.textSec),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1251,10 +1371,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             shape: BoxShape.circle,
                             color: color.withValues(alpha: 0.08),
                           ),
-                          child: ClipOval(
-                            // ถอดรหัสที่ 96px (32 logical x 3 dpr)
-                            child: Image.asset('assets/images/logowallet.png', width: 32, height: 32, fit: BoxFit.cover, cacheWidth: 96, cacheHeight: 96),
-                          ),
+                          // TPIX = โลโก้เหรียญ, โทเค็น/เชนอื่น = ตัวอักษรแรกของสัญลักษณ์
+                          child: tx.isTpix
+                              ? const TpixCoinLogo(size: 32)
+                              : TokenAvatar(symbol: tx.symbol, size: 32, color: color),
                         ),
                         Positioned(
                           right: 0,
@@ -1281,7 +1401,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   Text(
-                    '$sign${tx.valueInTPIX.toStringAsFixed(2)}',
+                    '$sign${tx.amount.toStringAsFixed(2)} ${tx.symbol}',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color),
                   ),
                 ],

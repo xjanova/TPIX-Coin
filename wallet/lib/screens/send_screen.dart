@@ -1,25 +1,33 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../models/contact.dart';
+import '../models/token_info.dart';
 import '../providers/wallet_provider.dart';
 import '../services/biometric_service.dart';
+import '../services/rpc_client.dart';
 import '../services/synth_service.dart';
 import '../services/db_service.dart';
 import '../services/wallet_service.dart';
+import '../utils/units.dart';
 import '../widgets/contact_picker.dart';
 import '../widgets/qr_scanner_screen.dart';
+import '../widgets/tpix_coin_logo.dart';
 
 class SendScreen extends StatefulWidget {
   /// ที่อยู่ปลายทางที่เติมมาให้ล่วงหน้า (เช่น มาจากการสแกน QR ที่หน้าหลัก)
   final String? initialAddress;
 
-  const SendScreen({super.key, this.initialAddress});
+  /// โทเค็นที่เลือกไว้ล่วงหน้า (ที่อยู่สัญญา) — null = TPIX
+  final String? initialTokenAddress;
+
+  const SendScreen({super.key, this.initialAddress, this.initialTokenAddress});
 
   @override
   State<SendScreen> createState() => _SendScreenState();
@@ -31,6 +39,13 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   bool _isSending = false;
   bool _isSent = false;
   String? _txHash;
+
+  /// กันกดส่งซ้อน "ตั้งแต่แตะปุ่ม" จนจบ — รวมช่วงสแกนนิ้ว/ใส่ PIN/กล่องยืนยัน
+  /// (_isSending ตั้งหลังยืนยันแล้วเท่านั้น แตะสองทีระหว่างสแกนนิ้วเคยเปิดสองรอบได้)
+  bool _busy = false;
+
+  /// เหรียญที่เลือกส่ง: null = TPIX (native), ไม่ null = ที่อยู่สัญญาโทเค็น (ตัวเล็ก)
+  String? _selectedToken;
 
   /// รายการโปรดไว้ทำทางลัด (โหลดครั้งเดียวตอนเปิดหน้า แล้วรีเฟรชเมื่อมีการบันทึก)
   List<Contact> _favorites = const [];
@@ -55,6 +70,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     if (preset != null && preset.isNotEmpty) {
       _addressController.text = preset;
     }
+    _selectedToken = widget.initialTokenAddress?.toLowerCase();
 
     _addressController.addListener(_onAddressChanged);
     _loadFavorites();
@@ -151,33 +167,126 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     );
   }
 
-  void _send() async {
-    if (_isSending) return; // double-tap guard
-    final address = _addressController.text.trim();
-    final amount = double.tryParse(_amountController.text.trim());
+  // ================================================================
+  // เหรียญที่เลือก
+  // ================================================================
 
+  /// โทเค็นบน TPIX Chain ที่ส่งได้ (สัญญายังอยู่) — ตัวที่สัญญาหายไปแล้วไม่ให้เลือก
+  List<TokenInfo> _sendableTokens(WalletProvider wallet) =>
+      wallet.activeTokens.where((t) => t.chainId == 4289).toList();
+
+  /// โทเค็นที่เลือกอยู่ (null = TPIX หรือโทเค็นที่เลือกไว้หายไปแล้ว)
+  TokenInfo? _selectedTokenInfo(WalletProvider wallet) {
+    final sel = _selectedToken;
+    if (sel == null) return null;
+    for (final t in _sendableTokens(wallet)) {
+      if (t.contractAddress.toLowerCase() == sel) return t;
+    }
+    return null;
+  }
+
+  String _symbolOf(TokenInfo? token) => token?.symbol ?? 'TPIX';
+  int _decimalsOf(TokenInfo? token) => token?.decimals ?? 18;
+
+  /// ยอดหน่วยย่อยของเหรียญที่เลือก — null = ยังไม่รู้ยอด
+  BigInt? _rawBalanceOf(WalletProvider wallet, TokenInfo? token) => token == null
+      ? wallet.balanceWei
+      : wallet.getTokenBalanceRaw(token.contractAddress);
+
+  void _selectAsset(String? tokenAddress) {
+    if (_selectedToken == tokenAddress) return;
+    setState(() {
+      _selectedToken = tokenAddress;
+      // ทศนิยมคนละแบบ — จำนวนเดิมอาจผิดความหมาย ล้างทิ้งให้ใส่ใหม่
+      _amountController.clear();
+    });
+    SynthService.playTap();
+  }
+
+  /// แปลง error เป็นข้อความที่ผู้ใช้อ่านเข้าใจ — ห้ามโชว์ "Exception: ..." ดิบ
+  String _friendlyError(Object e, LocaleProvider l) {
+    if (e is RpcUnavailableException) return l.t('send.errNetwork');
+    if (e is WalletChangedException) return l.t('send.errWalletChanged');
+    if (e is InsufficientGasException) return l.t('send.errGas');
+    if (e is RpcException) {
+      final m = e.message.toLowerCase();
+      if (m.contains('insufficient funds') || m.contains('exceeds balance')) {
+        return l.t('send.insufficientBalance');
+      }
+      // ข้อความจากโหนด (เช่น execution reverted) — ไม่มี URL/ข้อมูลลับ แสดงต่อท้ายได้
+      final short = e.message.length > 120 ? '${e.message.substring(0, 120)}…' : e.message;
+      return '${l.t('send.errFailed')}: $short';
+    }
+    return l.t('send.errFailed');
+  }
+
+  Future<void> _send() async {
+    if (_busy || _isSending) return; // double-tap guard (ตั้งแต่แตะครั้งแรก)
+    _busy = true;
+    try {
+      await _sendFlow();
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<void> _sendFlow() async {
+    final address = _addressController.text.trim();
     final l = context.read<LocaleProvider>();
+    final wallet = context.read<WalletProvider>();
+
     if (!WalletService.isValidAddress(address)) {
       _showError(l.t('send.invalidAddress'));
       return;
     }
-    if (amount == null || amount <= 0) {
-      _showError(l.t('send.invalidAmount'));
+
+    // เหรียญที่เลือกต้องยังอยู่ (เช่นสลับกระเป๋าแล้วกระเป๋าใหม่ไม่มีโทเค็นนี้)
+    final token = _selectedTokenInfo(wallet);
+    // → กลับไปเลือก TPIX และล้างจำนวน ให้ผู้ใช้ตรวจแล้วกดใหม่เอง (ไม่ส่งเหรียญที่ไม่ได้ตั้งใจ)
+    if (_selectedToken != null && token == null) {
+      setState(() {
+        _selectedToken = null;
+        _amountController.clear();
+      });
       return;
     }
+    final symbol = _symbolOf(token);
+    final decimals = _decimalsOf(token);
 
-    // Balance check
-    final wallet = context.read<WalletProvider>();
-    if (amount > wallet.balance) {
+    final parsed = Units.parse(_amountController.text, decimals);
+    if (!parsed.isOk) {
+      _showError(parsed.error == AmountError.tooManyDecimals
+          ? l.t('send.tooManyDecimals')
+              .replaceAll('{symbol}', symbol)
+              .replaceAll('{n}', '$decimals')
+          : l.t('send.invalidAmount'));
+      return;
+    }
+    final amount = parsed.value!;
+
+    // เทียบยอดแบบ BigInt — ยังไม่รู้ยอดก็ไม่เดา
+    final available = _rawBalanceOf(wallet, token);
+    if (available == null) {
+      _showError(l.t('send.balanceUnknown'));
+      return;
+    }
+    if (amount > available) {
       _showError(l.t('send.insufficientBalance'));
       return;
     }
+
+    // จำกระเป๋าที่ผู้ใช้เห็นตอนนี้ — ถ้าถูกสลับระหว่างยืนยัน ต้องไม่ส่งจากใบอื่น
+    final fromAddress = wallet.address;
+    final fromName = wallet.activeWallet?.name;
+    if (fromAddress == null) return;
 
     // Authentication required before send
     final bioService = BiometricService();
     bool authenticated = false;
     if (await bioService.isEnabled() && await bioService.isDeviceSupported()) {
-      authenticated = await bioService.authenticate(l.t('send.authRequired'));
+      authenticated = await bioService.authenticate(token == null
+          ? l.t('send.authRequired')
+          : l.t('send.authRequiredToken').replaceAll('{symbol}', symbol));
     }
 
     // Fallback: require PIN re-entry if biometric failed or unavailable
@@ -190,14 +299,28 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     if (!mounted) return;
 
     // Show confirmation dialog
-    final confirmed = await _showConfirmation(address, amount, l);
+    final confirmed = await _showConfirmation(
+      address: address,
+      amountText: Units.format(amount, decimals),
+      symbol: symbol,
+      fromAddress: fromAddress,
+      fromName: fromName,
+      l: l,
+    );
     if (confirmed != true || !mounted) return;
+
+    if (wallet.address?.toLowerCase() != fromAddress.toLowerCase()) {
+      _showError(l.t('send.errWalletChanged'));
+      return;
+    }
 
     setState(() => _isSending = true);
     SynthService.playSend();
 
     try {
-      final txHash = await wallet.sendTPIX(address, amount);
+      final txHash = token == null
+          ? await wallet.sendTPIX(address, amount, expectedFrom: fromAddress)
+          : await wallet.sendToken(token, address, amount, expectedFrom: fromAddress);
       // นับว่ารายการโปรดนี้ถูกใช้ (ไม่สร้างแถวใหม่ถ้ายังไม่เคยบันทึกชื่อ)
       // ล้มก็ไม่เป็นไร ห้ามให้สถิติมาทำให้การส่งที่สำเร็จแล้วดูเหมือนพัง
       unawaited(DbService.markContactUsed(address).catchError((_) {}));
@@ -214,147 +337,119 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       if (!mounted) return;
       setState(() => _isSending = false);
       SynthService.playError();
-      _showError(e.toString().replaceFirst('Exception: ', ''));
+      _showError(_friendlyError(e, l));
     }
   }
 
-  Future<bool?> _showConfirmation(String address, double amount, LocaleProvider l) {
+  Future<bool?> _showConfirmation({
+    required String address,
+    required String amountText,
+    required String symbol,
+    required String fromAddress,
+    required String? fromName,
+    required LocaleProvider l,
+  }) {
     final c = AppColors.of(context);
+    String short(String a) => '${a.substring(0, 8)}...${a.substring(a.length - 6)}';
     return showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      isScrollControlled: true,
+      builder: (sheetCtx) => Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: c.card,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(2),
-                  color: c.textMuted.withValues(alpha: 0.3),
-                ),
-              ),
-            ),
-            const SizedBox(height: TpixGap.xl),
-            Text(l.t('send.confirmTitle'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
-            const SizedBox(height: TpixGap.xl),
-            // ผู้รับ — ถ้าเคยบันทึกชื่อไว้ให้โชว์ชื่อด้วย
-            // คนตรวจ "ส่งให้น้องเอ" ได้แม่นกว่าตรวจเลขย่อ 0x1234…abcdef
-            if (_lookupFavorite(address) case final match?) ...[
-              _confirmRow(l.t('send.confirmTo'), match.name,
-                  valueColor: AppTheme.success),
-              _confirmRow(
-                l.t('send.confirmAddress'),
-                '${address.substring(0, 8)}...${address.substring(address.length - 6)}',
-              ),
-            ] else
-              _confirmRow(
-                l.t('send.confirmTo'),
-                '${address.substring(0, 8)}...${address.substring(address.length - 6)}',
-              ),
-            // Amount
-            _confirmRow(l.t('send.confirmAmount'), '${amount.toStringAsFixed(4)} TPIX'),
-            // Gas
-            _confirmRow(l.t('send.gasFee').replaceAll(': ', ''), l.t('send.gasFreeVal'), valueColor: AppTheme.success),
-            const SizedBox(height: TpixGap.xxl),
-            // Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: BorderSide(color: c.glassBorder),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
-                    ),
-                    child: Text(l.t('send.cancel'), style: TextStyle(color: c.textSec)),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    color: c.textMuted.withValues(alpha: 0.3),
                   ),
                 ),
-                const SizedBox(width: TpixGap.md),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
+              ),
+              const SizedBox(height: TpixGap.xl),
+              Text(l.t('send.confirmTitle'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.text)),
+              const SizedBox(height: TpixGap.xl),
+              // กระเป๋าต้นทาง — ผู้ใช้ที่มีหลายกระเป๋าต้องเห็นว่ากำลังส่งจากใบไหน
+              _confirmRow(
+                l.t('send.from'),
+                fromName != null && fromName.isNotEmpty
+                    ? '$fromName · ${short(fromAddress)}'
+                    : short(fromAddress),
+              ),
+              // ผู้รับ — ถ้าเคยบันทึกชื่อไว้ให้โชว์ชื่อด้วย
+              // คนตรวจ "ส่งให้น้องเอ" ได้แม่นกว่าตรวจเลขย่อ 0x1234…abcdef
+              if (_lookupFavorite(address) case final match?) ...[
+                _confirmRow(l.t('send.confirmTo'), match.name,
+                    valueColor: AppTheme.success),
+                _confirmRow(l.t('send.confirmAddress'), short(address)),
+              ] else
+                _confirmRow(l.t('send.confirmTo'), short(address)),
+              // Amount — ตัวเลขเต็มที่จะส่งจริง (ไม่ปัด)
+              _confirmRow(l.t('send.confirmAmount'), '$amountText $symbol'),
+              _confirmRow(l.t('send.network'), 'TPIX Chain (4289)'),
+              // Gas
+              _confirmRow(l.t('send.gasFee').replaceAll(': ', ''), l.t('send.gasFreeVal'), valueColor: AppTheme.success),
+              const SizedBox(height: TpixGap.xxl),
+              // Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetCtx, false),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(color: c.glassBorder),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
+                      ),
+                      child: Text(l.t('send.cancel'), style: TextStyle(color: c.textSec)),
                     ),
-                    child: Text(l.t('send.confirmButton'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: TpixGap.sm),
-          ],
+                  const SizedBox(width: TpixGap.md),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(sheetCtx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm)),
+                      ),
+                      child: Text(
+                        symbol == 'TPIX'
+                            ? l.t('send.confirmButton')
+                            : l.t('send.confirmButtonToken').replaceAll('{symbol}', symbol),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: TpixGap.sm),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Future<bool?> _showPinVerification(LocaleProvider l) {
-    final c = AppColors.of(context);
-    final pinController = TextEditingController();
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
-        title: Text(l.t('pin.unlock'), style: TextStyle(color: c.text, fontSize: 16)),
-        content: TextField(
-          controller: pinController,
-          obscureText: true,
-          keyboardType: TextInputType.number,
-          maxLength: 6,
-          autofocus: true,
-          style: TextStyle(color: c.text, fontSize: 24, letterSpacing: 8),
-          textAlign: TextAlign.center,
-          decoration: InputDecoration(
-            counterText: '',
-            hintText: '••••••',
-            hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.3)),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3))),
-            focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary)),
-          ),
-          onChanged: (val) async {
-            if (val.length == 6) {
-              final wallet = context.read<WalletProvider>();
-              // Verify PIN by trying unlock (already unlocked, so just check hash)
-              final service = WalletService();
-              final isLocked = await service.isPinLocked();
-              if (isLocked) {
-                if (ctx.mounted) Navigator.pop(ctx, false);
-                return;
-              }
-              // Use the provider's existing unlock check
-              final success = await wallet.unlock(val);
-              if (ctx.mounted) Navigator.pop(ctx, success);
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              pinController.dispose();
-              Navigator.pop(ctx, false);
-            },
-            child: Text(l.t('send.cancel'), style: const TextStyle(color: Colors.grey)),
-          ),
-        ],
-      ),
-    ).then((result) {
-      pinController.dispose();
-      return result;
-    });
+      builder: (_) => _PinVerifyDialog(l: l),
+    );
   }
 
   /// บันทึกชื่อให้ผู้รับของธุรกรรมที่เพิ่งส่งสำเร็จ
@@ -451,6 +546,10 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
   Widget _buildForm(LocaleProvider l) {
     final c = AppColors.of(context);
+    final wallet = context.watch<WalletProvider>();
+    final tokens = _sendableTokens(wallet);
+    final token = _selectedTokenInfo(wallet);
+    final symbol = _symbolOf(token);
     // เลื่อนได้เสมอ แต่ถ้าที่ว่างพอ Spacer ยังดันปุ่มส่งไปติดขอบล่างเหมือนเดิม
     return LayoutBuilder(
       builder: (_, constraints) => SingleChildScrollView(
@@ -475,7 +574,10 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(l.t('send.title'),
+                    Text(
+                        token == null
+                            ? l.t('send.title')
+                            : l.t('send.titleToken').replaceAll('{symbol}', symbol),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text)),
@@ -614,12 +716,51 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
           const SizedBox(height: TpixGap.xxl),
 
+          // ── เลือกเหรียญ (มีให้เลือกเมื่อกระเป๋ามีโทเค็นบน TPIX Chain เช่น USDT) ──
+          // ใช้ Wrap ไม่ใช่ ListView — จำนวนเหรียญน้อย และไม่ไปปนกับแถวชิปรายการโปรด
+          if (tokens.isNotEmpty) ...[
+            Text(l.t('send.asset'), style: TextStyle(fontSize: 14, color: c.textSec)),
+            const SizedBox(height: TpixGap.sm),
+            Wrap(
+              spacing: TpixGap.sm,
+              runSpacing: TpixGap.sm,
+              children: [
+                _assetChip(
+                  label: 'TPIX',
+                  logo: const TpixCoinLogo(size: 20),
+                  selected: token == null,
+                  onTap: () => _selectAsset(null),
+                  c: c,
+                ),
+                for (final t in tokens)
+                  _assetChip(
+                    label: t.symbol,
+                    logo: TokenAvatar(
+                      symbol: t.symbol,
+                      logoUrl: wallet.tokenLogo(t),
+                      size: 20,
+                      color: AppTheme.accent,
+                    ),
+                    selected: token?.contractAddress.toLowerCase() ==
+                        t.contractAddress.toLowerCase(),
+                    onTap: () => _selectAsset(t.contractAddress.toLowerCase()),
+                    c: c,
+                  ),
+              ],
+            ),
+            const SizedBox(height: TpixGap.xl),
+          ],
+
           // Amount
           Text(l.t('send.amount'), style: TextStyle(fontSize: 14, color: c.textSec)),
           const SizedBox(height: TpixGap.sm),
           TextField(
             controller: _amountController,
-            keyboardType: TextInputType.number,
+            // ทศนิยมต้องพิมพ์ได้ทุกเครื่อง (TextInputType.number บาง keyboard ไม่มีจุด)
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+            ],
             style: TextStyle(color: c.text, fontSize: 24, fontWeight: FontWeight.w700),
             decoration: InputDecoration(
               hintText: '0.00',
@@ -638,17 +779,26 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                 borderRadius: BorderRadius.circular(TpixRadius.md),
                 borderSide: const BorderSide(color: AppTheme.primary),
               ),
-              suffixText: 'TPIX',
+              suffixText: symbol,
               suffixStyle: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600),
             ),
           ),
 
           const SizedBox(height: TpixGap.md),
 
-          // Balance hint
-          Consumer<WalletProvider>(
-            builder: (_, wallet, __) => GestureDetector(
-              onTap: () => _amountController.text = wallet.balance.toStringAsFixed(4),
+          // Balance hint — MAX ใส่ยอดเต็มจริงทุกหลัก (ของเดิมปัด 4 ตำแหน่ง ซึ่งปัดขึ้นจนเกินยอดได้)
+          Builder(builder: (_) {
+            final raw = _rawBalanceOf(wallet, token);
+            final decimals = _decimalsOf(token);
+            final shown = raw == null
+                ? '—'
+                : token == null
+                    ? wallet.formattedBalance
+                    : Units.toDouble(raw, decimals).toStringAsFixed(4);
+            return GestureDetector(
+              onTap: raw == null || raw == BigInt.zero
+                  ? null
+                  : () => _amountController.text = Units.format(raw, decimals),
               child: Row(
                 children: [
                   // Flexible + ellipsis — ยอดเงินยาวๆ หรือเครื่องที่ตั้งตัวอักษรใหญ่
@@ -660,7 +810,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                         style: TextStyle(fontSize: 12, color: c.textMuted)),
                   ),
                   Flexible(
-                    child: Text('${wallet.formattedBalance} TPIX',
+                    child: Text('$shown $symbol',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600)),
@@ -676,8 +826,8 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                   ),
                 ],
               ),
-            ),
-          ),
+            );
+          }),
 
           const SizedBox(height: TpixGap.lg),
 
@@ -730,11 +880,58 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                         Text(l.t('send.sending'), style: const TextStyle(fontSize: 16, color: Colors.white)),
                       ],
                     )
-                  : Text(l.t('send.button'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+                  : Text(
+                      token == null
+                          ? l.t('send.button')
+                          : l.t('send.buttonToken').replaceAll('{symbol}', symbol),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
                   ),
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ชิปเลือกเหรียญหนึ่งอัน
+  Widget _assetChip({
+    required String label,
+    required Widget logo,
+    required bool selected,
+    required VoidCallback onTap,
+    required AppColors c,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(TpixRadius.md),
+        onTap: _isSending ? null : onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(TpixRadius.md),
+            color: selected ? AppTheme.primary.withValues(alpha: 0.15) : c.glassColor,
+            border: Border.all(
+              color: selected ? AppTheme.primary : c.glassBorder,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              logo,
+              const SizedBox(width: TpixGap.sm),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? AppTheme.primary : c.text,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -843,6 +1040,82 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           );
         },
       ),
+    );
+  }
+}
+
+
+/// กล่องใส่ PIN ยืนยันก่อนส่ง
+///
+/// แยกเป็น StatefulWidget เพื่อให้ controller ถูก dispose ใน dispose() ของตัวเอง
+/// ของเดิม dispose ซ้ำ 2 ครั้ง (ปุ่มยกเลิก + .then) และ dispose ตอนกล่องยังเล่น
+/// แอนิเมชันปิดอยู่ → "TextEditingController was used after being disposed"
+class _PinVerifyDialog extends StatefulWidget {
+  final LocaleProvider l;
+  const _PinVerifyDialog({required this.l});
+
+  @override
+  State<_PinVerifyDialog> createState() => _PinVerifyDialogState();
+}
+
+class _PinVerifyDialogState extends State<_PinVerifyDialog> {
+  final _pinController = TextEditingController();
+  bool _checking = false; // กันตรวจ PIN ซ้อนเมื่อพิมพ์เร็ว
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onChanged(String val) async {
+    if (val.length != 6 || _checking) return;
+    _checking = true;
+    final wallet = context.read<WalletProvider>();
+    // Verify PIN by trying unlock (already unlocked, so just check hash)
+    final isLocked = await WalletService().isPinLocked();
+    if (!mounted) return;
+    if (isLocked) {
+      Navigator.pop(context, false);
+      return;
+    }
+    // Use the provider's existing unlock check
+    final success = await wallet.unlock(val);
+    if (!mounted) return;
+    Navigator.pop(context, success);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final l = widget.l;
+    return AlertDialog(
+      backgroundColor: c.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
+      title: Text(l.t('pin.unlock'), style: TextStyle(color: c.text, fontSize: 16)),
+      content: TextField(
+        controller: _pinController,
+        obscureText: true,
+        keyboardType: TextInputType.number,
+        maxLength: 6,
+        autofocus: true,
+        style: TextStyle(color: c.text, fontSize: 24, letterSpacing: 8),
+        textAlign: TextAlign.center,
+        decoration: InputDecoration(
+          counterText: '',
+          hintText: '••••••',
+          hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.3)),
+          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3))),
+          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary)),
+        ),
+        onChanged: _onChanged,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(l.t('send.cancel'), style: const TextStyle(color: Colors.grey)),
+        ),
+      ],
     );
   }
 }

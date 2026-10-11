@@ -7,16 +7,20 @@ import 'package:bip32/bip32.dart' as bip32;
 import 'package:crypto/crypto.dart' show Hmac, sha256;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hex/hex.dart';
-import 'package:web3dart/crypto.dart' show bytesToHex, keccakAscii;
+import 'package:web3dart/crypto.dart' show bytesToHex, keccak256, keccakAscii;
 import 'package:web3dart/web3dart.dart';
-import 'package:http/http.dart' as http;
+import '../models/chain_config.dart';
 import '../models/wallet_info.dart';
 import '../models/tx_record.dart';
+import '../utils/units.dart';
 import 'db_service.dart';
+import 'explorer_service.dart';
+import 'rpc_client.dart';
 
 /// TPIX Chain Configuration
 class TpixChain {
   static const int chainId = 4289;
+  /// RPC หลัก (แสดงในหน้าตั้งค่า) — การเรียกจริงผ่าน RpcClient.tpix ซึ่งสลับไปตัวสำรองเอง
   static const String rpcUrl = 'https://rpc.tpix.online';
   static const String explorerUrl = 'https://explorer.tpix.online';
   static const String symbol = 'TPIX';
@@ -52,11 +56,15 @@ class WalletService {
   static const _legacyKeyPrivateKey = 'tpix_private_key';
   // Note: legacy mnemonic key is same as _keyMnemonic — no migration needed
 
-  Web3Client? _web3;
   EthPrivateKey? _credentials;
   String? _address;
   String? _mnemonic;
-  int? _cachedNonce; // local nonce cache to prevent collision on rapid sends
+
+  /// nonce ที่เพิ่งใช้ไปต่อ (เชน:ที่อยู่) — กันส่งรัวๆ แล้ว nonce ชนกัน
+  /// โดยเฉพาะเมื่อสลับ RPC: โหนดสำรองอาจยังไม่เห็นธุรกรรมที่เพิ่งส่งเข้าโหนดหลัก
+  /// มีอายุสั้น — ถ้าธุรกรรมหลุดจาก mempool จะได้กลับไปเชื่อ nonce บนเชน ไม่ค้างช่องว่าง
+  final Map<String, ({int next, DateTime at})> _nonceCache = {};
+  static const _nonceCacheTtl = Duration(minutes: 2);
 
   List<WalletInfo> _wallets = [];
   int _activeSlot = -1;
@@ -81,10 +89,8 @@ class WalletService {
     return '${_address!.substring(0, 6)}...${_address!.substring(_address!.length - 4)}';
   }
 
-  Web3Client get web3 {
-    _web3 ??= Web3Client(TpixChain.rpcUrl, http.Client());
-    return _web3!;
-  }
+  /// RPC ของ TPIX Chain (หลัก + สำรอง)
+  RpcClient get _rpc => RpcClient.tpix;
 
   // ================================================================
   // Multi-Wallet Management
@@ -620,8 +626,8 @@ class WalletService {
   // ================================================================
 
   /// Save a transaction record to SQLite
-  Future<void> saveTxRecord(TxRecord tx) async {
-    await DbService.insertTx(tx, _activeSlot);
+  Future<void> saveTxRecord(TxRecord tx, {int? slot}) async {
+    await DbService.insertTx(tx, slot ?? _activeSlot);
   }
 
   /// Get transaction history for active wallet from SQLite
@@ -659,35 +665,46 @@ class WalletService {
     }
   }
 
+  /// ดึงประวัติล่าสุดของกระเป๋าที่ใช้อยู่
+  ///
+  /// ใช้ explorer (Blockscout v2) ก่อน — เห็นย้อนหลังได้ไกลกว่าและเห็นการรับโทเค็น ERC-20
+  /// (การรับ USDT ไม่ได้อยู่ใน from/to ของธุรกรรม สแกนบล็อกแบบเดิมมองไม่เห็นเลย)
+  /// explorer ใช้ไม่ได้ → ถอยไปสแกนบล็อกล่าสุดทาง RPC แบบเดิม
+  Future<List<TxRecord>> syncHistory({int blockCount = 50}) async {
+    final address = _address;
+    if (address == null) return [];
+    final slot = _activeSlot;
+    final fromExplorer = await ExplorerService.fetchHistory(address);
+    if (fromExplorer != null) {
+      // ผู้ใช้สลับกระเป๋าระหว่างรอ → ห้ามเอาประวัติของอีกใบไปลงช่องนี้
+      if (_address != address || _activeSlot != slot) return [];
+      await DbService.upsertTxBatch(fromExplorer, slot);
+      return fromExplorer;
+    }
+    return scanRecentTransactions(blockCount: blockCount);
+  }
+
   /// Scan recent blocks for incoming/outgoing transactions via RPC
   Future<List<TxRecord>> scanRecentTransactions({int blockCount = 50}) async {
-    if (_address == null) return [];
+    final address = _address;
+    if (address == null) return [];
+    final slot = _activeSlot;
 
     final found = <TxRecord>[];
-    final addr = _address!.toLowerCase();
-    final client = http.Client();
+    final addr = address.toLowerCase();
 
     try {
-      final latestBlock = await web3.getBlockNumber();
+      final latestBlock = await _rpc.getBlockNumber();
       final startBlock = max(0, latestBlock - blockCount);
       int consecutiveEmpty = 0; // early termination after 10 empty blocks
 
       for (int i = latestBlock; i >= startBlock; i--) {
         try {
-          final response = await client.post(
-            Uri.parse(TpixChain.rpcUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'jsonrpc': '2.0',
-              'method': 'eth_getBlockByNumber',
-              'params': ['0x${i.toRadixString(16)}', true],
-              'id': i,
-            }),
-          ).timeout(const Duration(seconds: 5));
-
-          final body = jsonDecode(response.body);
-          final block = body['result'];
-          if (block == null) {
+          final block = await _rpc.call(
+            'eth_getBlockByNumber',
+            ['0x${i.toRadixString(16)}', true],
+          );
+          if (block is! Map) {
             consecutiveEmpty++;
             if (consecutiveEmpty >= 10) break; // early termination
             continue;
@@ -702,10 +719,11 @@ class WalletService {
           consecutiveEmpty = 0; // reset on non-empty block
 
           final blockTimestamp = block['timestamp'] != null
-              ? int.parse(block['timestamp'].toString().replaceFirst('0x', ''), radix: 16)
+              ? RpcClient.parseQuantity(block['timestamp']).toInt()
               : DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
           for (final txData in txs) {
+            if (txData is! Map) continue;
             final from = (txData['from'] as String? ?? '').toLowerCase();
             final to = (txData['to'] as String? ?? '').toLowerCase();
 
@@ -714,11 +732,10 @@ class WalletService {
               // Skip if already in SQLite
               if (await DbService.txExists(txHash)) continue;
 
-              final valueHex = txData['value'] as String? ?? '0x0';
-              final valueWei = BigInt.parse(valueHex.replaceFirst('0x', ''), radix: 16);
+              final valueWei = RpcClient.parseQuantity(txData['value'] ?? '0x0');
               final direction = from == addr ? 'sent' : 'received';
 
-              final tx = TxRecord(
+              found.add(TxRecord(
                 txHash: txHash,
                 fromAddress: txData['from'] as String? ?? '',
                 toAddress: txData['to'] as String? ?? '',
@@ -727,8 +744,7 @@ class WalletService {
                 status: 'confirmed',
                 blockNumber: i,
                 timestamp: blockTimestamp,
-              );
-              found.add(tx);
+              ));
             }
           }
         } catch (_) {
@@ -737,14 +753,12 @@ class WalletService {
         }
       }
 
-      // Bulk insert all found transactions
-      if (found.isNotEmpty) {
-        await DbService.insertTxBatch(found, _activeSlot);
+      // ผู้ใช้สลับกระเป๋าระหว่างสแกน → ผลนี้เป็นของอีกใบ ทิ้ง
+      if (found.isNotEmpty && _address == address && _activeSlot == slot) {
+        await DbService.insertTxBatch(found, slot);
       }
     } catch (e) {
-      debugPrint('Block scan error: $e');
-    } finally {
-      client.close();
+      debugPrint('Block scan error: ${e.runtimeType}');
     }
 
     return found;
@@ -754,84 +768,213 @@ class WalletService {
   // Blockchain Operations
   // ================================================================
 
-  /// Get TPIX balance for active wallet
-  Future<double> getBalance() async {
-    if (_address == null) return 0;
-    try {
-      final balance = await web3.getBalance(EthereumAddress.fromHex(_address!));
-      return balance.getValueInUnit(EtherUnit.ether).toDouble();
-    } catch (e) {
-      return 0;
-    }
+  /// ยอด TPIX (wei) ของกระเป๋าที่ใช้อยู่
+  ///
+  /// ★ ดึงไม่ได้ = throw (ห้ามคืน 0) — ของเดิมคืน 0 แล้วทับยอดล่าสุดที่รู้
+  ///   ผู้ใช้เห็นเงินหายเหลือ 0 ทุกครั้งที่เน็ตสะดุด ตอนนี้ provider เก็บยอดเดิม + ติดป้าย "ไม่อัปเดต"
+  Future<BigInt> getBalanceWei() async {
+    final address = _address;
+    if (address == null) throw StateError('No active wallet');
+    return _rpc.getBalance(address);
   }
 
-  /// Get balance for a specific address
-  Future<double> getBalanceForAddress(String address) async {
-    try {
-      final balance = await web3.getBalance(EthereumAddress.fromHex(address));
-      return balance.getValueInUnit(EtherUnit.ether).toDouble();
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  /// Send TPIX to another address
+  /// ส่ง TPIX (native) — [amountWei] เป็นหน่วย wei แบบ BigInt (ไม่ผ่าน double)
+  ///
+  /// [expectedFrom] = ที่อยู่ที่ผู้ใช้เห็นตอนกดยืนยัน — ถ้ากระเป๋าถูกสลับระหว่างนั้น ยกเลิก
   Future<String> sendTPIX({
     required String toAddress,
-    required double amount,
+    required BigInt amountWei,
+    String? expectedFrom,
   }) async {
-    if (_credentials == null) throw Exception('Wallet not unlocked');
-
-    // Use string conversion to avoid double precision loss
-    final parts = amount.toStringAsFixed(18).split('.');
-    final whole = BigInt.parse(parts[0]);
-    final frac = parts.length > 1 ? parts[1].padRight(18, '0').substring(0, 18) : '0' * 18;
-    final amountInWei = whole * BigInt.from(10).pow(18) + BigInt.parse(frac);
-
-    final tx = await web3.sendTransaction(
-      _credentials!,
-      Transaction(
-        to: EthereumAddress.fromHex(toAddress),
-        value: EtherAmount.inWei(amountInWei),
-        gasPrice: EtherAmount.inWei(BigInt.zero), // TPIX Chain is gasless
-        maxGas: 21000,
-      ),
+    if (amountWei <= BigInt.zero) throw ArgumentError('amount must be > 0');
+    final slot = _activeSlot;
+    final sent = await _signAndSend(
+      rpc: _rpc,
       chainId: TpixChain.chainId,
+      to: toAddress,
+      value: amountWei,
+      gasPrice: BigInt.zero, // TPIX Chain ไม่มีค่าแก๊ส
+      expectedFrom: expectedFrom,
     );
 
-    _incrementNonce();
-
-    // Store transaction locally
-    final txRecord = TxRecord(
-      txHash: tx,
-      fromAddress: _address!,
-      toAddress: toAddress,
-      value: amountInWei.toString(),
-      direction: 'sent',
-      status: 'pending',
+    await DbService.insertTx(
+      TxRecord(
+        txHash: sent.hash,
+        fromAddress: sent.from,
+        toAddress: toAddress,
+        value: amountWei.toString(),
+        direction: 'sent',
+        status: 'pending',
+      ),
+      slot,
     );
-    await saveTxRecord(txRecord);
-
-    return tx;
+    return sent.hash;
   }
 
-  /// Get transaction count (nonce) with local cache to prevent collision on rapid sends.
-  /// After sending a tx, the cached nonce is incremented locally so the next send
-  /// uses nonce+1 even before the previous tx is mined.
-  Future<int> getTransactionCount() async {
-    if (_address == null) return 0;
-    final onChain = await web3.getTransactionCount(EthereumAddress.fromHex(_address!));
-    // Use whichever is higher: on-chain nonce or our local cache
-    if (_cachedNonce != null && _cachedNonce! > onChain) {
-      return _cachedNonce!;
+  /// ส่งโทเค็น ERC-20: เรียก transfer(to, amount) ของสัญญาโทเค็น
+  ///
+  /// - [amount] เป็นหน่วยย่อยของโทเค็น (USDT 6 ทศนิยม → 1 USDT = 1,000,000)
+  /// - legacy tx + EIP-155 chainId, gasPrice จาก eth_gasPrice (TPIX = 0),
+  ///   gas = ประเมินจริง + เผื่อ 20%
+  Future<String> sendToken({
+    required String tokenAddress,
+    required String tokenSymbol,
+    required int tokenDecimals,
+    required String toAddress,
+    required BigInt amount,
+    int chainId = TpixChain.chainId,
+    String? expectedFrom,
+  }) async {
+    if (amount <= BigInt.zero) throw ArgumentError('amount must be > 0');
+    final slot = _activeSlot;
+    final chain = ChainConfig.byId(chainId);
+    final sent = await _signAndSend(
+      rpc: RpcClient.forChain(chain),
+      chainId: chain.chainId,
+      to: tokenAddress,
+      data: Units.encodeErc20Transfer(toAddress, amount),
+      expectedFrom: expectedFrom,
+    );
+
+    // บันทึกเป็น "ส่งโทเค็นให้ผู้รับ" ไม่ใช่ "ส่ง 0 TPIX ให้สัญญา"
+    await DbService.insertTx(
+      TxRecord(
+        txHash: sent.hash,
+        fromAddress: sent.from,
+        toAddress: toAddress,
+        value: amount.toString(),
+        direction: 'sent',
+        status: 'pending',
+        tokenAddress: tokenAddress,
+        tokenSymbol: tokenSymbol,
+        tokenDecimals: tokenDecimals,
+      ),
+      slot,
+    );
+    return sent.hash;
+  }
+
+  /// nonce ถัดไป: มากสุดระหว่าง "pending บนเชน" กับ "ตัวที่เราเพิ่งใช้ + 1" (ถ้ายังไม่หมดอายุ)
+  Future<int> _nextNonce(RpcClient rpc, int chainId, String address) async {
+    final onChain = await rpc.getPendingNonce(address);
+    final cached = _nonceCache['$chainId:${address.toLowerCase()}'];
+    if (cached != null &&
+        DateTime.now().difference(cached.at) < _nonceCacheTtl &&
+        cached.next > onChain) {
+      return cached.next;
     }
-    _cachedNonce = onChain;
     return onChain;
   }
 
-  /// Increment local nonce after a successful send
-  void _incrementNonce() {
-    _cachedNonce = (_cachedNonce ?? 0) + 1;
+  void _rememberNonceUsed(int chainId, String address, int nonce) {
+    _nonceCache['$chainId:${address.toLowerCase()}'] =
+        (next: nonce + 1, at: DateTime.now());
+  }
+
+  /// เซ็น + broadcast ธุรกรรมแบบ legacy (เชน TPIX ไม่รองรับ EIP-1559)
+  ///
+  /// ทางเดียวที่ทุกการส่งใช้ร่วมกัน (TPIX, โทเค็น, สวอป, บริดจ์, WalletConnect, sign-tx)
+  /// ผ่าน RpcClient → ถ้า RPC หลักติดต่อไม่ได้ สลับไปตัวสำรองเอง
+  /// แต่ถ้าโหนดตอบ error (เช่น insufficient funds) ส่งต่อให้ผู้ใช้เห็นทันที ไม่ยิงซ้ำ
+  Future<({String hash, String from})> _signAndSend({
+    required RpcClient rpc,
+    required int chainId,
+    required String to,
+    BigInt? value,
+    Uint8List? data,
+    int? maxGas,
+    BigInt? gasPrice,
+    String? expectedFrom,
+  }) async {
+    // จับกุญแจ + ที่อยู่ไว้ตั้งแต่ต้น — ระหว่าง await ข้างล่างผู้ใช้อาจสลับกระเป๋า
+    // ธุรกรรมต้องเซ็นด้วยกระเป๋าใบที่ผู้ใช้กดยืนยันเท่านั้น
+    final credentials = _credentials;
+    final from = _address;
+    if (credentials == null || from == null) {
+      throw Exception('Wallet not unlocked');
+    }
+    if (expectedFrom != null && expectedFrom.toLowerCase() != from.toLowerCase()) {
+      throw const WalletChangedException();
+    }
+
+    final txValue = value ?? BigInt.zero;
+    final price = gasPrice ?? await rpc.getGasPrice();
+    final gas = maxGas ??
+        Units.addGasMargin(
+            await _estimateGas(rpc, from: from, to: to, value: txValue, data: data));
+
+    // เชนที่มีค่าแก๊ส: เช็กก่อนว่ามี native พอจ่ายค่าแก๊ส (+ มูลค่าที่ส่ง)
+    // ไม่งั้นผู้ใช้ได้ error ดิบจากโหนดแทนข้อความที่เข้าใจได้
+    if (price > BigInt.zero) {
+      final native = await rpc.getBalance(from);
+      if (native < txValue + price * BigInt.from(gas)) {
+        throw const InsufficientGasException();
+      }
+    }
+
+    final nonce = await _nextNonce(rpc, chainId, from);
+    final tx = Transaction(
+      from: EthereumAddress.fromHex(from),
+      to: EthereumAddress.fromHex(to),
+      value: EtherAmount.inWei(txValue),
+      data: data ?? Uint8List(0),
+      gasPrice: EtherAmount.inWei(price),
+      maxGas: gas,
+      nonce: nonce,
+    );
+    final signed = signTransactionRaw(tx, credentials, chainId: chainId);
+    // hash ของธุรกรรม legacy = keccak256(raw ที่เซ็นแล้ว) — รู้ได้ก่อนส่ง
+    final localHash = bytesToHex(keccak256(signed), include0x: true);
+
+    String hash;
+    try {
+      final result = await rpc.call('eth_sendRawTransaction', [
+        bytesToHex(signed, include0x: true, padToEvenLength: true),
+      ]);
+      hash = result is String && result.isNotEmpty ? result : localHash;
+    } on RpcException catch (e) {
+      // RPC หลักรับไปแล้วแต่ตอบไม่ทัน → ยิงซ้ำไปโหนดสำรองได้ "already known"
+      // หรือขุดไปแล้วได้ "nonce too low" — ถ้าเชนมีธุรกรรมนี้จริง = ส่งสำเร็จ
+      if (_maybeAlreadySent(e.message) && await _txExists(rpc, localHash)) {
+        hash = localHash;
+      } else {
+        rethrow;
+      }
+    }
+    _rememberNonceUsed(chainId, from, nonce);
+    return (hash: hash, from: from);
+  }
+
+  static bool _maybeAlreadySent(String message) {
+    final m = message.toLowerCase();
+    return m.contains('already known') ||
+        m.contains('known transaction') ||
+        m.contains('nonce too low') ||
+        m.contains('already imported');
+  }
+
+  Future<bool> _txExists(RpcClient rpc, String hash) async {
+    try {
+      return await rpc.call('eth_getTransactionByHash', [hash]) != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<int> _estimateGas(
+    RpcClient rpc, {
+    required String from,
+    required String to,
+    required BigInt value,
+    Uint8List? data,
+  }) async {
+    final params = <String, String>{
+      'from': from,
+      'to': to,
+      if (value > BigInt.zero) 'value': '0x${value.toRadixString(16)}',
+      if (data != null && data.isNotEmpty) 'data': bytesToHex(data, include0x: true),
+    };
+    return RpcClient.parseQuantity(await rpc.call('eth_estimateGas', [params])).toInt();
   }
 
   // ================================================================
@@ -839,8 +982,9 @@ class WalletService {
   // ================================================================
 
   /// Sign and send a transaction on ANY EVM chain
-  /// Used by swap (DEX routers on BSC/Polygon/ETH) and bridge
+  /// Used by swap (DEX routers on BSC/Polygon/ETH), bridge, WalletConnect, peer sign-tx
   /// The same HD-derived private key works on all EVM chains
+  /// [rpcUrl] ของเชนที่รู้จัก → ได้ RPC สำรองของเชนนั้นด้วย (RpcClient.forUrl)
   Future<String> sendEvmTransaction({
     required String rpcUrl,
     required int chainId,
@@ -849,67 +993,51 @@ class WalletService {
     Uint8List? data,
     int? maxGas,
     BigInt? gasPrice,
+    String? expectedFrom,
   }) async {
-    if (_credentials == null) throw Exception('Wallet not unlocked');
+    final slot = _activeSlot;
+    final sent = await _signAndSend(
+      rpc: RpcClient.forUrl(rpcUrl, chainId: chainId),
+      chainId: chainId,
+      to: toAddress,
+      value: value,
+      data: data,
+      maxGas: maxGas,
+      gasPrice: gasPrice,
+      expectedFrom: expectedFrom,
+    );
 
-    final client = Web3Client(rpcUrl, http.Client());
-    try {
-      final tx = Transaction(
-        to: EthereumAddress.fromHex(toAddress),
-        value: value != null ? EtherAmount.inWei(value) : EtherAmount.zero(),
-        data: data,
-        gasPrice: gasPrice != null ? EtherAmount.inWei(gasPrice) : null,
-        maxGas: maxGas,
-      );
-      final txHash = await client.sendTransaction(
-        _credentials!,
-        tx,
-        chainId: chainId,
-      );
-      _incrementNonce();
-
-      // Store cross-chain transaction locally so it appears in history
-      final txRecord = TxRecord(
-        txHash: txHash,
-        fromAddress: _address!,
+    // Store cross-chain transaction locally so it appears in history
+    // เชนอื่นเก็บสัญลักษณ์/ทศนิยมของเชนนั้น ไม่งั้นประวัติโชว์ BNB เป็น "TPIX"
+    final chain = chainId == TpixChain.chainId ? null : ChainConfig.byId(chainId);
+    await DbService.insertTx(
+      TxRecord(
+        txHash: sent.hash,
+        fromAddress: sent.from,
         toAddress: toAddress,
         value: (value ?? BigInt.zero).toString(),
         direction: 'sent',
         status: 'pending',
-      );
-      await saveTxRecord(txRecord);
-
-      return txHash;
-    } finally {
-      client.dispose();
-    }
+        tokenSymbol: chain?.symbol,
+        tokenDecimals: chain?.decimals,
+      ),
+      slot,
+    );
+    return sent.hash;
   }
 
   /// Wait for a transaction to be confirmed on any EVM chain
-  /// Returns 'confirmed' or 'failed', or null if still pending
-  Future<String?> checkEvmTxStatus(String rpcUrl, String txHash) async {
+  /// Returns 'confirmed' or 'failed', or null if still pending / unreachable
+  Future<String?> checkEvmTxStatus(String rpcUrl, String txHash) =>
+      _receiptStatus(RpcClient.forUrl(rpcUrl), txHash);
+
+  static Future<String?> _receiptStatus(RpcClient rpc, String txHash) async {
     try {
-      final client = http.Client();
-      try {
-        final response = await client.post(
-          Uri.parse(rpcUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'jsonrpc': '2.0',
-            'method': 'eth_getTransactionReceipt',
-            'params': [txHash],
-            'id': 1,
-          }),
-        ).timeout(const Duration(seconds: 10));
-        final body = jsonDecode(response.body);
-        final result = body['result'];
-        if (result == null) return null; // still pending
-        final statusHex = result['status'] as String?;
-        if (statusHex == null) return null; // status unknown, treat as pending
-        return statusHex == '0x1' ? 'confirmed' : 'failed';
-      } finally {
-        client.close();
-      }
+      final result = await rpc.call('eth_getTransactionReceipt', [txHash]);
+      if (result is! Map) return null; // still pending
+      final statusHex = result['status'] as String?;
+      if (statusHex == null) return null; // status unknown, treat as pending
+      return statusHex == '0x1' ? 'confirmed' : 'failed';
     } catch (_) {
       return null;
     }
@@ -939,35 +1067,9 @@ class WalletService {
   // Transaction Status Polling
   // ================================================================
 
-  /// Check if a TX is confirmed on-chain, update local record
-  Future<String?> checkTransactionStatus(String txHash) async {
-    try {
-      final client = http.Client();
-      try {
-        final response = await client.post(
-          Uri.parse(TpixChain.rpcUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'jsonrpc': '2.0',
-            'method': 'eth_getTransactionReceipt',
-            'params': [txHash],
-            'id': 1,
-          }),
-        );
-        final body = jsonDecode(response.body);
-        final result = body['result'];
-        if (result == null) return null; // still pending
-
-        final statusHex = result['status'] as String?;
-        if (statusHex == null) return null; // status unknown, treat as pending
-        return statusHex == '0x1' ? 'confirmed' : 'failed';
-      } finally {
-        client.close();
-      }
-    } catch (_) {
-      return null;
-    }
-  }
+  /// Check if a TX is confirmed on-chain (TPIX Chain, ผ่าน RPC หลัก/สำรอง)
+  Future<String?> checkTransactionStatus(String txHash) =>
+      _receiptStatus(_rpc, txHash);
 
   /// Update a TX record status in SQLite
   Future<void> updateTxStatus(String txHash, String newStatus, {int? slot}) async {
@@ -1065,7 +1167,20 @@ class WalletService {
   }
 
   void dispose() {
-    _web3?.dispose();
     _credentials = null;
   }
+}
+
+/// กระเป๋าที่ใช้อยู่ไม่ใช่ใบที่ผู้ใช้กดยืนยัน (สลับกระเป๋าระหว่างกำลังส่ง) → ยกเลิกการส่ง
+class WalletChangedException implements Exception {
+  const WalletChangedException();
+  @override
+  String toString() => 'Active wallet changed — transaction cancelled';
+}
+
+/// เชนที่มีค่าแก๊ส แต่ยอดเหรียญหลักไม่พอจ่ายค่าแก๊ส
+class InsufficientGasException implements Exception {
+  const InsufficientGasException();
+  @override
+  String toString() => 'Insufficient balance for network fee';
 }

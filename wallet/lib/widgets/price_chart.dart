@@ -1,19 +1,32 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
 import '../core/themes/tokens.dart';
 import '../core/theme.dart';
 import '../core/themes/theme_bundle.dart';
 import '../services/price_service.dart';
+import 'tpix_coin_logo.dart';
 
 /// Beautiful gradient area chart for TPIX price history
+///
+/// ข้อมูลกราฟมาจาก API แท่งเทียนของ TPIX DEX เท่านั้น — ดึงไม่ได้ = บอกว่า "ไม่พร้อมใช้งาน"
+/// ไม่มีการสุ่ม/เติมจุดราคาเองอีกต่อไป (ของเดิมสุ่มกราฟ 7 วันขึ้นมาเองตอนติดตั้ง)
 class PriceChartWidget extends StatefulWidget {
-  final double currentPrice;
-  final double balanceTPIX;
+  /// ราคาปัจจุบัน — null = ยังไม่เคยได้ราคาจริง
+  final double? currentPrice;
+
+  /// ราคาที่โชว์เป็นราคาเก่า (ดึงล่าสุดไม่สำเร็จ)
+  final bool isPriceStale;
+
+  /// ยอด TPIX — null = ยังไม่รู้ยอด (ไม่คำนวณมูลค่าพอร์ต)
+  final double? balanceTPIX;
 
   const PriceChartWidget({
     super.key,
     required this.currentPrice,
     required this.balanceTPIX,
+    this.isPriceStale = false,
   });
 
   @override
@@ -25,7 +38,9 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
   List<PricePoint> _points = [];
   int _selectedDays = 7;
   bool _isLoading = true;
-  double _changePercent = 0;
+  bool _unavailable = false;
+  double? _changePercent;
+  int _requestId = 0; // กันผลของช่วงเก่ามาทับช่วงใหม่เมื่อกดสลับเร็วๆ
   late AnimationController _animController;
   late Animation<double> _animProgress;
 
@@ -50,15 +65,18 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
   }
 
   Future<void> _loadData() async {
-    final points = await PriceService.getPriceHistory(days: _selectedDays);
-    final change = await PriceService.getPriceChange(days: _selectedDays);
-    if (!mounted) return;
+    final request = ++_requestId;
+    final points =
+        await PriceService.fetchChart(ChartRange.fromDays(_selectedDays));
+    if (!mounted || request != _requestId) return;
     setState(() {
-      _points = points;
-      _changePercent = change;
+      _unavailable = points == null;
+      _points = points ?? const [];
+      _changePercent =
+          points == null ? null : PriceService.changePercent(points);
       _isLoading = false;
     });
-    _animController.forward(from: 0);
+    if (_points.length >= 2) _animController.forward(from: 0);
   }
 
   void _changePeriod(int days) {
@@ -70,12 +88,22 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
     _loadData();
   }
 
+  void _retry() {
+    setState(() => _isLoading = true);
+    _loadData();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isPositive = _changePercent >= 0;
+    final l = context.watch<LocaleProvider>();
+    final change = _changePercent;
+    final isPositive = (change ?? 0) >= 0;
     final changeColor = isPositive ? AppTheme.success : AppTheme.danger;
     final changeIcon = isPositive ? Icons.trending_up : Icons.trending_down;
-    final portfolioValue = widget.balanceTPIX * widget.currentPrice;
+    final price = widget.currentPrice;
+    final balance = widget.balanceTPIX;
+    final portfolioValue =
+        (price != null && balance != null) ? balance * price : null;
 
     // สีการ์ดเดิมฮาร์ดโค้ดกรมท่าเข้ม ไม่สนธีม → บนธีมสว่างกลายเป็นการ์ดดำบนพื้นขาว
     // ต้องอ่านจากธีมปัจจุบันเสมอ
@@ -120,72 +148,86 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
               // Expanded — ราคา/เปอร์เซ็นต์ยาวขึ้นตามค่าจริง ต้องไม่ดันป้ายขวาตกขอบ
               Expanded(
                 child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      ClipOval(
-                        // ถอดรหัสที่ 60px (20 logical x 3 dpr)
-                        child: Image.asset(
-                          'assets/images/logowallet.png',
-                          width: 20,
-                          height: 20,
-                          fit: BoxFit.cover,
-                          cacheWidth: 60,
-                          cacheHeight: 60,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        TpixCoinLogo(size: 20),
+                        SizedBox(width: TpixGap.sm),
+                        Text(
+                          'TPIX/USD',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: TpixGap.xs),
+                    Text(
+                      price != null ? '\$${formatUsdPrice(price)}' : '—',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.1,
+                      ),
+                    ),
+                    // ไม่มีราคา / ราคาเก่า — บอกตรงๆ ไม่ปล่อยให้เข้าใจว่าเป็นราคาสด
+                    if (price == null || widget.isPriceStale)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline,
+                                size: 12, color: AppTheme.warm),
+                            const SizedBox(width: TpixGap.xs),
+                            Flexible(
+                              child: Text(
+                                l.t(price == null
+                                    ? 'price.unavailable'
+                                    : 'price.stale'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 11, color: AppTheme.warm),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: TpixGap.sm),
-                      const Text(
-                        'TPIX/USD',
+                  ],
+                ),
+              ),
+              const SizedBox(width: TpixGap.sm),
+              // Change badge — มีเฉพาะเมื่อกราฟมีข้อมูลจริงพอคำนวณ
+              if (change != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(TpixRadius.sm),
+                    color: changeColor.withValues(alpha: 0.12),
+                    border: Border.all(
+                        color: changeColor.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(changeIcon, color: changeColor, size: 14),
+                      const SizedBox(width: TpixGap.xs),
+                      Text(
+                        '${isPositive ? '+' : ''}${change.toStringAsFixed(2)}%',
                         style: TextStyle(
                           fontSize: 13,
-                          color: AppTheme.textMuted,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
+                          color: changeColor,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: TpixGap.xs),
-                  Text(
-                    '\$${widget.currentPrice.toStringAsFixed(4)}',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      height: 1.1,
-                    ),
-                  ),
-                ],
                 ),
-              ),
-              const SizedBox(width: TpixGap.sm),
-              // Change badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(TpixRadius.sm),
-                  color: changeColor.withValues(alpha: 0.12),
-                  border: Border.all(
-                      color: changeColor.withValues(alpha: 0.25)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(changeIcon, color: changeColor, size: 14),
-                    const SizedBox(width: TpixGap.xs),
-                    Text(
-                      '${isPositive ? '+' : ''}${_changePercent.toStringAsFixed(2)}%',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: changeColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
 
@@ -193,7 +235,7 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 16),
             child: Text(
-              'Portfolio: \$${_formatPortfolio(portfolioValue)}',
+              'Portfolio: ${portfolioValue != null ? '\$${_formatPortfolio(portfolioValue)}' : '—'}',
               style: TextStyle(
                 fontSize: 13,
                 color: AppTheme.textMuted.withValues(alpha: 0.7),
@@ -215,27 +257,25 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
                       ),
                     ),
                   )
-                : _points.length < 2
-                    ? Center(
-                        child: Text(
-                          'Loading chart data...',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textMuted.withValues(alpha: 0.5),
-                          ),
-                        ),
+                : _unavailable
+                    ? _buildChartMessage(
+                        l.t('price.chartUnavailable'),
+                        onRetry: _retry,
+                        retryLabel: l.t('price.retry'),
                       )
-                    : AnimatedBuilder(
-                        animation: _animProgress,
-                        builder: (_, __) => CustomPaint(
-                          size: const Size(double.infinity, 140),
-                          painter: _ChartPainter(
-                            points: _points,
-                            progress: _animProgress.value,
-                            isPositive: isPositive,
+                    : _points.length < 2
+                        ? _buildChartMessage(l.t('price.notEnoughData'))
+                        : AnimatedBuilder(
+                            animation: _animProgress,
+                            builder: (_, _) => CustomPaint(
+                              size: const Size(double.infinity, 140),
+                              painter: _ChartPainter(
+                                points: _points,
+                                progress: _animProgress.value,
+                                isPositive: isPositive,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
           ),
 
           const SizedBox(height: TpixGap.md),
@@ -253,6 +293,33 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
               _periodButton('90D', 90),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  /// ข้อความแทนกราฟ (ดึงไม่ได้ / ข้อมูลยังไม่พอ) — ไม่วาดเส้นปลอมแทน
+  Widget _buildChartMessage(String text,
+      {VoidCallback? onRetry, String? retryLabel}) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              color: AppTheme.textMuted.withValues(alpha: 0.7),
+            ),
+          ),
+          if (onRetry != null && retryLabel != null)
+            TextButton(
+              onPressed: onRetry,
+              child: Text(retryLabel,
+                  style:
+                      const TextStyle(fontSize: 12, color: AppTheme.primary)),
+            ),
         ],
       ),
     );
@@ -457,3 +524,7 @@ class _ChartPainter extends CustomPainter {
       oldDelegate.points.length != points.length ||
       oldDelegate.isPositive != isPositive;
 }
+
+/// ราคาต่ำกว่า 1 เซนต์ต้องโชว์ทศนิยมมากขึ้น ไม่งั้นกลายเป็น $0.0000
+String formatUsdPrice(double price) =>
+    price >= 0.01 ? price.toStringAsFixed(4) : price.toStringAsPrecision(4);

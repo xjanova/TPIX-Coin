@@ -12,6 +12,7 @@ import '../services/swap_service.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_auth_service.dart';
 import '../providers/wallet_provider.dart';
+import '../utils/units.dart';
 import '../widgets/token_selector.dart';
 
 class BridgeScreen extends StatefulWidget {
@@ -165,12 +166,18 @@ class _BridgeScreenState extends State<BridgeScreen> {
       final sourceChain = _route!.sourceChain;
       String sourceTxHash;
 
-      // Convert amount to wei (18 decimals)
-      final amountWei = SwapService.parseAmount(amountStr, sourceChain.decimals);
+      // แปลงจากข้อความตรงเป็นหน่วยย่อย (ไม่ผ่าน double — กันส่งเกิน/ขาดเศษทศนิยม)
+      final parsedAmount = Units.parse(amountStr, sourceChain.decimals);
+      if (!parsedAmount.isOk) throw Exception(l.t('send.invalidAmount'));
+      final amountWei = parsedAmount.value!;
 
       if (sourceChain.chainId == 4289) {
         // TPIX Chain → send TPIX to bridge wallet (gasless, use existing sendTPIX)
-        sourceTxHash = await wallet.sendTPIX(feeWallet, amount);
+        sourceTxHash = await wallet.sendTPIX(
+          feeWallet,
+          amountWei,
+          expectedFrom: wallet.address,
+        );
       } else {
         // External chain (BSC) → send native/token to bridge wallet
         final gasPrice = await SwapService.getGasPrice(sourceChain);
@@ -188,9 +195,8 @@ class _BridgeScreenState extends State<BridgeScreen> {
 
       // Wait for source chain confirmation
       String? txStatus;
-      final rpcUrl = sourceChain.chainId == 4289
-          ? 'https://rpc.tpix.online'
-          : sourceChain.rpcUrl;
+      // RPC ของเชนต้นทาง — checkEvmTxStatus สลับไป RPC สำรองของเชนนั้นเองถ้าตัวหลักใช้ไม่ได้
+      final rpcUrl = sourceChain.rpcUrl;
       for (int i = 0; i < 15; i++) {
         await Future.delayed(const Duration(seconds: 2));
         if (!mounted) return;
