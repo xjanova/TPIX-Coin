@@ -175,6 +175,9 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
         final node = _snapshot?.node;
         return l.t('mn.block.locked').replaceAll(
             '{date}', node == null ? '—' : _dateFmt.format(node.unlockTime));
+      case MnBlock.restakeWaitsForPool:
+        return l.t('mn.block.restakeWaitsForPool').replaceAll('{amount}',
+            MasterNodeService.formatTpix(_snapshot?.node.pendingUnclaimed ?? BigInt.zero));
       default:
         return l.t('mn.block.${block.name}');
     }
@@ -328,7 +331,13 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
             (l.t('mn.returned'), '${MasterNodeService.formatTpix(snap.node.stakedAmount, maxDecimals: 18)} TPIX'),
             (l.t('mn.contract'), snap.registry),
           ],
-          notes: [l.t('mn.unstakeNote')],
+          notes: [
+            l.t('mn.unstakeNote'),
+            // กองจ่ายไม่ครบตอนถอน = ส่วนที่ค้างจะล็อกการสเตคใหม่ไว้ — บอกก่อนกดยืนยัน
+            if (snap.unpaidAfterExit > BigInt.zero)
+              l.t('mn.unstakeUnpaidNote').replaceAll(
+                  '{amount}', MasterNodeService.formatTpix(snap.unpaidAfterExit)),
+          ],
           confirmLabel: l.t('mn.unstake'),
           danger: true,
         );
@@ -847,6 +856,8 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
     final node = snap.node;
     final claimBlock = snap.claimBlock();
     final unstakeBlock = snap.unstakeBlock(DateTime.now());
+    // ถอนแล้วแต่รางวัลค้าง = สเตคใหม่ไม่ได้ — อธิบายที่นี่ที่เดียว (การ์ดระดับซ่อนปุ่มไว้)
+    final restakeBlock = snap.pendingRewardBlock;
     final isActive = node.status == MnStatus.active;
     final statusColor = _statusColor(node.status);
     return Container(
@@ -888,7 +899,8 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
               valueColor: AppTheme.success),
           if (node.totalRewards > BigInt.zero)
             _kv(l.t('mn.totalPaid'), '${MasterNodeService.formatTpix(node.totalRewards)} TPIX'),
-          if (claimBlock == MnBlock.poolEmpty) _reason(_blockText(MnBlock.poolEmpty, l)),
+          if (claimBlock == MnBlock.poolEmpty && restakeBlock == null)
+            _reason(_blockText(MnBlock.poolEmpty, l)),
           const SizedBox(height: TpixGap.md),
           if (snap.canWithdrawSlashed)
             _actionButton(
@@ -928,6 +940,7 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
           if (isActive && unstakeBlock == MnBlock.locked) _reason(_blockText(MnBlock.locked, l)),
           if (claimBlock == MnBlock.nothingToClaim && node.status != MnStatus.inactive)
             _reason(_blockText(MnBlock.nothingToClaim, l)),
+          if (restakeBlock != null) _reason(_blockText(restakeBlock, l)),
         ],
       ),
     );
@@ -939,8 +952,11 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
     final slots = info.isUnlimited
         ? '${info.activeNodes} / ${l.t('mn.unlimited')}'
         : '${info.activeNodes} / ${info.maxNodes}';
-    // มีโหนดอยู่แล้ว: ไม่ต้องย้ำเหตุผลซ้ำทุกการ์ด — การ์ดโหนดของฉันอยู่ด้านบนแล้ว
-    final showButton = block != MnBlock.hasNode;
+    // ติดทั้งกระเป๋า (มีโหนดอยู่แล้ว / รางวัลค้างต้องจ่ายครบก่อน): ไม่ต้องย้ำเหตุผลซ้ำทุกการ์ด
+    // — การ์ดโหนดของฉันด้านบนอธิบายไว้แล้ว
+    final showButton = block != MnBlock.hasNode &&
+        block != MnBlock.claimFirst &&
+        block != MnBlock.restakeWaitsForPool;
     final apr = snap.aprCapToShow(info.tier);
     return Container(
       padding: const EdgeInsets.all(TpixGap.lg),

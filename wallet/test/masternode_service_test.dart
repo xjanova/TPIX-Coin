@@ -395,9 +395,19 @@ void main() {
           MnBlock.hasNode);
     });
 
-    test('ถอนแล้วแต่ยังมีรางวัลค้าง → ต้องรับก่อน (สัญญาเช็ก pendingUnclaimed)', () {
-      final s = _snap(node: _node(pendingUnclaimed: BigInt.one));
+    test('ถอนแล้วแต่ยังมีรางวัลค้าง + กองจ่ายได้ → ต้องรับก่อน (สัญญาเช็ก pendingUnclaimed)', () {
+      final s = _snap(
+          node: _node(pendingUnclaimed: _t(5)), pending: _t(5), claimable: _t(2), funds: _t(2));
       expect(s.registerBlock(MnTier.light, enough), MnBlock.claimFirst);
+      expect(s.claimBlock(), isNull, reason: 'ปุ่มรับรางวัลต้องกดได้ ไม่งั้นติดตาย');
+    });
+
+    test('ถอนแล้วแต่ยังมีรางวัลค้าง + กองว่าง → บอกให้รอเติมกอง ไม่ใช่ "รับก่อน"', () {
+      final s = _snap(node: _node(pendingUnclaimed: _t(5)), pending: _t(5));
+      expect(s.registerBlock(MnTier.light, enough), MnBlock.restakeWaitsForPool);
+      // claimRewards() ตอนกองว่างไม่ revert แต่ไม่จ่ายอะไร → ปุ่มรับปิดไว้ (ไม่ส่งธุรกรรมเปล่า)
+      expect(s.claimBlock(), MnBlock.poolEmpty);
+      expect(s.pendingRewardBlock, MnBlock.restakeWaitsForPool);
     });
 
     test('ยังไม่รู้ยอด / ยอดไม่พอ (ขาดแค่ 1 wei ก็ไม่ได้)', () {
@@ -433,17 +443,51 @@ void main() {
       expect(_snap(node: _node(status: MnStatus.slashed)).unstakeBlock(now), MnBlock.notActive);
     });
 
-    test('ถอนสเตคที่เหลือหลังโดนปรับ', () {
+    test('ถอนสเตคที่เหลือหลังโดนปรับ — เฉพาะสถานะ Slashed (สัญญา require status == Slashed)', () {
       expect(_snap(node: _node(status: MnStatus.slashed, staked: _t(900))).canWithdrawSlashed,
           isTrue);
       expect(
           _snap(node: _node(status: MnStatus.slashedWithdrawable, staked: _t(900)))
               .canWithdrawSlashed,
-          isTrue);
+          isFalse,
+          reason: 'withdrawSlashedStake() จะ revert "Not slashed"');
       expect(_snap(node: _node(status: MnStatus.slashed, staked: BigInt.zero)).canWithdrawSlashed,
           isFalse);
       expect(_snap(node: _node(status: MnStatus.active, staked: _t(900))).canWithdrawSlashed,
           isFalse);
+    });
+
+    test('ถอนตอนกองจ่ายไม่ครบ → รู้ล่วงหน้าว่าจะเหลือรางวัลค้างเท่าไร', () {
+      final active = _node(status: MnStatus.active);
+      expect(_snap(node: active, pending: _t(5)).unpaidAfterExit, _t(5));
+      expect(_snap(node: active, pending: _t(5), claimable: _t(2)).unpaidAfterExit, _t(3));
+      expect(_snap(node: active, pending: _t(5), claimable: _t(5)).unpaidAfterExit, BigInt.zero);
+      expect(_snap(node: active).unpaidAfterExit, BigInt.zero);
+    });
+
+    test('ยังมีโหนด active → ไม่ใช่เรื่องรางวัลค้าง (hasNode มาก่อน)', () {
+      final s = _snap(
+          node: _node(status: MnStatus.active, pendingUnclaimed: _t(5)), pending: _t(5));
+      expect(s.pendingRewardBlock, isNull);
+      expect(s.registerBlock(MnTier.light, _t(200000)), MnBlock.hasNode);
+    });
+
+    test('ไล่ตามสัญญา: ถอนตอนกองว่าง → รอเติมกอง → รับรางวัล → สเตคใหม่ได้', () {
+      final enough = _t(200000);
+      // 1) หลัง deregisterNode ตอนกองว่าง: status=Inactive, pendingUnclaimed=5
+      final exited = _snap(node: _node(pendingUnclaimed: _t(5)), pending: _t(5));
+      expect(exited.claimBlock(), MnBlock.poolEmpty);
+      expect(exited.registerBlock(MnTier.light, enough), MnBlock.restakeWaitsForPool);
+
+      // 2) มีคนเติมกอง 10 → claimableNow = min(5, 10) = 5 → ปุ่มรับรางวัลกดได้
+      final funded = _snap(
+          node: _node(pendingUnclaimed: _t(5)), pending: _t(5), claimable: _t(5), funds: _t(10));
+      expect(funded.claimBlock(), isNull);
+      expect(funded.registerBlock(MnTier.light, enough), MnBlock.claimFirst);
+
+      // 3) รับครบแล้ว pendingUnclaimed = 0 → สเตคใหม่ได้
+      final cleared = _snap(funds: _t(5));
+      expect(cleared.registerBlock(MnTier.light, enough), isNull);
     });
 
     test('การ์ดโหนดของฉัน: มีโหนด หรือมีรางวัลค้าง', () {

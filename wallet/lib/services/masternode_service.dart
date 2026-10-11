@@ -79,6 +79,10 @@ enum MnBlock {
   paused,
   hasNode,
   claimFirst,
+
+  /// ถอนแล้วยังมีรางวัลค้าง + กองว่าง → สัญญาไม่ให้สเตคใหม่จนกว่ารางวัลค้างจะได้จ่ายครบ
+  /// (ไม่มีฟังก์ชันสละรางวัลทิ้ง และ claimRewards() ตอนกองว่างไม่จ่ายอะไรเลย) → ต้องรอเติมกอง
+  restakeWaitsForPool,
   unavailable,
   full,
   validatorWebsiteOnly,
@@ -297,6 +301,22 @@ class MnSnapshot {
   /// เพดาน APR ที่การ์ดระดับโชว์ได้ — null = ไม่โชว์ (กองยังว่าง หรือสัญญาไม่มีค่านี้)
   int? aprCapToShow(MnTier tier) => poolFunded ? tierInfo(tier).aprCapBps : null;
 
+  /// รางวัลค้างที่ทำให้สเตคใหม่ไม่ได้ (ทั้งกระเป๋า ไม่ขึ้นกับระดับ) — null = ไม่ติด
+  ///
+  /// สัญญา: registerNode ต้อง nodes[msg.sender].pendingUnclaimed == 0 และไม่มีทางสละรางวัลทิ้ง
+  ///   - กองมีเงิน (claimableNow > 0) → กดรับรางวัลได้ (ถ้ากองมีไม่พออาจต้องรับหลายรอบ)
+  ///   - กองว่าง → claimRewards() ไม่ revert แต่ไม่จ่ายอะไรเลย = ปุ่มรับรางวัลปิดไว้ถูกแล้ว
+  ///     ต้องบอกตรงๆ ว่ารอเติมกอง ไม่ใช่บอก "รับรางวัลก่อน" ทั้งที่กดรับไม่ได้
+  MnBlock? get pendingRewardBlock {
+    if (node.status != MnStatus.inactive || node.pendingUnclaimed <= BigInt.zero) return null;
+    return claimableNow > BigInt.zero ? MnBlock.claimFirst : MnBlock.restakeWaitsForPool;
+  }
+
+  /// รางวัลที่จะยังค้างอยู่ถ้าถอนสเตคตอนนี้ (deregisterNode จ่ายได้แค่ min(ที่ค้าง, เงินในกอง))
+  /// > 0 = ถอนแล้วกระเป๋านี้สเตคใหม่ไม่ได้ จนกว่ากองจะจ่ายส่วนนี้ครบ
+  BigInt get unpaidAfterExit =>
+      pendingReward > claimableNow ? pendingReward - claimableNow : BigInt.zero;
+
   /// มีอะไรให้โชว์ในการ์ด "โหนดของฉัน" (มีโหนด หรือมีรางวัลค้างให้รับ)
   bool get hasNodeCard =>
       node.status != MnStatus.inactive || pendingReward > BigInt.zero;
@@ -322,7 +342,8 @@ class MnSnapshot {
     if (!info.isConfigured) return MnBlock.unavailable;
     if (node.status != MnStatus.inactive) return MnBlock.hasNode;
     // สัญญาเช็ก nodes[msg.sender].pendingUnclaimed == 0 ก่อนให้ลงทะเบียนใหม่
-    if (node.pendingUnclaimed > BigInt.zero) return MnBlock.claimFirst;
+    final pendingBlock = pendingRewardBlock;
+    if (pendingBlock != null) return pendingBlock;
     if (registrationPaused) return MnBlock.paused;
     if (info.isFull) return MnBlock.full;
     if (balanceWei == null) return MnBlock.balanceUnknown;
@@ -346,11 +367,10 @@ class MnSnapshot {
     return null;
   }
 
-  /// ถอนสเตคที่เหลือหลังโดนปรับ
+  /// ถอนสเตคที่เหลือหลังโดนปรับ — withdrawSlashedStake() รับเฉพาะสถานะ Slashed
+  /// (SlashedWithdrawable ไม่เคยถูกตั้งใน V2 และสัญญาจะ revert "Not slashed")
   bool get canWithdrawSlashed =>
-      (node.status == MnStatus.slashed ||
-          node.status == MnStatus.slashedWithdrawable) &&
-      node.stakedAmount > BigInt.zero;
+      node.status == MnStatus.slashed && node.stakedAmount > BigInt.zero;
 }
 
 // ================================================================
