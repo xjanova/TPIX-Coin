@@ -167,6 +167,8 @@ services:
       MIX_ENV: prod
       DATABASE_URL: postgresql://${BS_USER}:${BS_PASS}@blockscout-db:5432/${BS_DB}
       SECRET_KEY_BASE: ${BS_SECRET_KEY_BASE:?BS_SECRET_KEY_BASE หายไปจาก /opt/tpix/.env}
+      # token-info import (icons) — only the local sync script on this host calls it
+      API_SENSITIVE_ENDPOINTS_KEY: ${BS_SENSITIVE_KEY:?BS_SENSITIVE_KEY หายไปจาก /opt/tpix/.env}
       ETHEREUM_JSONRPC_VARIANT: geth
       ETHEREUM_JSONRPC_HTTP_URL: http://tpix-validator-1:8545
       ETHEREUM_JSONRPC_WS_URL: ws://tpix-validator-1:8545/ws
