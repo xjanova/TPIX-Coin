@@ -39,6 +39,15 @@ const CTOR_ARGS = {
     TPIXBondingCurve: [SAMPLE, SAMPLE, SAMPLE, 10n ** 26n, 10n ** 17n, 10n ** 18n, 5_000_000n * 10n ** 6n, 35n * 10n ** 25n],
     // constructor ตรวจว่า token มีโค้ดจริง — ต้องใช้ USDT_TPIX ตัวจริงบนเชน ไม่งั้น constructor revert ก่อนรันจบ
     TPIXBridgeMinter: ["0x0A4Ee87551eF041f3EecFBBfdcfFC1B46a4878f1", 1_000n * 10n ** 6n, 5_000n * 10n ** 6n],
+    // เปิดตัว IDTC: เหรียญ standard 1.1T · ล็อก 70% แบบ A · presale 2e18/3 ต่อ micro-USDT
+    FactoryERC20V2: ["Invest Energy-Development Coin", "IDTC", 18, 1_100_000_000_000n * 10n ** 18n, SAMPLE,
+        false, false, false, false, 0, false, 0, 0],
+    TrancheVesting: [SAMPLE, SAMPLE, 1_800_000_000n, 2_629_800n, [
+        [220_000_000_000n * 10n ** 18n, 12, 12], [220_000_000_000n * 10n ** 18n, 24, 12],
+        [165_000_000_000n * 10n ** 18n, 36, 12], [165_000_000_000n * 10n ** 18n, 48, 12],
+    ], "IDTC — ล็อก 70%"],
+    FixedPriceSale: [SAMPLE, "0x0A4Ee87551eF041f3EecFBBfdcfFC1B46a4878f1", 2n * 10n ** 18n, 3n, 100_000_000_000n * 10n ** 18n,
+        SAMPLE, 1_800_000_000n, 1_900_000_000n, SAMPLE],
 };
 
 function walk(dir, out = []) {
@@ -117,19 +126,20 @@ async function main() {
                 skipped++;
                 continue;
             }
+            // ParamType จาก ABI (ไม่ใช่แค่ชื่อชนิด) — tuple[] ของ TrancheVesting ต้องรู้ components
             data += ethers.AbiCoder.defaultAbiCoder()
-                .encode(inputs.map((i) => i.type), args).slice(2);
+                .encode(inputs.map((i) => ethers.ParamType.from(i)), args).slice(2);
         }
 
         await sleep(250); // เว้นจังหวะไม่ให้โดน rate limit
         const r = await rpc("eth_estimateGas", [{ from: FROM, data, gasPrice: "0x0" }]);
 
         if (r.__tooLarge) {
-            // ถามเชนไม่ได้เพราะ proxy ตัด แต่ขนาดโค้ดผ่าน EIP-170 แล้ว
-            // และคอมไพล์ด้วย evmVersion london จึงไม่มีทางมี PUSH0/MCOPY
-            skipped++;
-            console.log("ถาม RPC ไม่ได้", a.contractName,
-                `(body ${(data.length / 2 / 1024).toFixed(0)}KB เกินลิมิตของ proxy — ตรวจตอน deploy จริงแทน)`);
+            // proxy หน้า RPC (nginx ~32 KB) ตัด request นี้ — eth_estimateGas / eth_sendRawTransaction ตอน deploy จริง
+            // มีขนาดเท่ากันจึงโดน 413 เหมือนกัน = deploy ผ่าน RPC นี้ไม่ได้ (เดิมนับเป็น "ข้าม" ทำให้ดูเหมือนผ่าน)
+            blocked++;
+            console.log("DEPLOY ไม่ได้", a.contractName,
+                `(initcode ${((data.length - 2) / 2).toLocaleString()} ไบต์ — RPC ตอบ 413 · ขยาย client_max_body_size หรือ deploy ผ่าน SSH tunnel)`);
             continue;
         }
 

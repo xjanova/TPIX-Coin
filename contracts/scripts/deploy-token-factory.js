@@ -62,6 +62,42 @@ async function deploy(name, args = []) {
     return addr;
 }
 
+const ALL = [
+    "ERC20V2Creator", "UtilityTokenCreator", "RewardTokenCreator", "GovernanceTokenCreator", "StablecoinTokenCreator",
+    "TPIXTokenFactoryV2", "FactoryERC721Creator", "NFTCollectionCreator", "TPIXNFTFactory",
+];
+
+/**
+ * rpc1/rpc.tpix.online อยู่หลัง nginx ที่จำกัด request body ~32 KB
+ * (ยืนยัน 2026-10-11: body 32,759 B ผ่าน · 34,159 B ได้ 413 Request Entity Too Large)
+ * GovernanceTokenCreator มี initcode ~18.9 KB → eth_estimateGas ~38 KB → 413 หลัง deploy creator ไปแล้ว 3 ตัว
+ * (ซ้อมผ่าน proxy จำกัด 32 KB: ได้ creator กำพร้า 3 ตัว ไม่มี factory)
+ *
+ * ถามก่อนด้วย request ขนาดเท่าตัวใหญ่สุด (eth_chainId + padding — อ่านอย่างเดียว) ถ้าโดน 413 หยุดก่อนส่งอะไรทั้งนั้น
+ * ทางแก้: ขยาย client_max_body_size ของ nginx หน้า RPC (เช่น 128k) หรือ deploy ผ่าน SSH tunnel ตรงเข้าโหนด
+ */
+async function preflightBodySize() {
+    if (network.name === "hardhat" || !network.config.url) return;
+    const sizes = ALL.map((n) => {
+        const a = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "artifacts", findArtifact(n)), "utf8"));
+        return { n, bytes: (a.bytecode.length - 2) / 2 };
+    });
+    const big = sizes.reduce((a, b) => (b.bytes > a.bytes ? b : a));
+    const need = big.bytes * 2 + 400;   // hex initcode + JSON/RLP ของ eth_estimateGas / eth_sendRawTransaction
+    const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [], pad: "0".repeat(need) });
+    const res = await fetch(network.config.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (TPIX deploy preflight)" },
+        body,
+    });
+    if (res.status === 413) {
+        throw new Error(`RPC ${network.config.url} ปฏิเสธ request ${body.length.toLocaleString()} ไบต์ (413) — `
+            + `${big.n} (initcode ${big.bytes.toLocaleString()} ไบต์) deploy ผ่าน RPC นี้ไม่ได้ · ยังไม่ได้ส่งอะไรขึ้นเชน\n`
+            + "  ทางแก้: ขยาย client_max_body_size ของ nginx หน้า RPC (เช่น 128k) หรือใช้ TPIX_RPC_URL ที่ชี้ตรงเข้าโหนดผ่าน SSH tunnel");
+    }
+    console.log(`preflight : RPC รับ request ${body.length.toLocaleString()} ไบต์ได้ (ตัวใหญ่สุด ${big.n})`);
+}
+
 function findArtifact(name) {
     const roots = [
         `src/token-factory/creators/${name}.sol/${name}.json`,
@@ -91,6 +127,7 @@ async function main() {
     if (net.chainId !== 4289n && network.name !== "hardhat" && network.name !== "localhost") {
         throw new Error(`chainId ${net.chainId} ไม่ใช่ TPIX Chain (4289) — หยุดไว้ก่อน`);
     }
+    await preflightBodySize();
 
     console.log("\n[1/5] creator ของ ERC-20 ...");
     const erc20V2Creator = await deploy("ERC20V2Creator");
