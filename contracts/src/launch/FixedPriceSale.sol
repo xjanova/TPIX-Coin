@@ -45,6 +45,7 @@ contract FixedPriceSale is Ownable2Step, Pausable, ReentrancyGuard {
     event WindowUpdated(uint64 startTime, uint64 endTime);
     event LimitsUpdated(uint256 minPurchase, uint256 maxPerWallet);
     event UnsoldWithdrawn(address indexed to, uint256 amount);
+    event TokenRecovered(address indexed token, address indexed to, uint256 amount);
 
     error ZeroAddress();
     error BadConfig();
@@ -54,6 +55,8 @@ contract FixedPriceSale is Ownable2Step, Pausable, ReentrancyGuard {
     error CapExceeded();
     error WalletLimitExceeded();
     error SaleNotOver();
+    error SaleTokenUseWithdrawUnsold();
+    error NothingToRecover();
 
     constructor(
         IERC20 saleToken_,
@@ -154,5 +157,19 @@ contract FixedPriceSale is Ownable2Step, Pausable, ReentrancyGuard {
         uint256 amount = saleToken.balanceOf(address(this));
         saleToken.safeTransfer(to, amount);
         emit UnsoldWithdrawn(to, amount);
+    }
+
+    /**
+     * @notice คืนเหรียญอื่นที่ถูกโอนเข้าสัญญาตรง ๆ โดยผิดพลาด (เช่น ผู้ซื้อโอน USDT มาที่ address นี้แทนการกดซื้อ)
+     *         ปกติสัญญาไม่ถือ payToken เลย (buy() โอนเข้า treasury ทันที) ยอดที่ค้างอยู่จึงเป็นของที่ส่งผิดทั้งหมด
+     *         เหรียญที่ขายถอนผ่าน withdrawUnsold เท่านั้น — กติกา "หลังปิดรอบหรือขณะหยุด" ยังบังคับเหมือนเดิม
+     */
+    function recoverToken(IERC20 token, address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+        if (address(token) == address(saleToken)) revert SaleTokenUseWithdrawUnsold();
+        uint256 amount = token.balanceOf(address(this));
+        if (amount == 0) revert NothingToRecover();
+        token.safeTransfer(to, amount);
+        emit TokenRecovered(address(token), to, amount);
     }
 }
