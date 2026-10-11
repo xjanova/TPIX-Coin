@@ -7,6 +7,7 @@ import 'package:bip32/bip32.dart' as bip32;
 import 'package:crypto/crypto.dart' show Hmac, sha256;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hex/hex.dart';
+import 'package:web3dart/crypto.dart' show bytesToHex, keccakAscii;
 import 'package:web3dart/web3dart.dart';
 import 'package:http/http.dart' as http;
 import '../models/wallet_info.dart';
@@ -1019,22 +1020,24 @@ class WalletService {
     return hash.toRadixString(16);
   }
 
-  /// Validate Ethereum address with ERC-55 checksum if mixed-case
+  /// ตรวจที่อยู่ EVM + checksum แบบ EIP-55 เมื่อเป็นตัวพิมพ์ผสม
+  ///
+  /// ★ EIP-55 ใช้ keccak256 ไม่ใช่ sha256 — ของเดิมใช้ sha256 ทำให้ที่อยู่ที่
+  ///   checksum ถูกต้อง (ก๊อปมาจาก MetaMask / explorer) ถูกปฏิเสธว่า "ที่อยู่ไม่ถูกต้อง"
+  ///   ทั้งที่ผิดคือตัวตรวจของเราเอง
+  /// ตัวเล็กล้วน / ตัวใหญ่ล้วน = ไม่มี checksum ให้ตรวจ → ผ่าน (ตามสเปก EIP-55)
   static bool isValidAddress(String address) {
     if (!RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(address)) return false;
-    // If all lowercase or all uppercase, accept without checksum check
     final hex = address.substring(2);
     if (hex == hex.toLowerCase() || hex == hex.toUpperCase()) return true;
-    // ERC-55 checksum validation for mixed-case addresses
-    final hashBytes = sha256.convert(utf8.encode(hex.toLowerCase())).bytes;
-    final hashHex = HEX.encode(hashBytes);
+    // ตัวพิมพ์ผสม → ต้องตรงกับ checksum: nibble ของ keccak256(hex ตัวเล็ก) >= 8 = ตัวใหญ่
+    final hashHex = bytesToHex(keccakAscii(hex.toLowerCase()));
     for (int i = 0; i < 40; i++) {
-      final hashNibble = int.parse(hashHex[i], radix: 16);
-      if (hashNibble >= 8) {
-        if (hex[i] != hex[i].toUpperCase()) return false;
-      } else {
-        if (hex[i] != hex[i].toLowerCase()) return false;
-      }
+      final ch = hex[i];
+      // ตัวเลข 0-9 ไม่มีตัวพิมพ์ ข้ามได้
+      if (ch.toUpperCase() == ch.toLowerCase()) continue;
+      final upper = int.parse(hashHex[i], radix: 16) >= 8;
+      if (upper ? ch != ch.toUpperCase() : ch != ch.toLowerCase()) return false;
     }
     return true;
   }
