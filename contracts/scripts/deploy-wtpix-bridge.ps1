@@ -6,7 +6,8 @@
 #   .\scripts\deploy-wtpix-bridge.ps1
 #
 # ลำดับที่แนะนำ (รันสคริปต์นี้ 3 รอบ):
-#   1) คลังบนเชน TPIX (TPIXBridgeVault)           — ครั้งเดียว ลงทะเบียนกับเว็บให้เอง
+#   1) คลังบนเชน TPIX (TPIXBridgeVault)           — ครั้งเดียว · deploy แบบหยุดไว้ (pause)
+#      เปิดด้วย scripts/unpause-bridge-vault.js เมื่อฝั่งเว็บเชื่อมสะพาน wTPIX แล้วเท่านั้น
 #   2) wTPIX + ด่าน mint บน BSC testnet (ซ้อม)    — ต้องมี tBNB · ตั้งเว็บเป็น testnet แล้วลองไปกลับด้วยยอดเล็ก
 #   3) wTPIX + ด่าน mint บน BSC จริง              — ต้องมี BNB ค่าแก๊สเล็กน้อย
 #
@@ -102,7 +103,7 @@ if ($maxPerTx -notmatch '^\d+$' -or $dailyCap -notmatch '^\d+$' -or [decimal]$ma
     exit 1
 }
 
-$relayer = (Read-Host "  ที่อยู่ relayer ของเซิร์ฟเวอร์ (BRIDGE_RELAYER_ADDRESS · Enter = ตั้งทีหลัง)").Trim()
+$relayer = (Read-Host "  ที่อยู่ relayer ของเซิร์ฟเวอร์ (Enter = ตั้งทีหลัง)").Trim()
 $guardian = (Read-Host "  ที่อยู่ guardian (Enter = ข้าม)").Trim()
 foreach ($a in @($relayer, $guardian)) {
     if ($a -and $a -notmatch '^0x[0-9a-fA-F]{40}$') { Say "ที่อยู่ไม่ถูกรูปแบบ: $a" Red; $plainKey = $null; exit 1 }

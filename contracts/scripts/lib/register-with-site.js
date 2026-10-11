@@ -8,7 +8,7 @@
  *
  * คีย์ที่เว็บรู้จัก (App\Services\ContractRegistry::CONTRACTS):
  *   masternode_registry · validator_kyc · token_factory_v2 · nft_factory · token_factory_v1
- *   wtpix · usdt_tpix · dex_factory · dex_router · bridge_minter · bridge_vault
+ *   wtpix · usdt_tpix · dex_factory · dex_router · bridge_minter · wtpix_bridge_vault
  *
  * เว็บตรวจ eth_getCode กับเชนจริงก่อนรับทุกที่อยู่ และจดลายนิ้วมือ bytecode ไว้
  * ย้ายไปสัญญาที่ bytecode ต่างจากเดิมต้องส่ง force=true มาโดยตั้งใจ (REGISTRY_FORCE=1)
@@ -88,7 +88,8 @@ const ENV_KEYS = {
     dex_factory: "TPIX_DEX_FACTORY_ADDRESS",
     dex_router: "TPIX_DEX_ROUTER_ADDRESS",
     bridge_minter: "BRIDGE_MINTER_ADDRESS",
-    bridge_vault: "BRIDGE_VAULT_ADDRESS",
+    // ไม่ใช่ BRIDGE_VAULT_ADDRESS — ชื่อนั้นคือคลัง USDT ของสะพาน USDT
+    wtpix_bridge_vault: "WTPIX_BRIDGE_VAULT_ADDRESS",
 };
 
 function printEnvFallback(payload) {

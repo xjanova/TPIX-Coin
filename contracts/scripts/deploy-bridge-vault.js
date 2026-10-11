@@ -6,7 +6,7 @@
  *   export DEPLOYER_KEY=0x...                 # กระเป๋าเจ้าของ (เป็นเจ้าของคลังถาวร — ตั้งเพดาน/relayer/unpause)
  *   export TPIX_SITE_URL=https://tpix.online
  *   export CONTRACT_REGISTRY_TOKEN=<ค่าเดียวกับใน .env ของเว็บ>
- *   export RELAYER_ADDRESS=0x...              # ที่อยู่ของ keystore relayer บนเซิร์ฟเวอร์ (BRIDGE_RELAYER_ADDRESS)
+ *   export RELAYER_ADDRESS=0x...              # ที่อยู่ของ keystore relayer บนเซิร์ฟเวอร์ (ใช้ใบเดียวกับสะพาน USDT ได้)
  *   export GUARDIAN_ADDRESS=0x...             # ไม่ใส่ก็ได้ — สั่ง pause ได้อย่างเดียว
  *   npx hardhat run scripts/deploy-bridge-vault.js --network tpix
  *
@@ -97,6 +97,13 @@ async function main() {
     }
     if (!relayer && !guardian) console.log("   ข้าม — ไม่ได้ตั้ง RELAYER_ADDRESS / GUARDIAN_ADDRESS");
 
+    // หยุดไว้ก่อนเสมอ — ถ้าเปิดรับตั้งแต่วินาทีแรก แล้วมีคนโอน TPIX เข้ามาก่อนเว็บพร้อม mint ให้
+    // เหรียญจะค้างในคลังโดยไม่มีใครจ่าย · เปิดด้วย scripts/unpause-bridge-vault.js เมื่อฝั่งเว็บพร้อมแล้ว
+    if (process.env.START_PAUSED !== "0") {
+        await (await vault.pause(overrides)).wait();
+        console.log("   pause() ✓  ← คลังยังไม่รับเงิน จนกว่าจะรัน unpause-bridge-vault.js");
+    }
+
     // ── Registry + เว็บ ────────────────────────────────────────────────────────
     console.log("\n[3/3] Registry");
     if (isDryRun) {
@@ -121,7 +128,8 @@ async function main() {
         fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2) + "\n");
         console.log("   Registry updated:", REGISTRY_PATH);
 
-        const payload = { bridge_vault: vaultAddress };
+        // ชื่อคีย์ห้ามเป็น bridge_vault / BRIDGE_VAULT_ADDRESS — นั่นคือคลัง USDT ของสะพาน USDT (config/bridge.php)
+        const payload = { wtpix_bridge_vault: vaultAddress };
         if (!(await registerWithSite(payload))) printEnvFallback(payload);
     }
 
@@ -130,8 +138,11 @@ async function main() {
     console.log("Owner    :", await vault.owner());
 
     const todo = [];
-    if (!relayer) todo.push(`TPIXBridgeVault(${vaultAddress}).setRelayer(<BRIDGE_RELAYER_ADDRESS>, true)`);
+    if (!relayer) todo.push(`TPIXBridgeVault(${vaultAddress}).setRelayer(<ที่อยู่ relayer ของเซิร์ฟเวอร์>, true)`);
     if (!guardian) todo.push(`TPIXBridgeVault(${vaultAddress}).setGuardian(<ที่อยู่ guardian>, true)   ← ไม่บังคับ`);
+    if (process.env.START_PAUSED !== "0") {
+        todo.push(`เมื่อเว็บเชื่อมสะพาน wTPIX แล้ว: WTPIX_BRIDGE_VAULT_ADDRESS=${vaultAddress} npx hardhat run scripts/unpause-bridge-vault.js --network tpix`);
+    }
     todo.push("deploy ฝั่ง BSC: npx hardhat run scripts/deploy-wtpix-bsc.js --network bscTestnet (ซ้อม) แล้วค่อย --network bsc");
     todo.push(`ตั้ง BRIDGE_MAX_PER_TX ฝั่ง BSC ≥ maxLock ของคลัง (${fmt(maxLock)} TPIX)`);
     todo.push("เติม TPIX เล็กน้อยให้ relayer (แก๊สเป็น 0 แต่บัญชีต้องมีตัวตนบนเชน)");

@@ -4,7 +4,7 @@
  * Usage:
  *   cd contracts
  *   export DEPLOYER_KEY=0x...          # กระเป๋าเจ้าของ (ต้องมี BNB/tBNB จ่ายแก๊ส) — เป็นเจ้าของ wTPIX + minter ถาวร
- *   export RELAYER_ADDRESS=0x...       # ที่อยู่ของ keystore relayer บนเซิร์ฟเวอร์ (BRIDGE_RELAYER_ADDRESS)
+ *   export RELAYER_ADDRESS=0x...       # ที่อยู่ของ keystore relayer บนเซิร์ฟเวอร์ (ใช้ใบเดียวกับสะพาน USDT ได้)
  *   export GUARDIAN_ADDRESS=0x...      # ไม่ใส่ก็ได้ — สั่ง pause ได้อย่างเดียว
  *
  *   ซ้อม (testnet):  npx hardhat run scripts/deploy-wtpix-bsc.js --network bscTestnet
@@ -142,12 +142,11 @@ async function main() {
     console.log(`WTPIX_BSC_ADDRESS=${wtpixAddress}`);
     console.log(`WTPIX_BSC_MINTER_ADDRESS=${minterAddress}`);
     if (chainId === 97) {
-        console.log("BRIDGE_BSC_CHAIN_ID=97");
-        console.log("BRIDGE_BSC_RPC_URL=https://data-seed-prebsc-1-s1.bnbchain.org:8545");
+        console.log("# ⚠️ ที่อยู่ข้างบนเป็นของ BSC testnet (chainId 97) — ห้ามใช้กับเว็บจริงตอนเปิดใช้งาน");
     }
 
     const todo = [];
-    if (!relayer) todo.push(`WTPIXBridgeMinter(${minterAddress}).setRelayer(<BRIDGE_RELAYER_ADDRESS>, true)`);
+    if (!relayer) todo.push(`WTPIXBridgeMinter(${minterAddress}).setRelayer(<ที่อยู่ relayer ของเซิร์ฟเวอร์>, true)`);
     if (!guardian) todo.push(`WTPIXBridgeMinter(${minterAddress}).setGuardian(<ที่อยู่ guardian>, true)   ← ไม่บังคับ`);
     todo.push("เติม BNB ให้ relayer ไว้จ่ายแก๊ส mint (ครั้งละไม่กี่เซ็นต์)");
     todo.push("verify ซอร์สบน BscScan: Verify & Publish → Solidity (Standard JSON) จาก artifacts/build-info");
