@@ -1,0 +1,22 @@
+{
+  "_doc": "แผนเปิดตัว IDTC บน TPIX Chain — อ่านโดย scripts/launch-token.js · ตัวเลขเหรียญเป็นหน่วยเต็ม (ไม่ใช่ wei)",
+  "symbol": "IDTC",
+  "decimals": 18,
+  "totalSupply": "1100000000000",
+  "vesting": {
+    "label": "IDTC — ล็อก 70% (แบบ A: ครบล็อกแล้วทยอยปลด 12 เดือน)",
+    "periodSeconds": 2629800,
+    "_periodNote": "เดือนเฉลี่ย = 365.25 วัน / 12 — ไม่ใช่ 30 วัน เพื่อให้ 12 งวดตรงกับ 1 ปีปฏิทิน",
+    "tranches": [
+      { "name": "ล็อก 1 ปี", "amount": "220000000000", "cliffPeriods": 12, "releasePeriods": 12 },
+      { "name": "ล็อก 2 ปี", "amount": "220000000000", "cliffPeriods": 24, "releasePeriods": 12 },
+      { "name": "ล็อก 3 ปี", "amount": "165000000000", "cliffPeriods": 36, "releasePeriods": 12 },
+      { "name": "ล็อก 4 ปี", "amount": "165000000000", "cliffPeriods": 48, "releasePeriods": 12 }
+    ]
+  },
+  "sale": {
+    "priceUsd": "0.0000015",
+    "_priceNote": "≈ 0.00005 บาท · จ่ายด้วย USDT บนเชน TPIX (USDT_TPIX, 6 ทศนิยม) → 1 USDT = 666,666.66… IDTC",
+    "payToken": "USDT_TPIX"
+  }
+}
