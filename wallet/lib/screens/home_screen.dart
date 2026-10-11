@@ -12,10 +12,12 @@ import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/luxe_texture.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
+import '../services/token_trust.dart';
 import '../services/wallet_service.dart';
 import '../widgets/price_chart.dart';
 import '../models/chain_config.dart';
 import '../models/token_info.dart';
+import '../widgets/token_badges.dart';
 import '../widgets/token_selector.dart';
 import '../widgets/tpix_coin_logo.dart';
 import 'send_screen.dart';
@@ -1023,6 +1025,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               symbol: token.symbol,
               name: token.name,
               logoUrl: wallet.tokenLogo(token),
+              trust: wallet.tokenTrust(token),
               // ยังไม่เคยดึงยอดได้ = "—" ไม่ใช่ 0
               balance: raw == null
                   ? '—'
@@ -1059,6 +1062,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     bool isNative = false,
     bool isStale = false,
     String? logoUrl,
+    TokenTrust? trust,
     VoidCallback? onTap,
     VoidCallback? onLongPress,
   }) {
@@ -1080,7 +1084,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(symbol, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.text)),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(symbol, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.text)),
+                      ),
+                      // ยืนยันแล้ว = ติ๊กฟ้า · ชื่อเลียนแบบตัวที่ยืนยันแล้ว = โล่เตือนสีแดง
+                      if (trust != null && trust != TokenTrust.unverified) ...[
+                        const SizedBox(width: TpixGap.xs),
+                        TokenTrustIcon(trust: trust),
+                      ],
+                    ],
+                  ),
                   Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: c.textMuted)),
                 ],
               ),
