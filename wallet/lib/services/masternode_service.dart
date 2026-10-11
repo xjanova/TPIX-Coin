@@ -418,6 +418,8 @@ class MasterNodeService {
     // TPIX-Coin 66066d8 (efa20cb) — ล็อกได้ไม่เกิน 365 วัน + ผ่านออดิทเชิงลึก/invariant fuzz 2026-10-11
     // ตัวที่จะ redeploy แทน 0x9c36…4A2B
     '0x7a03e6425a6779dfa0f60ba80ee569635f0618a22906a631dda2abdf28e696bf',
+    // ตัวเดียวกันแต่ compile จากไฟล์ .sol แบบ LF (TPIX-Coin e3eb329 บังคับ *.sol eol=lf) — clone ใหม่ได้ตัวนี้
+    '0x35a1f6779f2e6941581c4d84c8def53cd42544cdf49fc0a2b9cffb60471329f6',
   };
 
   /// ที่อยู่ที่ตรวจ bytecode ผ่านแล้วในรอบนี้ (ตัวเล็ก) — โค้ดของสัญญา CREATE ที่ไม่มี selfdestruct
