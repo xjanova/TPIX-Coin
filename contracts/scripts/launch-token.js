@@ -17,12 +17,18 @@
  *
  * สคริปต์นี้ "ไม่โอนเหรียญ" บนเชนจริง — เจ้าของเหรียญโอนเข้าสัญญาเองจากกระเป๋าของตัวเอง
  * แล้วรันโหมด STATUS ยืนยันว่าล็อกครบ · รันซ้ำได้: ตัวที่ deploy แล้วจะใช้ของเดิม ไม่ deploy ซ้ำ
+ *   - ใช้ของเดิมเฉพาะเมื่อค่าทุกตัวบนเชนตรงกับที่ตั้งไว้ (ผู้รับ วันเริ่ม ตาราง treasury ผู้คุม ช่วงขาย ...)
+ *     ไม่ตรง = หยุด แล้วบอกว่าตัวไหนต่าง — ไม่หยิบสัญญาเดิมมาใช้เงียบ ๆ (scripts/lib/launch-checks.js)
+ *   - ตรวจค่าที่ตั้งครบทุกตัวก่อน deploy อะไรทั้งนั้น และบันทึก registry ทันทีหลัง deploy แต่ละตัว
+ *   - เหรียญต้องเป็น FactoryERC20V2 standard จาก build นี้ (ไม่มี mint/pause/blacklist/auto-burn) ไม่งั้นหยุด
+ *     (ALLOW_NONSTANDARD_TOKEN=1 ถ้าตั้งใจจริง)
  *
  * Developed by Xman Studio
  */
 const fs = require("fs");
 const path = require("path");
-const { ethers, network } = require("hardhat");
+const { ethers, network, artifacts } = require("hardhat");
+const checks = require("./lib/launch-checks");
 
 const ROOT = path.join(__dirname, "..");
 const REGISTRY_PATH = path.join(ROOT, "deployed-contracts.json");
@@ -97,10 +103,23 @@ async function hasCode(addr) {
     return addr && (await ethers.provider.getCode(addr)) !== "0x";
 }
 
-async function deployOnce(reg, regName, contractName, args) {
+/**
+ * deploy ครั้งเดียว — ถ้า registry มีตัวเดิมที่มีโค้ดอยู่ ใช้ของเดิม "เฉพาะเมื่อ mismatches() ว่าง"
+ * deploy ใหม่บนเชนจริง → บันทึก registry ทันที (ถ้าขั้นถัดไปล้ม รอบหน้าจะเห็นตัวนี้ ไม่ deploy ซ้ำจนมีสัญญากำพร้า)
+ */
+async function deployOnce(reg, regName, contractName, args, { mismatches, entry }) {
     const existing = registryAddress(reg, regName);
     if (!DRY_RUN && (await hasCode(existing))) {
-        console.log(`      ${regName.padEnd(16)} ${existing}  (มีอยู่แล้ว — ใช้ของเดิม)`);
+        const diff = await mismatches(await ethers.getContractAt(contractName, existing));
+        if (diff.length) {
+            throw new Error([
+                `${regName} ${existing} ใน registry ไม่ตรงกับค่าที่ตั้งตอนนี้:`,
+                ...diff.map((d) => `        - ${d}`),
+                `      ถ้าค่าใหม่ถูก: สัญญาเดิมต้องยังไม่มีเหรียญ → ลบรายการ ${regName} ออกจาก deployed-contracts.json แล้วรันใหม่ (deploy ตัวใหม่)`,
+                "      ถ้าค่าเดิมถูก: ตั้ง environment ให้ตรงกับบนเชน · ห้ามโอนเหรียญเข้าสัญญาจนกว่าจะรันผ่าน",
+            ].join("\n"));
+        }
+        console.log(`      ${regName.padEnd(16)} ${existing}  (มีอยู่แล้ว ค่าตรงทุกตัว — ใช้ของเดิม)`);
         return { address: existing, fresh: false };
     }
     const c = await (await ethers.getContractFactory(contractName)).deploy(...args);
@@ -108,7 +127,26 @@ async function deployOnce(reg, regName, contractName, args) {
     const address = await c.getAddress();
     if (!(await hasCode(address))) throw new Error(`${contractName}: eth_getCode คืน 0x — ไม่ได้ขึ้นเชนจริง`);
     console.log(`      ${regName.padEnd(16)} ${address}`);
+    if (!DRY_RUN) saveEntry({ name: regName, address, ...(await buildMeta(contractName)), ...entry });
     return { address, fresh: true };
+}
+
+/** compiler/optimizer/evm/viaIR จาก build-info ที่ compile จริง (เดิมเขียน viaIR: true ตายตัว ทั้งที่ src/launch ไม่ได้ใช้ viaIR) */
+async function buildMeta(contractName) {
+    const bi = await artifacts.getBuildInfo(`src/launch/${contractName}.sol:${contractName}`);
+    const st = bi.input.settings;
+    return {
+        sourceFile: `contracts/src/launch/${contractName}.sol`, category: "launch", compilerVersion: bi.solcVersion,
+        optimizer: st.optimizer, evmVersion: st.evmVersion, viaIR: !!st.viaIR, verified: false,
+        deployedAt: new Date().toISOString().slice(0, 10),
+    };
+}
+
+function saveEntry(e) {
+    const fresh = loadRegistry();
+    fresh.contracts = (fresh.contracts || []).filter((c) => c.name !== e.name).concat(e);
+    fresh.updated = new Date().toISOString().slice(0, 10);
+    fs.writeFileSync(REGISTRY_PATH, JSON.stringify(fresh, null, 2) + "\n");
 }
 
 /** ตรวจเหรียญก่อนผูกสัญญาใด ๆ — เหรียญที่หักค่าตอนโอนทำให้สัญญาล็อก/ขายคำนวณผิดทั้งหมด */
@@ -124,20 +162,19 @@ async function inspectToken(tokenAddr, plan) {
         throw new Error(`supply ${fmt(supply, decimals)} ไม่ตรงแผน (${plan.totalSupply})`);
     }
 
-    const flag = async (fn) => { try { return await token[fn](); } catch { return null; } };
-    const flags = {
-        mint: await flag("isMintable"),
-        pause: await flag("isPausable"),
-        blacklist: await flag("isBlacklistEnabled"),
-        autoBurn: await flag("isAutoBurnEnabled"),
-    };
-    if (flags.autoBurn) {
+    // เดิมแค่พิมพ์ตัวแดงแล้วไปต่อ — เหรียญแก้ไม่ได้หลังสร้าง ต้องหยุดก่อนล็อก 770B เข้าไป
+    const problems = await checks.tokenProblems(token, { artifacts, provider: ethers.provider });
+    if (problems.some((p) => p.startsWith("auto-burn: เปิด"))) {
         throw new Error("เหรียญเปิด auto-burn (หักค่าตอนโอน) — สัญญาล็อก/presale และ router ของ DEX รองรับไม่ได้");
     }
-    for (const [k, v] of Object.entries(flags)) {
-        if (v) console.log("      " + RED(`เหรียญเปิด ${k} — เจ้าของยังมีอำนาจเหนือเหรียญ นักลงทุนจะเห็นเป็นความเสี่ยง`));
+    if (problems.length) {
+        for (const p of problems) console.log("      " + RED(p));
+        if (process.env.ALLOW_NONSTANDARD_TOKEN !== "1") {
+            throw new Error("เหรียญไม่ใช่ FactoryERC20V2 standard ตามแผน — หยุดก่อน deploy (ตั้ง ALLOW_NONSTANDARD_TOKEN=1 ถ้าตั้งใจจริง)");
+        }
+    } else {
+        console.log("      ✅ standard: ไม่มี mint/pause/blacklist/auto-burn · โค้ดตรงกับ FactoryERC20V2 ที่ตรวจแล้ว");
     }
-    if (Object.values(flags).every((v) => v === false)) console.log("      ✅ standard: ไม่มี mint/pause/blacklist/auto-burn");
     return { token, symbol, decimals: Number(decimals) };
 }
 
@@ -195,15 +232,45 @@ async function main() {
 
     const now = BigInt((await ethers.provider.getBlock("latest")).timestamp);
 
-    // ── ซ้อม: สร้างเหรียญ standard ขึ้นมาเองแบบเดียวกับที่ factory สร้าง และ USDT จำลอง ──
+    // ── อ่านและตรวจค่าที่ตั้งทั้งหมดก่อน deploy อะไรทั้งนั้น ──
+    // (เดิมอ่าน SALE_TREASURY/SALE_START หลัง deploy สัญญาล็อกไปแล้ว — ลืมตั้งตัวเดียว = สัญญาล็อกกำพร้าบนเชน)
     let tokenAddr = envAddress("TOKEN", { required: !DRY_RUN });
+    const beneficiary = envAddress("BENEFICIARY", { required: !DRY_RUN }) || deployer.address;
+    const start = envTime("VESTING_START", { required: !DRY_RUN, fallback: now + 86400n });
+    if (start < now - 3600n && process.env.ALLOW_PAST_START !== "1") {
+        throw new Error(`VESTING_START ${iso(start)} อยู่ในอดีต — ล็อกจะเริ่มนับย้อนหลัง (ตั้ง ALLOW_PAST_START=1 ถ้าตั้งใจ)`);
+    }
+    const period = BigInt(plan.vesting.periodSeconds);
+    const capRaw = (process.env.SALE_CAP || (DRY_RUN ? "100000000000" : "")).replace(/[,_]/g, "");
+    let saleCfg = null;
+    if (capRaw) {
+        if (!/^\d+$/.test(capRaw)) throw new Error(`SALE_CAP ต้องเป็นจำนวนเหรียญเต็มหน่วย: ${capRaw}`);
+        const saleStart = envTime("SALE_START", { required: !DRY_RUN, fallback: now + 60n });
+        const saleEnd = envTime("SALE_END", { required: !DRY_RUN, fallback: saleStart + 30n * 86400n });
+        const treasury = envAddress("SALE_TREASURY", { required: !DRY_RUN }) || deployer.address;
+        const owner = envAddress("SALE_OWNER", { required: false }) || deployer.address;
+        if (saleEnd <= saleStart) throw new Error("SALE_END ต้องหลัง SALE_START");
+        if (saleEnd <= now) throw new Error(`SALE_END ${iso(saleEnd)} ผ่านไปแล้ว`);
+        saleCfg = { capRaw, saleStart, saleEnd, treasury, owner };
+    }
+    if (!DRY_RUN) {
+        // กระเป๋าที่ deploy คือคีย์ร้อน (อยู่ใน environment) — ไม่ควรเป็นผู้รับเหรียญล็อกหรือผู้คุม presale
+        if (beneficiary.toLowerCase() === deployer.address.toLowerCase()) {
+            console.log(RED("BENEFICIARY = กระเป๋าที่ deploy (คีย์ร้อน) — แนะนำ multisig"));
+        }
+        if (saleCfg && saleCfg.owner.toLowerCase() === deployer.address.toLowerCase()) {
+            console.log(RED("SALE_OWNER = กระเป๋าที่ deploy (คีย์ร้อน) — ผู้คุมหยุดขาย/ถอนเหรียญที่เหลือ/เปลี่ยนกระเป๋ารับเงินได้ แนะนำ multisig"));
+        }
+    }
+
+    // ── ซ้อม: สร้างเหรียญ standard ขึ้นมาเองแบบเดียวกับที่ factory สร้าง และ USDT จำลอง ──
     let payAddr = registryAddress(reg, plan.sale.payToken);
     let mockUsdt = null;
     if (DRY_RUN) {
         const T = await ethers.getContractFactory("FactoryERC20V2");
         tokenAddr = tokenAddr || await (await T.deploy("Dry Run " + plan.symbol, plan.symbol, plan.decimals,
             ethers.parseUnits(plan.totalSupply, plan.decimals), deployer.address,
-            false, true, false, false, 0, false, 0, 0)).getAddress();
+            false, false, false, false, 0, false, 0, 0)).getAddress();   // "standard" ตามที่ ThaiXTrade ส่งจริง
         mockUsdt = await (await ethers.getContractFactory("USDT_TPIX")).deploy();
         payAddr = await mockUsdt.getAddress();
     }
@@ -211,53 +278,50 @@ async function main() {
     console.log("\n[1/4] ตรวจเหรียญ ...");
     const { decimals } = await inspectToken(tokenAddr, plan);
 
-    // ── สัญญาล็อก ──
-    const beneficiary = envAddress("BENEFICIARY", { required: !DRY_RUN }) || deployer.address;
-    const start = envTime("VESTING_START", { required: !DRY_RUN, fallback: now + 86400n });
-    if (start < now - 3600n && process.env.ALLOW_PAST_START !== "1") {
-        throw new Error(`VESTING_START ${iso(start)} อยู่ในอดีต — ล็อกจะเริ่มนับย้อนหลัง (ตั้ง ALLOW_PAST_START=1 ถ้าตั้งใจ)`);
-    }
     const tranches = plan.vesting.tranches.map((t) => ({
         amount: ethers.parseUnits(t.amount, decimals), cliffPeriods: t.cliffPeriods, releasePeriods: t.releasePeriods,
     }));
     const vestTotal = tranches.reduce((a, t) => a + t.amount, 0n);
-    const period = BigInt(plan.vesting.periodSeconds);
 
+    let sale = null, saleExp = null;
+    if (saleCfg) {
+        if (!payAddr || !(await hasCode(payAddr))) throw new Error(`ไม่พบ ${plan.sale.payToken} บนเชน`);
+        const pay = await ethers.getContractAt("FactoryERC20V2", payAddr);
+        const payDec = Number(await pay.decimals());
+        const { num, den } = saleRate(plan.sale.priceUsd, decimals, payDec);
+        saleExp = {
+            saleToken: tokenAddr, payToken: payAddr, num, den, cap: ethers.parseUnits(saleCfg.capRaw, decimals),
+            treasury: saleCfg.treasury, start: saleCfg.saleStart, end: saleCfg.saleEnd, owner: saleCfg.owner,
+            paySymbol: await pay.symbol(), payDec,
+        };
+    }
+
+    // ── สัญญาล็อก ──
     console.log(`\n[2/4] สัญญาล็อก ${fmt(vestTotal, decimals)} ${plan.symbol} · เริ่มนับ ${iso(start)} · ผู้รับ ${beneficiary}`);
     for (const t of plan.vesting.tranches) {
         const from = t.cliffPeriods + 1, to = t.cliffPeriods + t.releasePeriods;
         console.log(`      ${t.name.padEnd(10)} ${Number(t.amount).toLocaleString("en-US").padStart(18)} → ปลดงวดที่ ${from}–${to}`);
     }
     const vest = await deployOnce(reg, `${plan.symbol}_Vesting`, "TrancheVesting",
-        [tokenAddr, beneficiary, start, period, tranches, plan.vesting.label]);
+        [tokenAddr, beneficiary, start, period, tranches, plan.vesting.label], {
+            mismatches: (c) => checks.vestingMismatches(c, { token: tokenAddr, beneficiary, start, period, tranches, label: plan.vesting.label }),
+            entry: { description: `${plan.vesting.label} · token ${tokenAddr} · ผู้รับ ${beneficiary}` },
+        });
     const vesting = await ethers.getContractAt("TrancheVesting", vest.address);
-    if ((await vesting.token()).toLowerCase() !== tokenAddr.toLowerCase()) throw new Error("สัญญาล็อกใน registry ผูกกับเหรียญอื่น");
     if ((await vesting.totalAllocation()) !== vestTotal) throw new Error("ยอดในสัญญาล็อกไม่ตรงแผน");
 
     // ── presale ──
-    let sale = null;
-    const capRaw = (process.env.SALE_CAP || (DRY_RUN ? "100000000000" : "")).replace(/[,_]/g, "");
-    if (capRaw) {
-        if (!payAddr || !(await hasCode(payAddr))) throw new Error(`ไม่พบ ${plan.sale.payToken} บนเชน`);
-        const pay = await ethers.getContractAt("FactoryERC20V2", payAddr);
-        const payDec = Number(await pay.decimals());
-        const { num, den } = saleRate(plan.sale.priceUsd, decimals, payDec);
-        const cap = ethers.parseUnits(capRaw, decimals);
-        const saleStart = envTime("SALE_START", { required: !DRY_RUN, fallback: now + 60n });
-        const saleEnd = envTime("SALE_END", { required: !DRY_RUN, fallback: saleStart + 30n * 86400n });
-        const treasury = envAddress("SALE_TREASURY", { required: !DRY_RUN }) || deployer.address;
-        const owner = envAddress("SALE_OWNER", { required: false }) || deployer.address;
-        if (saleEnd <= saleStart) throw new Error("SALE_END ต้องหลัง SALE_START");
-
-        console.log(`\n[3/4] presale ${fmt(cap, decimals)} ${plan.symbol} ที่ $${plan.sale.priceUsd} · ${iso(saleStart)} → ${iso(saleEnd)}`);
-        console.log(`      ราคา: 1 ${await pay.symbol()} = ${fmt((10n ** BigInt(payDec)) * num / den, decimals)} ${plan.symbol} (rate ${num}/${den})`);
-        console.log(`      เงินเข้า ${treasury} · ผู้คุม ${owner}`);
+    if (saleExp) {
+        const e = saleExp;
+        console.log(`\n[3/4] presale ${fmt(e.cap, decimals)} ${plan.symbol} ที่ $${plan.sale.priceUsd} · ${iso(e.start)} → ${iso(e.end)}`);
+        console.log(`      ราคา: 1 ${e.paySymbol} = ${fmt((10n ** BigInt(e.payDec)) * e.num / e.den, decimals)} ${plan.symbol} (rate ${e.num}/${e.den})`);
+        console.log(`      เงินเข้า ${e.treasury} · ผู้คุม ${e.owner}`);
         const s = await deployOnce(reg, `${plan.symbol}_Presale`, "FixedPriceSale",
-            [tokenAddr, payAddr, num, den, cap, treasury, saleStart, saleEnd, owner]);
+            [tokenAddr, payAddr, e.num, e.den, e.cap, e.treasury, e.start, e.end, e.owner], {
+                mismatches: (c) => checks.saleMismatches(c, e),
+                entry: { description: `Presale ${plan.symbol} ที่ $${plan.sale.priceUsd} จ่ายด้วย ${plan.sale.payToken}` },
+            });
         sale = await ethers.getContractAt("FixedPriceSale", s.address);
-        if ((await sale.rateNumerator()) !== num || (await sale.rateDenominator()) !== den) {
-            throw new Error("ราคาในสัญญา presale ใน registry ไม่ตรงแผน — ราคาแก้ไม่ได้ ต้อง deploy ใหม่ (ลบรายการเดิมออกจาก registry)");
-        }
     } else {
         console.log("\n[3/4] [ข้าม] presale — ไม่ได้ตั้ง SALE_CAP");
     }
@@ -291,32 +355,12 @@ async function main() {
         return;
     }
 
-    // ── บันทึก registry ──
-    const today = new Date().toISOString().slice(0, 10);
-    const entries = [
-        { name: `${plan.symbol}_Vesting`, address: vest.address, sourceFile: "contracts/src/launch/TrancheVesting.sol",
-          description: `${plan.vesting.label} · token ${tokenAddr} · ผู้รับ ${beneficiary}` },
-        ...(sale ? [{ name: `${plan.symbol}_Presale`, address: await sale.getAddress(), sourceFile: "contracts/src/launch/FixedPriceSale.sol",
-          description: `Presale ${plan.symbol} ที่ $${plan.sale.priceUsd} จ่ายด้วย ${plan.sale.payToken}` }] : []),
-    ].map((e) => ({
-        ...e, category: "launch", compilerVersion: "0.8.24", optimizer: { enabled: true, runs: 200 },
-        evmVersion: "london", viaIR: true, verified: false, deployedAt: today,
-    }));
-    const fresh = loadRegistry();
-    for (const e of entries) {
-        const old = fresh.contracts.find((c) => c.name === e.name);
-        if (old && old.address === e.address) continue;          // ใช้ของเดิม — ไม่แตะรายการ
-        fresh.contracts = fresh.contracts.filter((c) => c.name !== e.name).concat(e);
-    }
-    fresh.updated = today;
-    fs.writeFileSync(REGISTRY_PATH, JSON.stringify(fresh, null, 2) + "\n");
-
-    console.log("\n[4/4] บันทึกลง deployed-contracts.json แล้ว");
+    console.log("\n[4/4] deployed-contracts.json บันทึกทันทีหลัง deploy แต่ละตัวแล้ว");
     console.log("\n=== ขั้นต่อไป (เจ้าของเหรียญทำเองจากกระเป๋าที่ถือเหรียญ) ===");
     console.log(`  1. โอน ${fmt(vestTotal, decimals)} ${plan.symbol} → ${vest.address}  (สัญญาล็อก)`);
     if (sale) console.log(`  2. โอน ${fmt(await sale.saleCap(), decimals)} ${plan.symbol} → ${await sale.getAddress()}  (presale)`);
     console.log("  3. ตรวจ:   STATUS=1 npx hardhat run scripts/launch-token.js --network tpix");
-    console.log(`  4. verify: node scripts/verify-blockscout.js ${entries.map((e) => e.name).join(" ")}`);
+    console.log(`  4. verify: node scripts/verify-blockscout.js ${plan.symbol}_Vesting${sale ? ` ${plan.symbol}_Presale` : ""}`);
 }
 
 main().catch((e) => {
