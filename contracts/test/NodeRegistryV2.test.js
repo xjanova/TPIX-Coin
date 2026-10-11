@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { loadFixture, time, setBalance, takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
+const { loadFixture, time, setBalance, setCode, takeSnapshot } = require("@nomicfoundation/hardhat-network-helpers");
 
 /**
  * ทดสอบ NodeRegistryV2 — เน้นเรื่องที่ทำให้เงินหายจริง
@@ -631,7 +631,7 @@ describe("NodeRegistryV2", function () {
         });
     });
 
-    describe("audit 2026-10c: owner ตั้งระยะล็อกยาวไม่จำกัดไม่ได้", function () {
+    describe("audit 2026-10c: ระยะล็อก · KYC · ถอนตอนพูลว่าง", function () {
         const DAY = 24 * 60 * 60;
 
         it("owner (ซึ่งรัน validator เอง) แทรก lockDays 100 ปีก่อน tx สมัคร → เงินต้นต้องไม่ถูกขังเกิน 365 วัน", async function () {
@@ -646,6 +646,45 @@ describe("NodeRegistryV2", function () {
 
             const n = await registry.getNodeInfo(alice.address);
             expect(n.unlockAt - n.registeredAt).to.be.lte(365n * BigInt(DAY));
+        });
+
+        it("สัญญา KYC ที่เปลี่ยนเป็น revert / ถูกถอดออก ห้ามขวาง Validator ถอนหรือเคลม", async function () {
+            const { registry, owner, alice, funder } = await loadFixture(deployFixture);
+            const kyc = "0x00000000000000000000000000000000000c0de1";
+            await setCode(kyc, "0x600160005260206000f3");            // isApproved → true
+            await registry.connect(owner).setKYCContract(kyc);
+            const V_STAKE = ethers.parseEther("10000000");
+            await registry.connect(alice).registerNode(TIER.VALIDATOR, ENDPOINT, { value: V_STAKE });
+            await funder.sendTransaction({ to: await registry.getAddress(), value: ethers.parseEther("1000000") });
+
+            // KYC "อัปเกรด" เป็นโค้ดที่ revert ทุกครั้ง แล้ว owner ถอดออกอีกที
+            await setCode(kyc, "0x60006000fd");
+            await time.increase(181 * DAY);
+            await registry.connect(alice).claimRewards();
+            await registry.connect(owner).setKYCContract(ethers.ZeroAddress);
+            const before = await ethers.provider.getBalance(alice.address);
+            const rc = await (await registry.connect(alice).deregisterNode()).wait();
+            const after = await ethers.provider.getBalance(alice.address);
+            expect(after - before + rc.gasUsed * rc.gasPrice).to.be.gte(V_STAKE);
+            expect(await registry.totalStaked()).to.equal(0);
+        });
+
+        it("ถอนตอนพูลว่าง: ได้เงินต้นครบ รางวัลค้างเป็นหนี้ · สมัครใหม่ต้องรอเคลมก่อน", async function () {
+            const { registry, alice, funder } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await time.increase(8 * DAY);
+            await registry.connect(alice).deregisterNode();
+
+            const owed = await registry.pendingReward(alice.address);
+            expect(owed).to.be.gt(0);
+            expect(await ethers.provider.getBalance(await registry.getAddress())).to.equal(0);
+            await expect(registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE }))
+                .to.be.revertedWith("Claim pending rewards first");
+
+            await registry.connect(funder).fundRewardPool({ value: ethers.parseEther("1000") });
+            await expect(registry.connect(alice).claimRewards())
+                .to.emit(registry, "RewardClaimed").withArgs(alice.address, owed);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
         });
 
         it("lockDays เกิน 365 → revert · 365 พอดีได้", async function () {
