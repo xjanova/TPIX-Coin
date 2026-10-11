@@ -15,6 +15,13 @@
 /// ธุรกรรมให้ตรวจ → ยืนยัน → เซ็นด้วย key ของกระเป๋า → ส่งขึ้นเชน →
 /// callback กลับพร้อม `?txhash=0x...`
 ///
+/// พารามิเตอร์ `address=0x…` (ทุก host: sign / sign-typed / sign-tx) = กระเป๋าที่ TRADE ผูกไว้
+///   ตรงกับใบที่เปิดอยู่ → เซ็น · ตรงกับใบอื่นในแอป → ถามผู้ใช้ก่อนสลับ
+///   ไม่มีในแอป → `error=address_not_found` · รูปแบบผิด → `error=invalid_address`
+///   ไม่ส่งมา (TRADE รุ่นเก่า) → เซ็นด้วยใบที่เปิดอยู่ โดยหน้ายืนยันโชว์ที่อยู่เต็มเด่นๆ
+///   sign-tx: `from` ใน JSON ของ tx ต้องตรงกับ `address` (ไม่ตรง = invalid_address)
+///   `from=trade` ของ URL = ชื่อแอปต้นทาง ไม่ใช่ที่อยู่ · callback สำเร็จแนบ `address` ของผู้เซ็นกลับไป
+///
 /// Security:
 ///   - Callback URL must be in allowlist (currently only tpixtrade://)
 ///   - Wallet must be unlocked (signed in with passcode/biometric) — otherwise reject
@@ -38,9 +45,32 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../models/chain_config.dart';
+import '../models/wallet_info.dart';
 import '../providers/wallet_provider.dart';
 import 'bug_reporter.dart';
 import 'db_service.dart';
+import 'wallet_service.dart';
+
+/// ผลการจับคู่ "ที่อยู่ที่แอปต้นทางขอให้เซ็น" กับกระเป๋าในแอป
+enum SignerMatchKind {
+  /// คำขอไม่ได้ระบุที่อยู่ (TPIX TRADE รุ่นเก่า) → ใช้ใบที่เปิดอยู่ + โชว์ที่อยู่เด่นๆ
+  noAddress,
+
+  /// ตรงกับใบที่เปิดอยู่
+  active,
+
+  /// ตรงกับอีกใบในแอป → ต้องถามผู้ใช้ก่อนสลับ
+  otherWallet,
+
+  /// ไม่ตรงกับใบไหนในแอปเลย → ปฏิเสธ
+  notFound,
+}
+
+class SignerMatch {
+  final SignerMatchKind kind;
+  final WalletInfo? wallet; // มีค่าเมื่อ kind == otherWallet
+  const SignerMatch(this.kind, {this.wallet});
+}
 
 class PeerSignService {
   PeerSignService._();
@@ -77,7 +107,6 @@ class PeerSignService {
     final message = uri.queryParameters['message'];
     final nonce = uri.queryParameters['nonce'];
     final callback = uri.queryParameters['callback'];
-    final fromHint = uri.queryParameters['from'];
 
     if (message == null || message.isEmpty ||
         nonce == null || nonce.isEmpty ||
@@ -109,11 +138,25 @@ class PeerSignService {
     if (!context.mounted) return true;
 
     final sourceName = _sourceAppNames[cbUri.scheme] ?? cbUri.scheme;
+
+    // กระเป๋าที่จะเซ็นต้องเป็นใบที่ TRADE ผูกไว้ (ถ้า TRADE ระบุ address มา)
+    final signer = await _resolveSigner(
+      context,
+      cbUri: cbUri,
+      nonce: nonce,
+      requested: requestedAddress(uri.queryParameters),
+      sourceName: sourceName,
+      logMessage: message,
+    );
+    if (signer == null || !context.mounted) return true;
+
     final approved = await _showConfirmDialog(
       context,
       sourceName: sourceName,
       message: message,
-      fromHint: fromHint,
+      signerAddress: signer.address,
+      signerName: signer.name,
+      addressVerified: signer.verified,
     );
 
     if (!context.mounted) return true;
@@ -148,10 +191,24 @@ class PeerSignService {
       return true;
     }
 
+    // กระเป๋าถูกสลับระหว่างหน้ายืนยันเปิดอยู่ → ห้ามเซ็นด้วยใบที่ผู้ใช้ไม่ได้เห็น
+    if (!_stillSameSigner(wallet, signer.address)) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'wallet_changed');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceAppName,
+        sourceScheme: cbUri.scheme,
+        message: message,
+        status: 'wallet_changed',
+        nonce: nonce,
+      );
+      return true;
+    }
+
     // Sign + send back
     try {
       final signature = await wallet.signPersonalMessage(message);
-      await _sendCallback(cbUri, nonce: nonce, signature: signature);
+      await _sendCallback(cbUri, nonce: nonce, signature: signature, address: signer.address);
       await _logSign(
         wallet: wallet,
         sourceApp: sourceAppName,
@@ -218,10 +275,24 @@ class PeerSignService {
     if (!context.mounted) return true;
 
     final sourceName = _sourceAppNames[cbUri.scheme] ?? cbUri.scheme;
+
+    final signer = await _resolveSigner(
+      context,
+      cbUri: cbUri,
+      nonce: nonce,
+      requested: requestedAddress(uri.queryParameters),
+      sourceName: sourceName,
+      logMessage: typedJson,
+    );
+    if (signer == null || !context.mounted) return true;
+
     final approved = await _showTypedConfirmDialog(
       context,
       sourceName: sourceName,
       typedData: typedData,
+      signerAddress: signer.address,
+      signerName: signer.name,
+      addressVerified: signer.verified,
     );
 
     if (!context.mounted) return true;
@@ -254,11 +325,24 @@ class PeerSignService {
       return true;
     }
 
+    if (!_stillSameSigner(wallet, signer.address)) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'wallet_changed');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: typedJson,
+        status: 'wallet_changed',
+        nonce: nonce,
+      );
+      return true;
+    }
+
     try {
       // Simplified EIP-712: sign JSON as personal_sign
       // (matches WalletConnectService approach — full struct hashing TBD)
       final signature = await wallet.signPersonalMessage(typedJson);
-      await _sendCallback(cbUri, nonce: nonce, signature: signature);
+      await _sendCallback(cbUri, nonce: nonce, signature: signature, address: signer.address);
       await _logSign(
         wallet: wallet,
         sourceApp: sourceName,
@@ -399,15 +483,6 @@ class PeerSignService {
     ];
 
     final sourceName = _sourceAppNames[cbUri.scheme] ?? cbUri.scheme;
-    final approved = await _showConfirmDialog(
-      context,
-      sourceName: sourceName,
-      message: lines.join('\n'),
-    );
-
-    if (!context.mounted) return true;
-
-    final wallet = context.read<WalletProvider>();
     final logMessage = jsonEncode({
       'type': 'sign-tx',
       'chainId': chainId,
@@ -416,6 +491,30 @@ class PeerSignService {
       'dataBytes': data?.length ?? 0,
       if (summary != null) 'summary': summary,
     });
+
+    // ธุรกรรม = เงินออกจริง → ต้องออกจากกระเป๋าใบที่ TRADE ผูกไว้เท่านั้น
+    final signer = await _resolveSigner(
+      context,
+      cbUri: cbUri,
+      nonce: nonce,
+      requested: requestedAddress(uri.queryParameters, tx: tx),
+      sourceName: sourceName,
+      logMessage: logMessage,
+    );
+    if (signer == null || !context.mounted) return true;
+
+    final approved = await _showConfirmDialog(
+      context,
+      sourceName: sourceName,
+      message: lines.join('\n'),
+      signerAddress: signer.address,
+      signerName: signer.name,
+      addressVerified: signer.verified,
+    );
+
+    if (!context.mounted) return true;
+
+    final wallet = context.read<WalletProvider>();
 
     if (!approved) {
       await _sendCallback(cbUri, nonce: nonce, error: 'user_rejected');
@@ -443,8 +542,22 @@ class PeerSignService {
       return true;
     }
 
-    // ── เซ็น + broadcast (gas ประเมินอัตโนมัติโดย web3dart — path เดียว
-    //    กับหน้า swap ของกระเป๋าเอง) ──
+    if (!_stillSameSigner(wallet, signer.address)) {
+      await _sendCallback(cbUri, nonce: nonce, error: 'wallet_changed');
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: logMessage,
+        status: 'wallet_changed',
+        nonce: nonce,
+      );
+      return true;
+    }
+
+    // ── เซ็น + broadcast (gas ประเมินจากโหนด + เผื่อ 20% — path เดียวกับหน้า swap
+    //    ของกระเป๋าเอง; RPC หลักใช้ไม่ได้ก็สลับไปตัวสำรองของเชนนั้น) ──
+    // expectedFrom: ถ้ากระเป๋าถูกสลับระหว่างนี้ WalletService ยกเลิกเอง
     try {
       final txHash = await wallet.sendEvmTransaction(
         rpcUrl: chain.rpcUrl,
@@ -452,8 +565,9 @@ class PeerSignService {
         toAddress: to,
         value: value > BigInt.zero ? value : null,
         data: data,
+        expectedFrom: signer.address,
       );
-      await _sendCallback(cbUri, nonce: nonce, txHash: txHash);
+      await _sendCallback(cbUri, nonce: nonce, txHash: txHash, address: signer.address);
       await _logSign(
         wallet: wallet,
         sourceApp: sourceName,
@@ -464,24 +578,317 @@ class PeerSignService {
       );
     } catch (e) {
       debugPrint('PeerSignService.tx send: ${e.runtimeType}');
-      await _sendCallback(cbUri, nonce: nonce, error: 'tx_failed');
+      final code = e is WalletChangedException ? 'wallet_changed' : 'tx_failed';
+      await _sendCallback(cbUri, nonce: nonce, error: code);
       await _logSign(
         wallet: wallet,
         sourceApp: sourceName,
         sourceScheme: cbUri.scheme,
         message: logMessage,
-        status: 'tx_failed',
+        status: code,
         nonce: nonce,
       );
     }
     return true;
   }
 
+  // ================================================================
+  // กระเป๋าที่ต้องใช้เซ็น — ต้องเป็นใบที่ TPIX TRADE ผูกไว้
+  // ================================================================
+  //
+  // ★ ของเดิมเซ็นด้วย "กระเป๋าที่เปิดอยู่" เสมอ ถ้าผู้ใช้สลับไปอีกใบหลังเชื่อมกับ TRADE
+  //   ลายเซ็น/ธุรกรรมจะออกจากกระเป๋าผิดใบ (sign-tx = เงินออกผิดกระเป๋าจริง)
+  //
+  // โปรโตคอล (ตกลงกับฝั่ง TPIX TRADE แล้ว): ส่งที่อยู่ที่ผูกไว้มาเป็นพารามิเตอร์ `address=0x…`
+  //   ทั้ง sign / sign-typed / sign-tx — เทียบแบบไม่สนตัวพิมพ์
+  //   sign-tx: `from` ใน JSON ของ tx ต้องตรงกับ `address` ด้วย (ถ้ามีทั้งคู่)
+  //   พารามิเตอร์ `from` ของ URL คือชื่อแอปต้นทาง (`from=trade`) — ไม่ใช้เป็นที่อยู่เด็ดขาด
+  // ไม่มีที่อยู่มา (TRADE รุ่นเก่า) → ยังเซ็นได้ แต่หน้ายืนยันโชว์กระเป๋าที่จะเซ็นชัดๆ
+
+  /// ดึงที่อยู่ที่คำขอระบุมา — คืน `invalid: true` ถ้ารูปแบบผิดหรือระบุมาหลายที่แล้วไม่ตรงกัน
+  @visibleForTesting
+  static ({String? address, bool invalid}) requestedAddress(
+    Map<String, String> query, {
+    Map<String, dynamic>? tx,
+  }) {
+    final candidates = <String>[];
+    final explicit = query['address'];
+    if (explicit != null) {
+      // ส่งมาแต่ว่างเปล่า = รูปแบบผิด (ไม่ใช่ "ไม่ได้ระบุ") → ปฏิเสธ
+      if (explicit.trim().isEmpty) return (address: null, invalid: true);
+      candidates.add(explicit.trim());
+    }
+    // ★ ไม่อ่าน `from` ของ URL — นั่นคือชื่อแอปต้นทาง (from=trade) ไม่ใช่ที่อยู่
+    final txFrom = tx?['from'];
+    if (txFrom != null) {
+      if (txFrom is! String) return (address: null, invalid: true);
+      if (txFrom.isNotEmpty) candidates.add(txFrom.trim());
+    }
+    if (candidates.isEmpty) return (address: null, invalid: false);
+    for (final c in candidates) {
+      if (!WalletService.isValidAddress(c)) return (address: null, invalid: true);
+    }
+    final first = candidates.first.toLowerCase();
+    if (candidates.any((c) => c.toLowerCase() != first)) {
+      return (address: null, invalid: true); // ระบุมาหลายที่แต่ไม่ตรงกัน = ไม่เชื่อ
+    }
+    return (address: candidates.first, invalid: false);
+  }
+
+  /// จับคู่ที่อยู่ที่คำขอระบุ กับกระเป๋าในแอป (pure — เทสต์ได้)
+  @visibleForTesting
+  static SignerMatch matchSigner({
+    required String? requested,
+    required String? activeAddress,
+    required List<WalletInfo> wallets,
+  }) {
+    if (requested == null) return const SignerMatch(SignerMatchKind.noAddress);
+    final want = requested.toLowerCase();
+    if (activeAddress != null && activeAddress.toLowerCase() == want) {
+      return const SignerMatch(SignerMatchKind.active);
+    }
+    for (final w in wallets) {
+      if (w.address.toLowerCase() == want) {
+        return SignerMatch(SignerMatchKind.otherWallet, wallet: w);
+      }
+    }
+    return const SignerMatch(SignerMatchKind.notFound);
+  }
+
+  /// ตัดสินว่าจะเซ็นด้วยกระเป๋าใบไหน — คืน null = ตอบปฏิเสธกลับไปแล้ว (ผู้เรียกจบได้เลย)
+  ///
+  /// - ระบุมาแล้วตรงกับใบที่เปิดอยู่ → ไปต่อ
+  /// - ตรงกับอีกใบในแอป → ถามผู้ใช้ว่าจะสลับไปใบนั้นไหม (ไม่สลับเองเงียบๆ)
+  /// - ไม่ตรงกับใบไหนเลย / รูปแบบผิด → ปฏิเสธพร้อมรหัส error ชัดเจน
+  /// - ไม่ได้ระบุ (TRADE รุ่นเก่า) → ไปต่อด้วยใบที่เปิดอยู่ (หน้ายืนยันโชว์ที่อยู่เด่นๆ)
+  Future<({String address, String? name, bool verified})?> _resolveSigner(
+    BuildContext context, {
+    required Uri cbUri,
+    required String nonce,
+    required ({String? address, bool invalid}) requested,
+    required String sourceName,
+    required String logMessage,
+  }) async {
+    final wallet = context.read<WalletProvider>();
+    final isThai = context.read<LocaleProvider>().isThai;
+
+    // ล็อกอยู่ = ยังไม่รู้รายชื่อกระเป๋า → ปล่อยให้ขั้นถัดไปตอบ wallet_locked ตามเดิม
+    if (!wallet.isUnlocked || wallet.address == null) {
+      return (address: wallet.address ?? '', name: null, verified: false);
+    }
+
+    Future<void> reject(String code) async {
+      await _sendCallback(cbUri, nonce: nonce, error: code);
+      await _logSign(
+        wallet: wallet,
+        sourceApp: sourceName,
+        sourceScheme: cbUri.scheme,
+        message: logMessage,
+        status: code,
+        nonce: nonce,
+      );
+    }
+
+    if (requested.invalid) {
+      await reject('invalid_address');
+      return null;
+    }
+
+    final match = matchSigner(
+      requested: requested.address,
+      activeAddress: wallet.address,
+      wallets: wallet.wallets,
+    );
+
+    switch (match.kind) {
+      case SignerMatchKind.noAddress:
+        return (address: wallet.address!, name: wallet.activeWallet?.name, verified: false);
+      case SignerMatchKind.active:
+        return (address: wallet.address!, name: wallet.activeWallet?.name, verified: true);
+      case SignerMatchKind.notFound:
+        if (context.mounted) {
+          await _showInfoSheet(
+            context,
+            icon: Icons.person_off_rounded,
+            title: isThai ? 'ไม่พบกระเป๋าที่ $sourceName เชื่อมไว้' : 'Linked wallet not found',
+            body: isThai
+                ? '$sourceName ขอให้เซ็นด้วยกระเป๋า\n${requested.address}\nแต่กระเป๋านี้ไม่ได้อยู่ในแอป TPIX Wallet เครื่องนี้ — ปฏิเสธคำขอแล้ว\n\nเชื่อม $sourceName ใหม่จากกระเป๋าที่ต้องการใช้'
+                : '$sourceName asked to sign with\n${requested.address}\nbut that wallet is not in this TPIX Wallet app — the request was rejected.\n\nReconnect $sourceName from the wallet you want to use.',
+          );
+        }
+        await reject('address_not_found');
+        return null;
+      case SignerMatchKind.otherWallet:
+        final target = match.wallet!;
+        if (!context.mounted) return null;
+        final ok = await _askSwitchWallet(context, target: target, sourceName: sourceName, isThai: isThai);
+        if (!context.mounted) return null;
+        if (!ok) {
+          await reject('user_rejected');
+          return null;
+        }
+        await wallet.switchWallet(target.slot);
+        if (wallet.address?.toLowerCase() != target.address.toLowerCase()) {
+          await reject('switch_failed');
+          return null;
+        }
+        return (address: wallet.address!, name: wallet.activeWallet?.name, verified: true);
+    }
+  }
+
+  /// ถามผู้ใช้ก่อนสลับกระเป๋า — โชว์ชื่อ + ที่อยู่เต็มของใบปลายทาง
+  Future<bool> _askSwitchWallet(
+    BuildContext context, {
+    required WalletInfo target,
+    required String sourceName,
+    required bool isThai,
+  }) async {
+    final c = AppColors.of(context);
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.swap_horiz_rounded, color: AppTheme.warm),
+                const SizedBox(width: TpixGap.md),
+                Expanded(
+                  child: Text(
+                    isThai ? 'สลับกระเป๋าเพื่อเซ็น?' : 'Switch wallet to sign?',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: TpixGap.md),
+            Text(
+              isThai
+                  ? '$sourceName เชื่อมไว้กับกระเป๋าใบนี้ ซึ่งไม่ใช่ใบที่เปิดอยู่ตอนนี้:'
+                  : '$sourceName is linked to this wallet, which is not the one currently open:',
+              style: TextStyle(fontSize: 13, color: c.textSec),
+            ),
+            const SizedBox(height: TpixGap.md),
+            _addressBox(c, name: target.name, address: target.address),
+            const SizedBox(height: TpixGap.xl),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(sheetCtx, false),
+                    child: Text(isThai ? 'ปฏิเสธ' : 'Reject', style: TextStyle(color: c.textSec)),
+                  ),
+                ),
+                const SizedBox(width: TpixGap.md),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(sheetCtx, true),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
+                    child: Text(
+                      isThai ? 'สลับไปใบนี้' : 'Switch',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    return result == true;
+  }
+
+  Future<void> _showInfoSheet(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String body,
+  }) async {
+    final c = AppColors.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(TpixRadius.lg)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: AppTheme.danger),
+                const SizedBox(width: TpixGap.md),
+                Expanded(
+                  child: Text(title,
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text)),
+                ),
+              ],
+            ),
+            const SizedBox(height: TpixGap.md),
+            SelectableText(body, style: TextStyle(fontSize: 13, height: 1.5, color: c.textSec)),
+            const SizedBox(height: TpixGap.xl),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(sheetCtx),
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+              child: const Text('OK', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Widget _addressBox(AppColors c, {String? name, required String address}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(TpixRadius.sm),
+        border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (name != null && name.isNotEmpty)
+            Text(name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.text)),
+          SelectableText(
+            address,
+            style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: c.textSec),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ก่อนเซ็นจริง: กระเป๋าที่เปิดอยู่ต้องยังเป็นใบที่ผู้ใช้เห็นในหน้ายืนยัน
+  /// (ระหว่างหน้ายืนยันเปิดอยู่ ผู้ใช้อาจสลับกระเป๋าจากที่อื่น)
+  static bool _stillSameSigner(WalletProvider wallet, String shownAddress) =>
+      wallet.address != null &&
+      wallet.address!.toLowerCase() == shownAddress.toLowerCase();
+
   /// Pretty-print EIP-712 typed-data for the confirmation dialog
   Future<bool> _showTypedConfirmDialog(
     BuildContext context, {
     required String sourceName,
     required Map<String, dynamic> typedData,
+    required String signerAddress,
+    String? signerName,
+    bool addressVerified = false,
   }) async {
     final primaryType = typedData['primaryType'] as String? ?? '?';
     final message = typedData['message'];
@@ -515,6 +922,9 @@ class PeerSignService {
         bgColor: c.surface,
         textColor: c.text,
         textSecondary: c.textSec,
+        signerAddress: signerAddress,
+        signerName: signerName,
+        addressVerified: addressVerified,
       ),
     );
     return result == true;
@@ -549,18 +959,22 @@ class PeerSignService {
   }
 
   /// Open the callback URL — wallet→peer app handoff
+  ///
+  /// สำเร็จ → แนบ `address` = กระเป๋าที่เซ็นจริง ให้ TRADE ตรวจซ้ำได้ว่าตรงกับที่ผูกไว้
   Future<void> _sendCallback(
     Uri callback, {
     required String nonce,
     String? signature,
     String? txHash,
     String? error,
+    String? address,
   }) async {
     final params = <String, String>{
       'nonce': nonce,
       if (signature != null) 'signature': signature,
       if (txHash != null) 'txhash': txHash,
       if (error != null) 'error': error,
+      if (address != null && error == null) 'address': address,
     };
     // Reuse callback's host (e.g., 'sign-result') and append our params
     final outUri = callback.replace(queryParameters: {
@@ -591,7 +1005,9 @@ class PeerSignService {
     BuildContext context, {
     required String sourceName,
     required String message,
-    String? fromHint,
+    required String signerAddress,
+    String? signerName,
+    bool addressVerified = false,
   }) async {
     final l = context.read<LocaleProvider>();
     final c = AppColors.of(context);
@@ -613,6 +1029,9 @@ class PeerSignService {
         bgColor: c.surface,
         textColor: c.text,
         textSecondary: c.textSec,
+        signerAddress: signerAddress,
+        signerName: signerName,
+        addressVerified: addressVerified,
       ),
     );
     return result == true;
@@ -643,6 +1062,13 @@ class _SignConfirmSheet extends StatelessWidget {
   final Color textColor;
   final Color textSecondary;
 
+  /// กระเป๋าที่จะใช้เซ็น — โชว์เด่นๆ ทุกครั้ง
+  final String signerAddress;
+  final String? signerName;
+
+  /// TRADE ระบุที่อยู่มาและตรงกับใบนี้ (false = TRADE รุ่นเก่าไม่ได้ระบุ → เตือนให้ตรวจเอง)
+  final bool addressVerified;
+
   const _SignConfirmSheet({
     required this.sourceName,
     required this.message,
@@ -651,6 +1077,9 @@ class _SignConfirmSheet extends StatelessWidget {
     required this.bgColor,
     required this.textColor,
     required this.textSecondary,
+    required this.signerAddress,
+    this.signerName,
+    this.addressVerified = false,
   });
 
   @override
@@ -717,6 +1146,63 @@ class _SignConfirmSheet extends StatelessWidget {
                 ? 'ตรวจข้อความก่อนเซ็น — อย่าเซ็นถ้าไม่แน่ใจ'
                 : 'Review the message before signing — do not sign if unsure',
             style: TextStyle(fontSize: 12, color: textSecondary),
+          ),
+          const SizedBox(height: TpixGap.md),
+          // ── กระเป๋าที่จะเซ็น (ที่อยู่เต็ม ไม่ย่อ) ──
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: (addressVerified ? AppTheme.success : AppTheme.warm)
+                  .withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(TpixRadius.sm),
+              border: Border.all(
+                color: (addressVerified ? AppTheme.success : AppTheme.warm)
+                    .withValues(alpha: 0.35),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      addressVerified
+                          ? Icons.verified_user_rounded
+                          : Icons.account_balance_wallet_rounded,
+                      size: 16,
+                      color: addressVerified ? AppTheme.success : AppTheme.warm,
+                    ),
+                    const SizedBox(width: TpixGap.sm),
+                    Expanded(
+                      child: Text(
+                        isThai
+                            ? 'เซ็นด้วยกระเป๋า${signerName != null && signerName!.isNotEmpty ? ' "$signerName"' : ''}'
+                            : 'Signing with wallet${signerName != null && signerName!.isNotEmpty ? ' "$signerName"' : ''}',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: textColor),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: TpixGap.xs),
+                SelectableText(
+                  signerAddress,
+                  style: TextStyle(
+                      fontSize: 13, fontFamily: 'monospace', color: textColor),
+                ),
+                if (!addressVerified) ...[
+                  const SizedBox(height: TpixGap.xs),
+                  Text(
+                    isThai
+                        ? '$sourceName ไม่ได้ระบุกระเป๋ามา — ตรวจให้แน่ใจว่าตรงกับกระเป๋าที่เชื่อมไว้'
+                        : '$sourceName did not say which wallet — make sure this is the linked one',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.warm),
+                  ),
+                ],
+              ],
+            ),
           ),
           const SizedBox(height: TpixGap.lg),
           Flexible(
