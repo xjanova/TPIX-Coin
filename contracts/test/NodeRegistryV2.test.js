@@ -575,6 +575,62 @@ describe("NodeRegistryV2", function () {
         });
     });
 
+    describe("audit 2026-10b: เปลี่ยน minStake ตอนชั้นยังมีโหนดอยู่", function () {
+        const YEAR = 365 * 24 * 60 * 60;
+
+        it("owner ขึ้น minStake ทีหลัง → โหนดเดิมที่วาง 10K ต้องไม่ได้เกิน 6% ของเงินต้นตัวเอง", async function () {
+            const { registry, owner, alice } = await loadFixture(fundedFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+
+            // เพดาน APR คิดจาก minStake ของชั้น ไม่ใช่เงินต้นของโหนด — ถ้ายอมให้เปลี่ยน
+            // alice จะได้ 6% ของ 20K = 1,200 TPIX/ปี (12% ของเงินต้นจริง)
+            await registry.connect(owner)
+                .updateTierConfig(TIER.LIGHT, LIGHT_STAKE * 2n, 0, 7, 0, 1500)
+                .catch(() => {});
+            await time.increase(YEAR);
+
+            expect(await registry.pendingReward(alice.address)).to.be.lte(ethers.parseEther("600.01"));
+        });
+
+        it("owner ตั้ง minStake มหาศาลตอนมีโหนดอยู่ → ห้ามทำให้ถอนเงินต้นไม่ได้ถาวร", async function () {
+            const { registry, owner, alice } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+
+            // minStake × เพดาน APR × 1e18 ล้น uint256 → _syncTier ของชั้นนี้ revert ทุกครั้ง
+            // (รวมถึง updateTierConfig เองที่ต้อง sync ก่อน — แก้กลับก็ไม่ได้)
+            await registry.connect(owner)
+                .updateTierConfig(TIER.LIGHT, 2n ** 200n, 0, 7, 0, 1500)
+                .catch(() => {});
+            await time.increase(8 * 24 * 60 * 60);
+
+            await registry.connect(alice).deregisterNode();
+            expect((await registry.getNodeInfo(alice.address)).stakedAmount).to.equal(0);
+            expect(await ethers.provider.getBalance(await registry.getAddress())).to.equal(0);
+        });
+
+        it("ชั้นที่มีโหนดอยู่: เปลี่ยน minStake ไม่ได้ แต่ปรับค่าอื่นได้ / ชั้นว่างเปลี่ยนได้", async function () {
+            const { registry, owner, alice } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+
+            await expect(
+                registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE * 2n, 0, 7, 0, 1500)
+            ).to.be.revertedWith("Tier has active nodes");
+
+            // minStake เท่าเดิม → ปรับ lock / โควตาได้ตามปกติ
+            await expect(registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 1000, 14, 0, 1500))
+                .to.emit(registry, "TierConfigUpdated").withArgs(TIER.LIGHT);
+            // ชั้นที่ยังไม่มีใคร → เปลี่ยน minStake ได้
+            await registry.connect(owner).updateTierConfig(TIER.SENTINEL, SENTINEL_STAKE * 2n, 500, 30, 500, 3000);
+            expect((await registry.getTierInfo(TIER.SENTINEL)).minStake).to.equal(SENTINEL_STAKE * 2n);
+
+            // คนสุดท้ายออกแล้ว ชั้นว่าง → เปลี่ยนได้
+            await time.increase(8 * 24 * 60 * 60);
+            await registry.connect(alice).deregisterNode();
+            await registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE * 2n, 0, 7, 0, 1500);
+            expect((await registry.getTierInfo(TIER.LIGHT)).minStake).to.equal(LIGHT_STAKE * 2n);
+        });
+    });
+
     // ────────────────────────────────────────────────────────────
     //  7. ปีของ emission
     // ────────────────────────────────────────────────────────────

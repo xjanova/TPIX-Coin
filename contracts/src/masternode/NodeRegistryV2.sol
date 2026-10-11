@@ -48,12 +48,16 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *
  *  EXACT STAKE — rewards are equal per node inside a tier, so registerNode
  *  requires msg.value == minStake; over-staking would only lock money for nothing.
+ *  For the same reason a tier's minStake can only change while it has no active
+ *  nodes: the APR cap is computed from the tier's minStake, not each node's own
+ *  stake (and a huge minStake would overflow the cap math and freeze the tier).
  *
  *  OWNER POWERS — the owner can NOT withdraw stake or reward funds (no such
  *  function exists). It can: pause NEW registrations (exits/claims never pause),
  *  set uptime (multiplier on future rewards), slash a node (capped at the slash %
  *  in force when that node registered; slashed TPIX stays in the contract as
- *  reward budget), change tier terms for future registrations, set APR caps
+ *  reward budget), change tier terms for future registrations (min stake only
+ *  while the tier has no active nodes), set APR caps
  *  (<= 50%) and the KYC contract.
  * ─────────────────────────────────────────────────────────────────────────
  */
@@ -727,6 +731,9 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
         _syncAllTiers();
 
         TierConfig storage tc = tiers[_tier];
+        // เพดาน APR คิดจาก minStake ของชั้น ไม่ใช่เงินต้นของแต่ละโหนด — เปลี่ยนตอนมีโหนดอยู่
+        // = โหนดเดิมได้ APR ผิดจากเงินต้นจริง และค่ามหาศาลทำให้สูตรล้น → ถอน/เคลมค้างถาวร
+        require(_minStake == tc.minStake || tc.activeNodes == 0, "Tier has active nodes");
         tc.minStake = _minStake;
         tc.maxNodes = _maxNodes;
         tc.lockDays = _lockDays;
