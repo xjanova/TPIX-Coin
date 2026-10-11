@@ -21,7 +21,7 @@ class DbService {
 
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -41,6 +41,9 @@ class DbService {
         if (oldVersion < 6) {
           await _createContactsTable(db);
         }
+        if (oldVersion < 7) {
+          await _addTxTokenColumns(db);
+        }
       },
     );
   }
@@ -59,7 +62,10 @@ class DbService {
         block_number INTEGER,
         timestamp INTEGER,
         created_at TEXT NOT NULL,
-        wallet_slot INTEGER NOT NULL
+        wallet_slot INTEGER NOT NULL,
+        token_address TEXT,
+        token_symbol TEXT,
+        token_decimals INTEGER
       )
     ''');
     await db.execute('CREATE INDEX idx_tx_slot ON transactions(wallet_slot)');
@@ -77,6 +83,24 @@ class DbService {
 
     // Contacts / รายการโปรด (สมุดที่อยู่)
     await _createContactsTable(db);
+  }
+
+  /// v7: ธุรกรรมโทเค็น ERC-20 ต้องรู้ว่าเป็นเหรียญอะไร ทศนิยมเท่าไร
+  /// ไม่งั้นโอน USDT 1 เหรียญ (1,000,000 หน่วยย่อย) จะโชว์ในประวัติเป็น "0.000000000001 TPIX"
+  /// เพิ่มคอลัมน์แบบ nullable → แถวเดิมทั้งหมด = TPIX เหมือนเดิม ไม่ต้องแก้ข้อมูลผู้ใช้
+  static Future<void> _addTxTokenColumns(Database db) async {
+    final info = await db.rawQuery("PRAGMA table_info('transactions')");
+    final have = info.map((c) => c['name']).toSet();
+    // เช็กก่อนทุกคอลัมน์ — migration ที่ล้มครึ่งทางแล้วรันซ้ำต้องไม่พัง
+    if (!have.contains('token_address')) {
+      await db.execute('ALTER TABLE transactions ADD COLUMN token_address TEXT');
+    }
+    if (!have.contains('token_symbol')) {
+      await db.execute('ALTER TABLE transactions ADD COLUMN token_symbol TEXT');
+    }
+    if (!have.contains('token_decimals')) {
+      await db.execute('ALTER TABLE transactions ADD COLUMN token_decimals INTEGER');
+    }
   }
 
   /// สมุดที่อยู่ — จงใจไม่มี wallet_slot เพราะเป็นข้อมูล "ผู้รับ" ไม่ใช่ "ผู้ส่ง"
@@ -225,6 +249,9 @@ class DbService {
         'timestamp': tx.timestamp,
         'created_at': tx.createdAt,
         'wallet_slot': walletSlot,
+        'token_address': tx.tokenAddress?.toLowerCase(),
+        'token_symbol': tx.tokenSymbol,
+        'token_decimals': tx.tokenDecimals,
       },
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
@@ -301,11 +328,77 @@ class DbService {
           'timestamp': tx.timestamp,
           'created_at': tx.createdAt,
           'wallet_slot': walletSlot,
+          'token_address': tx.tokenAddress?.toLowerCase(),
+          'token_symbol': tx.tokenSymbol,
+          'token_decimals': tx.tokenDecimals,
         },
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     }
     await batch.commit(noResult: true);
+  }
+
+  /// บันทึกผลจาก explorer: แถวใหม่ → เพิ่ม, แถวที่มีอยู่แล้ว → อัปเดตเท่าที่ควร
+  ///
+  /// - สถานะ 'pending' ที่เราบันทึกตอนส่ง → เปลี่ยนเป็นผลจริงจาก explorer
+  /// - แถวที่สแกนบล็อกเจอเป็น "เรียกสัญญาโทเค็น มูลค่า 0" (ยังไม่รู้ว่าเป็นโทเค็นอะไร)
+  ///   → เติมข้อมูลโทเค็น/จำนวน/ผู้รับจริงจาก explorer
+  /// ไม่แตะแถวที่สมบูรณ์อยู่แล้ว
+  static Future<void> upsertTxBatch(List<TxRecord> txList, int walletSlot) async {
+    if (txList.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final tx in txList) {
+        await txn.insert(
+          'transactions',
+          {
+            'tx_hash': tx.txHash,
+            'from_address': tx.fromAddress,
+            'to_address': tx.toAddress,
+            'value': tx.value,
+            'direction': tx.direction,
+            'status': tx.status,
+            'block_number': tx.blockNumber,
+            'timestamp': tx.timestamp,
+            'created_at': tx.createdAt,
+            'wallet_slot': walletSlot,
+            'token_address': tx.tokenAddress?.toLowerCase(),
+            'token_symbol': tx.tokenSymbol,
+            'token_decimals': tx.tokenDecimals,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        if (tx.status != 'pending') {
+          await txn.update(
+            'transactions',
+            {
+              'status': tx.status,
+              'block_number': tx.blockNumber,
+              'timestamp': tx.timestamp,
+            },
+            where: "tx_hash = ? AND status = 'pending'",
+            whereArgs: [tx.txHash],
+          );
+        }
+        if (tx.tokenAddress != null) {
+          await txn.update(
+            'transactions',
+            {
+              'from_address': tx.fromAddress,
+              'to_address': tx.toAddress,
+              'value': tx.value,
+              'direction': tx.direction,
+              'token_address': tx.tokenAddress!.toLowerCase(),
+              'token_symbol': tx.tokenSymbol,
+              'token_decimals': tx.tokenDecimals,
+            },
+            // value = '0' เท่านั้น: ธุรกรรมที่มี TPIX ติดไปด้วย (เช่นสวอป) ห้ามถูกทับด้วยฝั่งโทเค็น
+            where: "tx_hash = ? AND token_address IS NULL AND token_symbol IS NULL AND value = '0'",
+            whereArgs: [tx.txHash],
+          );
+        }
+      }
+    });
   }
 
   // ================================================================
@@ -593,6 +686,9 @@ class DbService {
       blockNumber: row['block_number'] as int?,
       timestamp: row['timestamp'] as int?,
       createdAt: row['created_at'] as String?,
+      tokenAddress: row['token_address'] as String?,
+      tokenSymbol: row['token_symbol'] as String?,
+      tokenDecimals: row['token_decimals'] as int?,
     );
   }
 

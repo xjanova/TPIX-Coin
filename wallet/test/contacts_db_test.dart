@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:tpix_wallet/models/contact.dart';
 import 'package:tpix_wallet/services/db_service.dart';
+import 'support/isolated_db.dart';
 
 int _now() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
@@ -19,10 +20,8 @@ Contact _c(String address, String name, {String? note}) => Contact(
     );
 
 void main() {
-  setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  });
+  // ฐานข้อมูลแยกของไฟล์นี้ — กันชนกับไฟล์เทสต์อื่นที่รันพร้อมกัน
+  setUpAll(() => useIsolatedTestDb('contacts'));
 
   setUp(() async {
     // ฐานข้อมูลใหม่ทุกเทสต์ — ไม่ให้เทสต์ก่อนหน้าทิ้งข้อมูลค้างมาหลอก
@@ -147,7 +146,8 @@ void main() {
 
       // เปิดผ่าน DbService = เดินเส้นทาง onUpgrade จริง
       final db = await DbService.database;
-      expect(await db.getVersion(), 6);
+      // v7 (คอลัมน์โทเค็นในธุรกรรม) เดินต่อจาก v6 ในรอบเดียวกัน
+      expect(await db.getVersion(), 7);
 
       // ธุรกรรมเดิมต้องยังอยู่ — migration ห้ามล้างข้อมูลผู้ใช้
       final txs = await db.query('transactions');

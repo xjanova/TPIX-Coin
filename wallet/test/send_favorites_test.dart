@@ -17,6 +17,7 @@ import 'package:tpix_wallet/screens/send_screen.dart';
 import 'package:tpix_wallet/services/db_service.dart';
 
 import 'support/test_theme.dart';
+import 'support/isolated_db.dart';
 
 const _alice = '0xaaaa000000000000000000000000000000001111';
 const _bob = '0xbbbb000000000000000000000000000000002222';
@@ -62,10 +63,8 @@ Finder _starInField(IconData icon) => find.descendant(
     );
 
 void main() {
-  setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  });
+  // ฐานข้อมูลแยกของไฟล์นี้ — กันชนกับไฟล์เทสต์อื่นที่รันพร้อมกัน
+  setUpAll(() => useIsolatedTestDb('send_favorites'));
 
   tearDownAll(() async => DbService.close());
 
