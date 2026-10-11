@@ -134,6 +134,7 @@ contract RewardToken is ERC20, Ownable, Pausable {
         require(rewardRateBps_ <= 2500, "RT: reward rate > 25%");
         require(vestingDuration_ == 0 || vestingDuration_ >= vestingCliff_, "RT: duration < cliff");
 
+        require(decimals_ <= 18, "RT: decimals > 18");
         _decimals = decimals_;
         isMintable = mintable_;
         isBurnable = burnable_;

@@ -88,6 +88,7 @@ contract FactoryERC20V2 is ERC20, Ownable, Pausable {
         require(autoBurnRateBps_ <= 2500, "V2: burn rate > 25%");
         require(mintCap_ == 0 || mintCap_ >= totalSupply_, "V2: cap < supply");
 
+        require(decimals_ <= 18, "V2: decimals > 18");
         _decimals = decimals_;
         isMintable = mintable_;
         isBurnable = burnable_;

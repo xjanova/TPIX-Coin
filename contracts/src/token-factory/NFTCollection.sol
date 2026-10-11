@@ -124,6 +124,8 @@ contract NFTCollection is ERC721, ERC721Enumerable, ERC2981, Ownable, Reentrancy
         require(mintType_ <= 2, "COL: invalid mint type");
         require(royaltyBps_ <= 5000, "COL: royalty > 50%");
         require(reserveCount_ <= maxSupply_, "COL: reserve > supply");
+        // จองใบละ ~116k gas ใน constructor — เกิน ~150 ใบจะชน gasLimit 20M ของเชน แล้วสร้างไม่ขึ้นเลย
+        require(reserveCount_ <= 100, "COL: reserve > 100");
 
         maxSupply = maxSupply_;
         mintType = mintType_;
@@ -268,6 +270,8 @@ contract NFTCollection is ERC721, ERC721Enumerable, ERC2981, Ownable, Reentrancy
     /// @notice Update royalty (owner only)
     function setDefaultRoyalty(address receiver, uint96 feeNumerator) external onlyOwner {
         require(isRoyaltyEnabled, "COL: royalty disabled");
+        // เพดานเดียวกับ constructor — เดิมแก้ภายหลังเป็น 100% ได้ (ขาย 1000 ได้ royalty 1000)
+        require(feeNumerator <= 5000, "COL: royalty > 50%");
         _setDefaultRoyalty(receiver, feeNumerator);
     }
 

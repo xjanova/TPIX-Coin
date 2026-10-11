@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import "../FactoryERC20V2.sol";
+import "./CreatorAccess.sol";
 
-contract ERC20V2Creator {
+/// @dev create() รับคำสั่งจาก factory ที่ผูกไว้เท่านั้น — ดู CreatorAccess
+contract ERC20V2Creator is CreatorAccess {
     function create(
         bytes32 salt,
         string calldata name_,
@@ -19,7 +21,7 @@ contract ERC20V2Creator {
         bool autoBurnEnabled_,
         uint16 autoBurnRateBps_,
         uint256 burnFloor_
-    ) external returns (address) {
+    ) external onlyFactory returns (address) {
         FactoryERC20V2 token = new FactoryERC20V2{salt: salt}(
             name_, symbol_, decimals_, totalSupply_, owner_,
             mintable_, burnable_, pausable_, blacklistEnabled_,

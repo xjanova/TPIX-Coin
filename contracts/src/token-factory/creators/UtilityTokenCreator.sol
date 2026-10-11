@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import "../UtilityToken.sol";
+import "./CreatorAccess.sol";
 
-contract UtilityTokenCreator {
+/// @dev create() รับคำสั่งจาก factory ที่ผูกไว้เท่านั้น — ดู CreatorAccess
+contract UtilityTokenCreator is CreatorAccess {
     function create(
         bytes32 salt,
         string calldata name_,
@@ -17,7 +19,7 @@ contract UtilityTokenCreator {
         bool blacklistEnabled_,
         UtilityToken.TaxConfig calldata taxConfig_,
         UtilityToken.ProtectionConfig calldata protectionConfig_
-    ) external returns (address) {
+    ) external onlyFactory returns (address) {
         UtilityToken token = new UtilityToken{salt: salt}(
             name_, symbol_, decimals_, totalSupply_, owner_,
             mintable_, burnable_, pausable_, blacklistEnabled_,

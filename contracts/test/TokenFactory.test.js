@@ -14,6 +14,7 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
+const { deployTokenFactory } = require("./helpers/deployTokenFactory");
 
 const E18 = 10n ** 18n;
 const SUPPLY = 1_000_000n * E18;
@@ -40,29 +41,8 @@ describe("TPIX Token Factory", function () {
 
     beforeEach(async function () {
         [owner, user, other, taxWallet, marketingWallet, reserveWallet] = await ethers.getSigners();
-
-        const creators = {};
-        for (const n of [
-            "ERC20V2Creator", "UtilityTokenCreator", "RewardTokenCreator",
-            "GovernanceTokenCreator", "StablecoinTokenCreator",
-            "FactoryERC721Creator", "NFTCollectionCreator",
-        ]) {
-            const C = await ethers.getContractFactory(n);
-            const c = await C.deploy();
-            await c.waitForDeployment();
-            creators[n] = await c.getAddress();
-        }
-
-        const TF = await ethers.getContractFactory("TPIXTokenFactoryV2");
-        tokenFactory = await TF.deploy(
-            creators.ERC20V2Creator, creators.UtilityTokenCreator, creators.RewardTokenCreator,
-            creators.GovernanceTokenCreator, creators.StablecoinTokenCreator
-        );
-        await tokenFactory.waitForDeployment();
-
-        const NF = await ethers.getContractFactory("TPIXNFTFactory");
-        nftFactory = await NF.deploy(creators.FactoryERC721Creator, creators.NFTCollectionCreator);
-        await nftFactory.waitForDeployment();
+        // creator ต้องผูกกับ factory ก่อนใช้ (CreatorAccess) — ตัวช่วยทำให้ครบเหมือนสคริปต์ deploy จริง
+        ({ tokenFactory, nftFactory } = await deployTokenFactory());
     });
 
     // ═══════════════════════════════════════════════════════════

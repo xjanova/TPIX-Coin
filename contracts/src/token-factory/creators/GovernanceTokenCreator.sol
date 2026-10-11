@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import "../GovernanceToken.sol";
+import "./CreatorAccess.sol";
 
-contract GovernanceTokenCreator {
+/// @dev create() รับคำสั่งจาก factory ที่ผูกไว้เท่านั้น — ดู CreatorAccess
+contract GovernanceTokenCreator is CreatorAccess {
     function create(
         bytes32 salt,
         string calldata name_,
@@ -20,7 +22,7 @@ contract GovernanceTokenCreator {
         uint256 proposalThreshold_,
         uint16 quorumBps_,
         uint256 votingPeriod_
-    ) external returns (address) {
+    ) external onlyFactory returns (address) {
         GovernanceToken token = new GovernanceToken{salt: salt}(
             name_, symbol_, decimals_, totalSupply_, owner_,
             mintable_, burnable_, pausable_, blacklistEnabled_,

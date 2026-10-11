@@ -77,6 +77,7 @@ contract StablecoinToken is ERC20, Ownable, Pausable {
         bool freezeEnabled_,
         bool kycRequired_
     ) ERC20(name_, symbol_) Ownable(owner_) {
+        require(decimals_ <= 18, "SC: decimals > 18");
         _decimals = decimals_;
         isPausable = pausable_;
         isFreezeEnabled = freezeEnabled_;
@@ -91,6 +92,22 @@ contract StablecoinToken is ERC20, Ownable, Pausable {
         if (totalSupply_ > 0) {
             _mint(owner_, totalSupply_);
         }
+    }
+
+    /**
+     * @dev ถอนสิทธิ์ minter ของเจ้าของเก่าทุกครั้งที่ ownership เปลี่ยน (transfer และ renounce)
+     *
+     * เดิม isMinter[owner_] ค้างอยู่ตลอด — scanner เห็น owner = address(0) หลัง renounce
+     * แต่ผู้สร้างยัง mint ได้ไม่จำกัด (ยืนยันด้วย PoC ในออดิท 2026-10-11)
+     * เจ้าของใหม่ไม่ต้องตั้งเป็น minter เพราะ mint() ยอมให้ owner() เรียกอยู่แล้ว
+     */
+    function _transferOwnership(address newOwner) internal override {
+        address previous = owner();
+        if (previous != address(0) && isMinter[previous]) {
+            isMinter[previous] = false;
+            emit MinterUpdated(previous, false);
+        }
+        super._transferOwnership(newOwner);
     }
 
     // ═══════════════════════════════════════════

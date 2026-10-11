@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import "../RewardToken.sol";
+import "./CreatorAccess.sol";
 
-contract RewardTokenCreator {
+/// @dev create() รับคำสั่งจาก factory ที่ผูกไว้เท่านั้น — ดู CreatorAccess
+contract RewardTokenCreator is CreatorAccess {
     function create(
         bytes32 salt,
         string calldata name_,
@@ -20,7 +22,7 @@ contract RewardTokenCreator {
         uint256 minHoldForReward_,
         uint256 vestingCliff_,
         uint256 vestingDuration_
-    ) external returns (address) {
+    ) external onlyFactory returns (address) {
         RewardToken token = new RewardToken{salt: salt}(
             name_, symbol_, decimals_, totalSupply_, owner_,
             mintable_, burnable_, pausable_, blacklistEnabled_,

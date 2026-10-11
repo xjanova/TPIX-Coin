@@ -84,6 +84,7 @@ contract GovernanceToken is ERC20, ERC20Permit, ERC20Votes, Ownable, Pausable {
         require(mintCap_ == 0 || mintCap_ >= totalSupply_, "GOV: cap < supply");
         require(quorumBps_ <= 10000, "GOV: quorum > 100%");
 
+        require(decimals_ <= 18, "GOV: decimals > 18");
         _decimals = decimals_;
         isMintable = mintable_;
         isBurnable = burnable_;

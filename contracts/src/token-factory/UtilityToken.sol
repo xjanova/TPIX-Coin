@@ -138,6 +138,7 @@ contract UtilityToken is ERC20, Ownable, Pausable, ReentrancyGuard {
             require(protection_.maxTxBps >= 10, "UT: max tx < 0.1%");
         }
 
+        require(decimals_ <= 18, "UT: decimals > 18");
         _decimals = decimals_;
         isMintable = mintable_;
         isBurnable = burnable_;

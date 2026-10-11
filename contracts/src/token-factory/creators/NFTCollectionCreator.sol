@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import "../NFTCollection.sol";
+import "./CreatorAccess.sol";
 
-contract NFTCollectionCreator {
+/// @dev create() รับคำสั่งจาก factory ที่ผูกไว้เท่านั้น — ดู CreatorAccess
+contract NFTCollectionCreator is CreatorAccess {
     function create(
         bytes32 salt,
         string calldata name_,
@@ -21,7 +23,7 @@ contract NFTCollectionCreator {
         bool royaltyEnabled_,
         address royaltyRecipient_,
         uint16 royaltyBps_
-    ) external returns (address) {
+    ) external onlyFactory returns (address) {
         NFTCollection nft = new NFTCollection{salt: salt}(
             name_, symbol_, owner_, maxSupply_,
             mintType_, mintPrice_, maxPerWallet_, maxPerTx_,

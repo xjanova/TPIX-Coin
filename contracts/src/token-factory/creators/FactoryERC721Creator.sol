@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import "../FactoryERC721.sol";
+import "./CreatorAccess.sol";
 
-contract FactoryERC721Creator {
+/// @dev create() รับคำสั่งจาก factory ที่ผูกไว้เท่านั้น — ดู CreatorAccess
+contract FactoryERC721Creator is CreatorAccess {
     function create(
         bytes32 salt,
         string calldata name_,
@@ -16,7 +18,7 @@ contract FactoryERC721Creator {
         bool royaltyEnabled_,
         address royaltyRecipient_,
         uint16 royaltyBps_
-    ) external returns (address) {
+    ) external onlyFactory returns (address) {
         FactoryERC721 nft = new FactoryERC721{salt: salt}(
             name_, symbol_, owner_, tokenURI_,
             maxSupply_, mintable_, soulbound_,

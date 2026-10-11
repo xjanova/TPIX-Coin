@@ -75,7 +75,8 @@ contract FactoryERC721 is ERC721, ERC721URIStorage, ERC2981, Ownable {
 
         isSoulbound = soulbound_;
         isRoyaltyEnabled = royaltyEnabled_;
-        maxSupply = maxSupply_ == 0 ? 1 : maxSupply_;
+        // 0 = ไม่จำกัด ตามที่ @param เขียนไว้ — เดิมแปลง 0 เป็น 1 ทำให้เลือก mintable แล้ว mint เพิ่มไม่ได้
+        maxSupply = maxSupply_;
         isMintable = mintable_;
 
         // Setup royalty
@@ -119,7 +120,7 @@ contract FactoryERC721 is ERC721, ERC721URIStorage, ERC2981, Ownable {
     /// @notice Mint additional NFTs (if mintable)
     function mint(address to, string calldata uri) external onlyOwner {
         require(isMintable, "NFT: minting disabled");
-        require(_nextTokenId <= maxSupply, "NFT: max supply reached");
+        require(maxSupply == 0 || _nextTokenId <= maxSupply, "NFT: max supply reached");
 
         _safeMint(to, _nextTokenId);
         _setTokenURI(_nextTokenId, uri);
@@ -141,6 +142,7 @@ contract FactoryERC721 is ERC721, ERC721URIStorage, ERC2981, Ownable {
     /// @notice Update default royalty (owner only)
     function setDefaultRoyalty(address receiver, uint96 feeNumerator) external onlyOwner {
         require(isRoyaltyEnabled, "NFT: royalty disabled");
+        require(feeNumerator <= 5000, "NFT: royalty > 50%");
         _setDefaultRoyalty(receiver, feeNumerator);
     }
 

@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import "../StablecoinToken.sol";
+import "./CreatorAccess.sol";
 
-contract StablecoinTokenCreator {
+/// @dev create() รับคำสั่งจาก factory ที่ผูกไว้เท่านั้น — ดู CreatorAccess
+contract StablecoinTokenCreator is CreatorAccess {
     function create(
         bytes32 salt,
         string calldata name_,
@@ -15,7 +17,7 @@ contract StablecoinTokenCreator {
         bool pausable_,
         bool freezeEnabled_,
         bool kycRequired_
-    ) external returns (address) {
+    ) external onlyFactory returns (address) {
         StablecoinToken token = new StablecoinToken{salt: salt}(
             name_, symbol_, decimals_, totalSupply_, owner_,
             reserveWallet_, pausable_, freezeEnabled_, kycRequired_
