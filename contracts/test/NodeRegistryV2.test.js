@@ -122,7 +122,8 @@ describe("NodeRegistryV2", function () {
         it("จ่ายไม่ครบ ส่วนที่เหลือไม่หาย — ทบไว้เคลมทีหลังได้", async function () {
             const { registry, alice, funder } = await loadFixture(deployFixture);
             await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
-            await time.increase(24 * 60 * 60);
+            // Light มีเพดาน APR 6% → 10,000 TPIX ได้ ~1.64 TPIX/วัน ปล่อย 30 วันให้ได้ ~49 TPIX
+            await time.increase(30 * 24 * 60 * 60);
 
             const small = ethers.parseEther("10");
             await registry.connect(funder).fundRewardPool({ value: small });
@@ -198,8 +199,34 @@ describe("NodeRegistryV2", function () {
             await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
 
             expect(await registry.getOperatorCount()).to.equal(1);
-            const active = await registry.getActiveNodes(0, 10);
-            expect(active.length).to.equal(1);
+            const active = await registry.getActiveOperators(0, 10);
+            expect(active).to.deep.equal([alice.address]);
+        });
+
+        it("getActiveOperators แบ่งหน้าได้ และข้ามคนที่ถอนไปแล้ว", async function () {
+            const { registry, alice, bob, carol } = await loadFixture(fundedFixture);
+            for (const s of [alice, bob, carol]) {
+                await registry.connect(s).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            }
+            await time.increase(8 * 24 * 60 * 60);
+            await registry.connect(bob).deregisterNode();
+
+            expect(await registry.getActiveOperators(0, 10)).to.deep.equal([alice.address, carol.address]);
+            expect(await registry.getActiveOperators(1, 1)).to.deep.equal([carol.address]);
+            expect(await registry.getActiveOperators(5, 10)).to.deep.equal([]);
+        });
+    });
+
+    // ────────────────────────────────────────────────────────────
+    //  ขนาด bytecode — tx deploy ต้องลอดลิมิต body 32KB ของ RPC proxy
+    // ────────────────────────────────────────────────────────────
+    describe("deploy size", function () {
+        it("initcode ของ NodeRegistryV2 ต้องเล็กพอให้ eth_sendRawTransaction ผ่าน rpc1 (nginx 32k)", async function () {
+            const artifact = await artifacts.readArtifact("NodeRegistryV2");
+            const initBytes = (artifact.bytecode.length - 2) / 2;
+            // raw tx ≈ initcode + ~120 ไบต์ (nonce/gas/v/r/s) → hex ×2 + JSON ~100 ไบต์ ต้อง < 32,768
+            const jsonBodyBytes = (initBytes + 120) * 2 + 2 + 100;
+            expect(jsonBodyBytes, `initcode ${initBytes} ไบต์`).to.be.lt(32768 - 512);
         });
     });
 
@@ -306,6 +333,245 @@ describe("NodeRegistryV2", function () {
             await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
             await expect(registry.connect(bob).slashNode(alice.address, "x"))
                 .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+        });
+    });
+
+    // ────────────────────────────────────────────────────────────
+    //  6b. ผลตรวจ 2026-10 — เพดาน APR / stake พอดี / หยุดรับสมัคร / slash ย้อนหลัง / reentrancy
+    // ────────────────────────────────────────────────────────────
+    describe("audit 2026-10: APR cap — โหนดแรกห้ามกิน emission ทั้งชั้น", function () {
+        const YEAR = 365 * 24 * 60 * 60;
+
+        it("Light ตัวเดียว 1 ปี ได้ ~6% ของเงินต้น (600 TPIX) ไม่ใช่ 90 ล้าน", async function () {
+            const { registry, alice } = await loadFixture(fundedFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await time.increase(YEAR);
+
+            const earned = await registry.pendingReward(alice.address);
+            // 10,000 × 6% = 600 TPIX (เผื่อเศษปัดและบล็อกที่เพิ่มขึ้น 1 วินาที)
+            expect(earned).to.be.gte(ethers.parseEther("599.99"));
+            expect(earned).to.be.lte(ethers.parseEther("600.01"));
+        });
+
+        it("pool เติม 5M แล้วโหนดเดียวเคลมได้แค่ตามเพดาน pool ยังเหลือเกือบเต็ม", async function () {
+            const { registry, alice } = await loadFixture(fundedFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await time.increase(YEAR);
+            await registry.connect(alice).claimRewards();
+
+            const paid = await registry.totalRewardsDistributed();
+            expect(paid).to.be.lte(ethers.parseEther("600.01"));
+            expect(await registry.availableRewardFunds()).to.be.gte(ethers.parseEther("5000000") - ethers.parseEther("600.01"));
+        });
+
+        it("เพดาน APR ของแต่ละชั้นตรงกับที่โฆษณา (G 12%, S 9%, L 6%, V 20%)", async function () {
+            const { registry } = await loadFixture(deployFixture);
+            expect(await registry.tierAprCapBps(TIER.GUARDIAN)).to.equal(1200);
+            expect(await registry.tierAprCapBps(TIER.SENTINEL)).to.equal(900);
+            expect(await registry.tierAprCapBps(TIER.LIGHT)).to.equal(600);
+            expect(await registry.tierAprCapBps(TIER.VALIDATOR)).to.equal(2000);
+        });
+
+        it("nodeRewardRate บอก APR ที่คนสมัครใหม่จะได้จริง", async function () {
+            const { registry, alice } = await loadFixture(deployFixture);
+            const [cur0, next0] = await registry.nodeRewardRate(TIER.LIGHT);
+            expect(cur0).to.equal(0);                // ยังไม่มีใครอยู่ในชั้น
+            const aprBps = (next0 * BigInt(YEAR) * 10000n) / LIGHT_STAKE;
+            expect(aprBps).to.be.gte(599n);
+            expect(aprBps).to.be.lte(600n);
+
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            const [cur1] = await registry.nodeRewardRate(TIER.LIGHT);
+            expect(cur1).to.equal(next0);
+        });
+
+        it("ชั้นที่คนเยอะจน emission ต่อหัวต่ำกว่าเพดาน → หารตาม emission (ตารางปล่อยยังเป็นเพดานรวม)", async function () {
+            const { registry, owner, alice, bob } = await loadFixture(fundedFixture);
+            // ย่อส่วนแบ่ง Light เหลือ 0.01% ของ 600M/ปี = 60,000 TPIX/ปี และยก min stake เป็น 10M
+            // → เพดาน 6% ของ 10M = 600,000/ปี สูงกว่าส่วนแบ่ง ทำให้ emission เป็นตัวจำกัด
+            await registry.connect(owner).setRewardShares(3500, 4499, 1, 2000);
+            await registry.connect(owner).updateTierConfig(TIER.LIGHT, ethers.parseEther("10000000"), 0, 7, 0, 1);
+
+            const big = ethers.parseEther("10000000");
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: big });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: big });
+            await time.increase(YEAR);
+
+            const a = await registry.pendingReward(alice.address);
+            // 60,000/ปี หาร 2 = ~30,000 ต่อคน (อนุโลม 0.1%)
+            expect(a).to.be.gte(ethers.parseEther("29970"));
+            expect(a).to.be.lte(ethers.parseEther("30030"));
+        });
+
+        it("เปลี่ยนเพดานกลางทาง: ช่วงก่อนหน้าคิดด้วยเพดานเดิม", async function () {
+            const { registry, owner, alice } = await loadFixture(fundedFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await time.increase(YEAR);
+            await registry.connect(owner).setTierAprCap(TIER.LIGHT, 300);   // 3%
+            await time.increase(YEAR);
+
+            const earned = await registry.pendingReward(alice.address);
+            // 600 (ปีแรก 6%) + 300 (ปีที่สอง 3% — ยังเป็นอัตราปีแรกของตาราง เพราะยังไม่มีใคร advance)
+            expect(earned).to.be.gte(ethers.parseEther("899.9"));
+            expect(earned).to.be.lte(ethers.parseEther("900.1"));
+        });
+
+        it("setTierAprCap: owner เท่านั้น และอยู่ในช่วง 1..5000", async function () {
+            const { registry, owner, alice } = await loadFixture(deployFixture);
+            await expect(registry.connect(alice).setTierAprCap(TIER.LIGHT, 100))
+                .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+            await expect(registry.connect(owner).setTierAprCap(TIER.LIGHT, 0))
+                .to.be.revertedWith("APR cap out of range");
+            await expect(registry.connect(owner).setTierAprCap(TIER.LIGHT, 5001))
+                .to.be.revertedWith("APR cap out of range");
+            await expect(registry.connect(owner).setTierAprCap(TIER.LIGHT, 5000))
+                .to.emit(registry, "TierAprCapUpdated").withArgs(TIER.LIGHT, 5000);
+        });
+    });
+
+    describe("audit 2026-10: ย้ายสัดส่วนรางวัลระหว่างชั้น", function () {
+        it("updateTierConfig ย้ายส่วนแบ่งทีละชั้นไม่ได้ (ผลรวมพังทันที) → ต้องใช้ setRewardShares", async function () {
+            const { registry, owner } = await loadFixture(deployFixture);
+            await expect(
+                registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 0, 1000)
+            ).to.be.revertedWith("Shares must sum to 10000");
+
+            await registry.connect(owner).setRewardShares(4000, 3000, 1000, 2000);
+            expect((await registry.getTierInfo(TIER.GUARDIAN)).rewardShare).to.equal(4000);
+            expect((await registry.getTierInfo(TIER.LIGHT)).rewardShare).to.equal(1000);
+            await expect(registry.connect(owner).setRewardShares(4000, 3000, 1000, 1999))
+                .to.be.revertedWith("Shares must sum to 10000");
+        });
+
+        it("คนอื่นเปลี่ยนสัดส่วนไม่ได้", async function () {
+            const { registry, alice } = await loadFixture(deployFixture);
+            await expect(registry.connect(alice).setRewardShares(4000, 3000, 1000, 2000))
+                .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+        });
+    });
+
+    describe("audit 2026-10: stake ต้องพอดีขั้นต่ำ", function () {
+        it("ส่งเกินขั้นต่ำ → revert (รางวัลเท่ากันต่อโหนด ส่งเกินมีแต่ถูกล็อกฟรี)", async function () {
+            const { registry, alice } = await loadFixture(deployFixture);
+            await expect(
+                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE + 1n })
+            ).to.be.revertedWith("Stake must equal tier minimum");
+        });
+
+        it("ส่งขาด → Insufficient stake เหมือนเดิม (ข้อความเดิมที่เว็บ/แอปแปลไว้)", async function () {
+            const { registry, alice } = await loadFixture(deployFixture);
+            await expect(
+                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE - 1n })
+            ).to.be.revertedWith("Insufficient stake");
+        });
+
+        it("ชั้นเต็ม → Tier full", async function () {
+            const { registry, owner, alice, bob } = await loadFixture(deployFixture);
+            await registry.connect(owner).updateTierConfig(TIER.SENTINEL, SENTINEL_STAKE, 1, 30, 500, 3000);
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await expect(
+                registry.connect(bob).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE })
+            ).to.be.revertedWith("Tier full");
+        });
+    });
+
+    describe("audit 2026-10: หยุดรับสมัครชั่วคราว", function () {
+        it("หยุดแล้วสมัครใหม่ไม่ได้ แต่ถอน/เคลมของคนเดิมยังทำได้", async function () {
+            const { registry, owner, alice, bob } = await loadFixture(fundedFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await time.increase(8 * 24 * 60 * 60);
+
+            await expect(registry.connect(owner).setRegistrationPaused(true))
+                .to.emit(registry, "RegistrationPaused").withArgs(true);
+            await expect(
+                registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE })
+            ).to.be.revertedWith("Registration paused");
+
+            await registry.connect(alice).claimRewards();
+            expect(await registry.totalRewardsDistributed()).to.be.gt(0);
+            await registry.connect(alice).deregisterNode();
+            expect((await registry.getNodeInfo(alice.address)).stakedAmount).to.equal(0);
+
+            await registry.connect(owner).setRegistrationPaused(false);
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+        });
+
+        it("คนอื่นหยุดระบบไม่ได้", async function () {
+            const { registry, alice } = await loadFixture(deployFixture);
+            await expect(registry.connect(alice).setRegistrationPaused(true))
+                .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+        });
+    });
+
+    describe("audit 2026-10: slash ย้อนหลังแรงกว่าตอนสมัครไม่ได้", function () {
+        it("Light สมัครตอน slash 0% → owner ขึ้นเป็น 50% ทีหลัง เงินต้นต้องไม่ถูกตัด", async function () {
+            const { registry, owner, alice } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 5000, 1500);
+
+            await registry.connect(owner).slashNode(alice.address, "test");
+            expect((await registry.getNodeInfo(alice.address)).stakedAmount).to.equal(LIGHT_STAKE);
+            await registry.connect(alice).withdrawSlashedStake();
+            expect((await registry.getNodeInfo(alice.address)).stakedAmount).to.equal(0);
+        });
+
+        it("owner ลด % ลงทีหลัง → ใช้ % ที่ต่ำกว่า", async function () {
+            const { registry, owner, alice } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(owner).updateTierConfig(TIER.SENTINEL, SENTINEL_STAKE, 500, 30, 200, 3000);
+            await registry.connect(owner).slashNode(alice.address, "test");
+            expect((await registry.getNodeInfo(alice.address)).stakedAmount)
+                .to.equal(SENTINEL_STAKE - (SENTINEL_STAKE * 200n) / 10000n);
+        });
+
+        it("เงินที่ถูก slash ไม่ออกไปหาใคร — อยู่ในสัญญาเป็นงบรางวัล", async function () {
+            const { registry, owner, alice } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(owner).slashNode(alice.address, "test");
+            const slashed = (SENTINEL_STAKE * 500n) / 10000n;
+            expect(await ethers.provider.getBalance(await registry.getAddress())).to.equal(SENTINEL_STAKE);
+            expect(await registry.availableRewardFunds()).to.equal(slashed);
+        });
+    });
+
+    describe("audit 2026-10: reentrancy จาก operator ที่เป็นสัญญา", function () {
+        it("เจาะ claimRewards/deregisterNode ซ้ำตอนรับเงิน → ได้แค่รอบเดียว เงินต้นคนอื่นไม่หาย", async function () {
+            const { registry, bob } = await loadFixture(fundedFixture);
+            const Probe = await ethers.getContractFactory("RegistryReentrancyProbe");
+            const probe = await Probe.deploy(await registry.getAddress());
+            await probe.waitForDeployment();
+
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await probe.register(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await time.increase(30 * 24 * 60 * 60);
+
+            await probe.claim();
+            expect(await probe.reentryAttempts()).to.equal(1);
+            expect(await probe.reentrySucceeded()).to.equal(0);
+
+            const paid = await registry.totalRewardsDistributed();
+            expect(paid).to.be.gt(0);
+            expect(paid).to.be.lte(ethers.parseEther("49.4"));   // 30 วันที่ 6% ของ 10K ≈ 49.32
+            expect(await ethers.provider.getBalance(await registry.getAddress()))
+                .to.be.gte(await registry.totalStaked());
+
+            // ถอนตอนพ้นล็อก — ต้องได้เงินต้นคืนครั้งเดียว
+            await probe.exit();
+            expect(await registry.totalStaked()).to.equal(LIGHT_STAKE);   // เหลือของ bob
+            expect(await ethers.provider.getBalance(await probe.getAddress()))
+                .to.be.gte(LIGHT_STAKE);
+        });
+    });
+
+    describe("audit 2026-10: owner ถอนเงินออกจากสัญญาไม่ได้เลย", function () {
+        it("ABI ไม่มีฟังก์ชันถอน/โอนเงินของ owner", async function () {
+            const { registry } = await loadFixture(deployFixture);
+            const names = registry.interface.fragments
+                .filter((f) => f.type === "function")
+                .map((f) => f.name);
+            for (const bad of ["withdraw", "emergencyWithdraw", "sweep", "rescue", "withdrawRewardPool", "transferFunds"]) {
+                expect(names).to.not.include(bad);
+            }
         });
     });
 

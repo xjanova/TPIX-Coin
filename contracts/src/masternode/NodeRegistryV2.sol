@@ -35,8 +35,26 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *
  *  Earnings use a per-tier accumulator (`accRewardPerNode`) so a node that joins
  *  later cannot retroactively dilute what earlier nodes already earned. Every
- *  place that changes a tier's active-node count, the emission rate, or a tier's
- *  reward share MUST settle the accumulator first — see `_syncTier` callers.
+ *  place that changes a tier's active-node count, the emission rate, a tier's
+ *  reward share, min stake or APR cap MUST settle the accumulator first — see
+ *  `_syncTier` callers.
+ *
+ *  APR CAP (2026-10 audit) — per-node accrual is
+ *      min( tierEmissionPerSec / activeNodes , minStake * tierAprCapBps / 365 days )
+ *  Without the cap the emission is split only among whoever is staked, so the
+ *  first lone Light node (10K stake) would earn 15% of 600M/yr = 90M TPIX/yr
+ *  (~900,000% APR) and drain the funded pool. The emission schedule is now a
+ *  ceiling; the advertised APR is the normal case.
+ *
+ *  EXACT STAKE — rewards are equal per node inside a tier, so registerNode
+ *  requires msg.value == minStake; over-staking would only lock money for nothing.
+ *
+ *  OWNER POWERS — the owner can NOT withdraw stake or reward funds (no such
+ *  function exists). It can: pause NEW registrations (exits/claims never pause),
+ *  set uptime (multiplier on future rewards), slash a node (capped at the slash %
+ *  in force when that node registered; slashed TPIX stays in the contract as
+ *  reward budget), change tier terms for future registrations, set APR caps
+ *  (<= 50%) and the KYC contract.
  * ─────────────────────────────────────────────────────────────────────────
  */
 contract NodeRegistryV2 is Ownable, ReentrancyGuard {
@@ -80,12 +98,14 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
 
     uint256 private constant ACC_PRECISION = 1e18;
     uint256 private constant MAX_ENDPOINT_LEN = 100;
+    uint256 private constant YEAR = 365 days;
+    uint256 public constant MAX_APR_CAP_BPS = 5000;   // เพดานของเพดาน — ตั้ง APR เกิน 50% ไม่ได้
 
     // Tier configurations
     mapping(NodeTier => TierConfig) public tiers;
 
     // Node registry: operator address => MasterNode
-    mapping(address => MasterNode) public nodes;
+    mapping(address => MasterNode) internal nodes;
 
     // All registered operators (for enumeration) — deduplicated
     address[] public operators;
@@ -115,6 +135,17 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     // Validator KYC contract reference (optional, set by admin)
     address public kycContract;
 
+    // APR สูงสุดที่โหนด 1 ตัวของแต่ละชั้นได้ (basis points ของ minStake ชั้นนั้น)
+    // ไม่มีตัวนี้ = โหนดแรกของชั้นกินส่วนแบ่ง emission ทั้งก้อนคนเดียว (ดูหัวไฟล์)
+    mapping(NodeTier => uint256) public tierAprCapBps;
+
+    // หยุดรับโหนดใหม่ชั่วคราว (เช่นเจอปัญหาหลัง deploy) — ไม่กระทบการถอน/เคลม
+    bool public registrationPaused;
+
+    // % slash ที่มีผลตอนโหนดนั้นสมัคร (basis points) — owner ขึ้น % ทีหลังแล้ว
+    // ย้อนไปปรับคนที่สมัครไว้ก่อนแรงกว่าที่เขายอมรับไว้ไม่ได้
+    mapping(address => uint256) public nodeSlashCapBps;
+
     // ============================================================
     //  Events
     // ============================================================
@@ -129,6 +160,8 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     event TierConfigUpdated(NodeTier tier);
     event RewardYearAdvanced(uint256 year, uint256 rewardPerSecond);
     event KYCContractUpdated(address indexed kycContract);
+    event RegistrationPaused(bool paused);
+    event TierAprCapUpdated(NodeTier tier, uint256 aprBps);
 
     // ============================================================
     //  Constructor
@@ -175,6 +208,13 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
             rewardShare: 2000
         });
 
+        // APR สูงสุดต่อโหนด = ขอบบนของช่วงที่หน้าเว็บ/แอปโฆษณาไว้
+        // (Light 4-6%, Sentinel 7-9%, Guardian 10-12%, Validator 15-20%)
+        tierAprCapBps[NodeTier.Guardian] = 1200;
+        tierAprCapBps[NodeTier.Sentinel] = 900;
+        tierAprCapBps[NodeTier.Light] = 600;
+        tierAprCapBps[NodeTier.Validator] = 2000;
+
         // Emission schedule cap — NOT a balance. Funds arrive via fundRewardPool().
         totalRewardPool = 1_400_000_000 ether;
         yearlyEmission[0] = 600_000_000 ether;
@@ -205,15 +245,29 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
         uint256 last = tierLastUpdate[_tier];
         if (block.timestamp <= last) return;
 
-        TierConfig storage tc = tiers[_tier];
         // With no active nodes there is nobody to credit — that slice of the
         // emission is simply not distributed.
-        if (tc.activeNodes > 0 && currentRewardPerSecond > 0 && tc.rewardShare > 0) {
-            uint256 tierPerSec = (currentRewardPerSecond * tc.rewardShare) / 10000;
-            uint256 elapsed = block.timestamp - last;
-            accRewardPerNode[_tier] += (tierPerSec * elapsed * ACC_PRECISION) / tc.activeNodes;
+        uint256 rate = _perNodeRateScaled(_tier, tiers[_tier].activeNodes);
+        if (rate > 0) {
+            accRewardPerNode[_tier] += rate * (block.timestamp - last);
         }
         tierLastUpdate[_tier] = block.timestamp;
+    }
+
+    /**
+     * @dev Reward per second for ONE node of `_tier` when the tier has `_nodes`
+     *      active nodes, scaled by ACC_PRECISION, before the uptime multiplier.
+     *      = min(tier emission / nodes, minStake * APR cap / year)
+     */
+    function _perNodeRateScaled(NodeTier _tier, uint256 _nodes) internal view returns (uint256) {
+        if (_nodes == 0 || currentRewardPerSecond == 0) return 0;
+        TierConfig storage tc = tiers[_tier];
+        if (tc.rewardShare == 0) return 0;
+
+        uint256 tierPerSec = (currentRewardPerSecond * tc.rewardShare) / 10000;
+        uint256 share = (tierPerSec * ACC_PRECISION) / _nodes;
+        uint256 cap = (tc.minStake * tierAprCapBps[_tier] * ACC_PRECISION) / (10000 * YEAR);
+        return share < cap ? share : cap;
     }
 
     function _syncAllTiers() internal {
@@ -300,9 +354,12 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
      * @dev Validator tier requires approved KYC — checked via kycContract if set
      */
     function registerNode(NodeTier _tier, string calldata _endpoint) external payable nonReentrant {
+        require(!registrationPaused, "Registration paused");
         require(nodes[msg.sender].status == NodeStatus.Inactive, "Already registered");
         require(nodes[msg.sender].pendingUnclaimed == 0, "Claim pending rewards first");
         require(msg.value >= tiers[_tier].minStake, "Insufficient stake");
+        // รางวัลหารเท่ากันต่อโหนด — ส่งเกินขั้นต่ำไม่ได้อะไรเพิ่ม มีแต่เงินถูกล็อกฟรี ๆ
+        require(msg.value == tiers[_tier].minStake, "Stake must equal tier minimum");
         uint256 epLen = bytes(_endpoint).length;
         require(epLen > 0, "Endpoint required");
         require(epLen <= MAX_ENDPOINT_LEN, "Endpoint too long");
@@ -347,6 +404,9 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
             operators.push(msg.sender);
             _knownOperator[msg.sender] = true;
         }
+
+        // จำ % slash ณ วันที่สมัคร — slashNode ใช้ค่าที่ต่ำกว่าระหว่างนี้กับค่าปัจจุบัน
+        nodeSlashCapBps[msg.sender] = tc.slashPercent;
 
         tc.activeNodes++;
         totalActiveNodes++;
@@ -428,14 +488,12 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
         uint256 owed = node.pendingUnclaimed;
         if (node.status != NodeStatus.Active) return owed;
 
-        TierConfig storage tc = tiers[node.tier];
         uint256 acc = accRewardPerNode[node.tier];
 
         // Mirror _syncTier without writing state
         uint256 last = tierLastUpdate[node.tier];
-        if (block.timestamp > last && tc.activeNodes > 0 && currentRewardPerSecond > 0 && tc.rewardShare > 0) {
-            uint256 tierPerSec = (currentRewardPerSecond * tc.rewardShare) / 10000;
-            acc += (tierPerSec * (block.timestamp - last) * ACC_PRECISION) / tc.activeNodes;
+        if (block.timestamp > last) {
+            acc += _perNodeRateScaled(node.tier, tiers[node.tier].activeNodes) * (block.timestamp - last);
         }
 
         if (acc > node.rewardDebt) {
@@ -494,7 +552,10 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
 
         NodeTier tier = node.tier;
         TierConfig storage tc = tiers[tier];
-        uint256 slashAmount = (node.stakedAmount * tc.slashPercent) / 10000;
+        // ใช้ % ที่ต่ำกว่าระหว่าง "ตอนสมัคร" กับ "ตอนนี้" — owner ลดได้ แต่เพิ่มย้อนหลังไม่ได้
+        uint256 cap = nodeSlashCapBps[_operator];
+        uint256 pct = tc.slashPercent < cap ? tc.slashPercent : cap;
+        uint256 slashAmount = (node.stakedAmount * pct) / 10000;
 
         node.stakedAmount -= slashAmount;
         node.status = NodeStatus.Slashed;
@@ -593,36 +654,31 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Get all active nodes (paginated)
+     * @notice Active operator addresses (paginated) — read each with getNodeInfo().
+     * @dev Returns addresses, not MasterNode structs: the struct-array ABI encoder
+     *      alone pushed the deploy transaction past the 32KB request-body limit of
+     *      the public RPC proxy (rpc1.tpix.online → nginx client_max_body_size 32k).
      */
-    function getActiveNodes(uint256 _offset, uint256 _limit) external view returns (MasterNode[] memory) {
-        uint256 count = 0;
+    function getActiveOperators(uint256 _offset, uint256 _limit) external view returns (address[] memory result) {
         uint256 total = operators.length;
-
+        uint256 count = 0;
         for (uint256 i = 0; i < total; i++) {
             if (nodes[operators[i]].status == NodeStatus.Active) count++;
         }
-
-        if (_offset >= count) return new MasterNode[](0);
+        if (_offset >= count) return new address[](0);
         uint256 end = _offset + _limit;
         if (end > count) end = count;
-        uint256 size = end - _offset;
 
-        MasterNode[] memory result = new MasterNode[](size);
+        result = new address[](end - _offset);
         uint256 idx = 0;
         uint256 found = 0;
-
-        for (uint256 i = 0; i < total && idx < size; i++) {
-            if (nodes[operators[i]].status == NodeStatus.Active) {
-                if (found >= _offset) {
-                    result[idx] = nodes[operators[i]];
-                    idx++;
-                }
+        for (uint256 i = 0; i < total && idx < result.length; i++) {
+            address op = operators[i];
+            if (nodes[op].status == NodeStatus.Active) {
+                if (found >= _offset) result[idx++] = op;
                 found++;
             }
         }
-
-        return result;
     }
 
     /**
@@ -638,6 +694,18 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
      */
     function activeValidatorCount() external view returns (uint256) {
         return tiers[NodeTier.Validator].activeNodes;
+    }
+
+    /**
+     * @notice Wei per second accruing to ONE node of `_tier` at 100% uptime —
+     *         right now, and if one more node joined (what a new staker gets).
+     * @dev APR (bps) = rate * 365 days * 10000 / minStake. UIs use this instead
+     *      of hardcoded APY ranges.
+     */
+    function nodeRewardRate(NodeTier _tier) external view returns (uint256 currentPerNode, uint256 ifOneMoreJoins) {
+        uint256 active = tiers[_tier].activeNodes;
+        currentPerNode = _perNodeRateScaled(_tier, active) / ACC_PRECISION;
+        ifOneMoreJoins = _perNodeRateScaled(_tier, active + 1) / ACC_PRECISION;
     }
 
     // ============================================================
@@ -673,6 +741,52 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
         require(totalShares == 10000, "Shares must sum to 10000");
 
         emit TierConfigUpdated(_tier);
+    }
+
+    /**
+     * @notice Rebalance the reward split between tiers in ONE call.
+     * @dev updateTierConfig() checks the four shares sum to 10000 after changing
+     *      a single tier, so moving share from one tier to another through it is
+     *      impossible (the first call always breaks the sum). This is the only
+     *      way to change the split.
+     */
+    function setRewardShares(
+        uint256 _guardian,
+        uint256 _sentinel,
+        uint256 _light,
+        uint256 _validator
+    ) external onlyOwner {
+        require(_guardian + _sentinel + _light + _validator == 10000, "Shares must sum to 10000");
+        // เวลาที่ผ่านมาแล้วต้องคิดด้วยสัดส่วนเดิมทุกชั้น
+        _syncAllTiers();
+        tiers[NodeTier.Guardian].rewardShare = _guardian;
+        tiers[NodeTier.Sentinel].rewardShare = _sentinel;
+        tiers[NodeTier.Light].rewardShare = _light;
+        tiers[NodeTier.Validator].rewardShare = _validator;
+        emit TierConfigUpdated(NodeTier.Guardian);
+        emit TierConfigUpdated(NodeTier.Sentinel);
+        emit TierConfigUpdated(NodeTier.Light);
+        emit TierConfigUpdated(NodeTier.Validator);
+    }
+
+    /**
+     * @notice Max APR one node of `_tier` can earn (bps of the tier's minStake).
+     */
+    function setTierAprCap(NodeTier _tier, uint256 _aprBps) external onlyOwner {
+        require(_aprBps > 0 && _aprBps <= MAX_APR_CAP_BPS, "APR cap out of range");
+        // เวลาที่ผ่านมาแล้วต้องคิดด้วยเพดานเดิม
+        _syncTier(_tier);
+        tierAprCapBps[_tier] = _aprBps;
+        emit TierAprCapUpdated(_tier, _aprBps);
+    }
+
+    /**
+     * @notice Stop/allow NEW registrations. Deregister, claim and withdraw are
+     *         never paused — stakers can always get their money out.
+     */
+    function setRegistrationPaused(bool _paused) external onlyOwner {
+        registrationPaused = _paused;
+        emit RegistrationPaused(_paused);
     }
 
     /**
