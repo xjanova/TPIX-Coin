@@ -415,6 +415,9 @@ class MasterNodeService {
     '0x127979541deea4d4cd468271bea206277d593660634fc78197c5354782c76ce3',
     // TPIX-Coin 7e37dbd — ห้ามแก้ minStake ของระดับที่มีโหนดอยู่ (ถ้า redeploy ตัวนี้)
     '0x8e14ff731f16f502264211c48cc47595f02a4016724f69b67d679c42758765a0',
+    // TPIX-Coin 66066d8 (efa20cb) — ล็อกได้ไม่เกิน 365 วัน + ผ่านออดิทเชิงลึก/invariant fuzz 2026-10-11
+    // ตัวที่จะ redeploy แทน 0x9c36…4A2B
+    '0x7a03e6425a6779dfa0f60ba80ee569635f0618a22906a631dda2abdf28e696bf',
   };
 
   /// ที่อยู่ที่ตรวจ bytecode ผ่านแล้วในรอบนี้ (ตัวเล็ก) — โค้ดของสัญญา CREATE ที่ไม่มี selfdestruct
