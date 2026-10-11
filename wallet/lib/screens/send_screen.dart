@@ -10,7 +10,7 @@ import '../core/themes/widgets/screen_background.dart';
 import '../models/contact.dart';
 import '../models/token_info.dart';
 import '../providers/wallet_provider.dart';
-import '../services/biometric_service.dart';
+import '../widgets/tx_auth.dart';
 import '../services/rpc_client.dart';
 import '../services/synth_service.dart';
 import '../services/db_service.dart';
@@ -280,23 +280,14 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     final fromName = wallet.activeWallet?.name;
     if (fromAddress == null) return;
 
-    // Authentication required before send
-    final bioService = BiometricService();
-    bool authenticated = false;
-    if (await bioService.isEnabled() && await bioService.isDeviceSupported()) {
-      authenticated = await bioService.authenticate(token == null
+    // Authentication required before send — สแกนนิ้วไม่ผ่าน/ไม่ได้เปิดไว้ → ใส่ PIN
+    final authenticated = await authorizeTransaction(
+      context,
+      reason: token == null
           ? l.t('send.authRequired')
-          : l.t('send.authRequiredToken').replaceAll('{symbol}', symbol));
-    }
-
-    // Fallback: require PIN re-entry if biometric failed or unavailable
-    if (!authenticated) {
-      if (!mounted) return;
-      final pinOk = await _showPinVerification(l);
-      if (pinOk != true) return;
-    }
-
-    if (!mounted) return;
+          : l.t('send.authRequiredToken').replaceAll('{symbol}', symbol),
+    );
+    if (!authenticated || !mounted) return;
 
     // Show confirmation dialog
     final confirmed = await _showConfirmation(
@@ -441,14 +432,6 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           ),
         ),
       ),
-    );
-  }
-
-  Future<bool?> _showPinVerification(LocaleProvider l) {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _PinVerifyDialog(l: l),
     );
   }
 
@@ -1040,82 +1023,6 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           );
         },
       ),
-    );
-  }
-}
-
-
-/// กล่องใส่ PIN ยืนยันก่อนส่ง
-///
-/// แยกเป็น StatefulWidget เพื่อให้ controller ถูก dispose ใน dispose() ของตัวเอง
-/// ของเดิม dispose ซ้ำ 2 ครั้ง (ปุ่มยกเลิก + .then) และ dispose ตอนกล่องยังเล่น
-/// แอนิเมชันปิดอยู่ → "TextEditingController was used after being disposed"
-class _PinVerifyDialog extends StatefulWidget {
-  final LocaleProvider l;
-  const _PinVerifyDialog({required this.l});
-
-  @override
-  State<_PinVerifyDialog> createState() => _PinVerifyDialogState();
-}
-
-class _PinVerifyDialogState extends State<_PinVerifyDialog> {
-  final _pinController = TextEditingController();
-  bool _checking = false; // กันตรวจ PIN ซ้อนเมื่อพิมพ์เร็ว
-
-  @override
-  void dispose() {
-    _pinController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _onChanged(String val) async {
-    if (val.length != 6 || _checking) return;
-    _checking = true;
-    final wallet = context.read<WalletProvider>();
-    // Verify PIN by trying unlock (already unlocked, so just check hash)
-    final isLocked = await WalletService().isPinLocked();
-    if (!mounted) return;
-    if (isLocked) {
-      Navigator.pop(context, false);
-      return;
-    }
-    // Use the provider's existing unlock check
-    final success = await wallet.unlock(val);
-    if (!mounted) return;
-    Navigator.pop(context, success);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    final l = widget.l;
-    return AlertDialog(
-      backgroundColor: c.card,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
-      title: Text(l.t('pin.unlock'), style: TextStyle(color: c.text, fontSize: 16)),
-      content: TextField(
-        controller: _pinController,
-        obscureText: true,
-        keyboardType: TextInputType.number,
-        maxLength: 6,
-        autofocus: true,
-        style: TextStyle(color: c.text, fontSize: 24, letterSpacing: 8),
-        textAlign: TextAlign.center,
-        decoration: InputDecoration(
-          counterText: '',
-          hintText: '••••••',
-          hintStyle: TextStyle(color: c.textMuted.withValues(alpha: 0.3)),
-          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3))),
-          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.primary)),
-        ),
-        onChanged: _onChanged,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: Text(l.t('send.cancel'), style: const TextStyle(color: Colors.grey)),
-        ),
-      ],
     );
   }
 }

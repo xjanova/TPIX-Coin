@@ -25,6 +25,7 @@ import 'wallet_list_sheet.dart';
 import 'identity_screen.dart';
 import 'settings_screen.dart';
 import 'add_token_screen.dart';
+import 'masternode_screen.dart';
 import 'swap_screen.dart';
 import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
@@ -1483,16 +1484,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _buildLink('🌐', 'TPIX TRADE', 'https://tpix.online'),
           _buildLink('🔍', 'Explorer', TpixChain.explorerUrl),
           _buildLink('📖', 'Whitepaper', 'https://tpix.online/whitepaper'),
-          _buildLink('📥', 'Master Node', 'https://tpix.online/masternode'),
+          // มาสเตอร์โหนดสเตค/รับรางวัลได้ในแอปแล้ว — หน้านั้นมีปุ่มเปิดเว็บเองเมื่อระบบยังไม่เปิด
+          _buildLink('🛡️', l.t('mn.title'), null, onTap: _openMasterNode),
         ],
       ),
     );
   }
 
-  Widget _buildLink(String emoji, String label, String url) {
+  void _openMasterNode() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MasterNodeScreen()),
+    );
+  }
+
+  /// [url] = เปิดเบราว์เซอร์ภายนอก / [onTap] = หน้าในแอป (ลูกศรต่างกันให้รู้ว่าจะออกจากแอปไหม)
+  Widget _buildLink(String emoji, String label, String? url, {VoidCallback? onTap}) {
     final c = AppColors.of(context);
     return GestureDetector(
-      onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+      onTap: onTap ??
+          () => launchUrl(Uri.parse(url!), mode: LaunchMode.externalApplication),
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 3),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1506,7 +1517,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(width: TpixGap.md),
             Text(label, style: TextStyle(fontSize: 14, color: c.textSec)),
             const Spacer(),
-            Icon(Icons.open_in_new, size: 16, color: c.textMuted),
+            Icon(onTap != null ? Icons.arrow_forward_ios : Icons.open_in_new,
+                size: onTap != null ? 14 : 16, color: c.textMuted),
           ],
         ),
       ),

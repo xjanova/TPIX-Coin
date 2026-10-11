@@ -1,0 +1,675 @@
+/// TPIX Wallet — เทสต์ระบบสเตคมาสเตอร์โหนด (ไม่มี widget)
+///
+/// สิ่งที่ต้องกันพลาด:
+///   - calldata ต้องตรงกับที่ ethers v6 เข้ารหัส (ค่าคาดหวังทั้งหมดในไฟล์นี้ได้จาก ethers จริง
+///     ไม่ได้คำนวณด้วยโค้ดของเราเอง — ไม่งั้นบั๊กเดียวกันจะผ่านเทสต์ตัวเอง)
+///   - tier ที่ส่งเข้าสัญญา = เลข enum (Guardian=0 … Validator=3) ไม่ใช่ลำดับการ์ดบนจอ
+///   - ปุ่มที่กดไม่ได้ต้องมีเหตุผลที่ถูกต้อง (ปิดรับ/เต็ม/ล็อก/กองรางวัลว่าง/ยอดไม่พอ)
+///   - เว็บยังไม่มีสัญญา / ที่อยู่ไม่มีโค้ด / เว็บล่ม — แยกออกจากกันชัดเจน
+library;
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:tpix_wallet/services/masternode_service.dart';
+import 'package:tpix_wallet/services/rpc_client.dart';
+import 'package:web3dart/crypto.dart' show bytesToHex;
+
+// ── ค่าจาก ethers v6.16 (Interface.encodeFunctionData / encodeFunctionResult) ──
+
+const _registerSentinel =
+    '0x9a7389ca'
+    '0000000000000000000000000000000000000000000000000000000000000001'
+    '0000000000000000000000000000000000000000000000000000000000000040'
+    '0000000000000000000000000000000000000000000000000000000000000011'
+    '3230332e302e3131332e31303a38353435000000000000000000000000000000';
+
+const _registerGuardian =
+    '0x9a7389ca'
+    '0000000000000000000000000000000000000000000000000000000000000000'
+    '0000000000000000000000000000000000000000000000000000000000000040'
+    '0000000000000000000000000000000000000000000000000000000000000016'
+    '6e6f64652e747069782e6f6e6c696e653a333033303300000000000000000000';
+
+const _operator = '0x1234567890abcdef1234567890abcdef12345678';
+
+/// getNodeInfo → (operator, tier=1, status=1, 100000 TPIX, registeredAt=1760000000,
+/// unlockAt=1767776000, lastRewardAt=1760000500, totalRewards=12.5, uptime=9850,
+/// nodeId=0xabab…, endpoint="203.0.113.10:8545", rewardDebt=0, pendingUnclaimed=3)
+const _nodeRet =
+    '0x0000000000000000000000000000000000000000000000000000000000000020'
+    '0000000000000000000000001234567890abcdef1234567890abcdef12345678'
+    '0000000000000000000000000000000000000000000000000000000000000001'
+    '0000000000000000000000000000000000000000000000000000000000000001'
+    '00000000000000000000000000000000000000000000152d02c7e14af6800000'
+    '0000000000000000000000000000000000000000000000000000000068e77800'
+    '00000000000000000000000000000000000000000000000000000000695e1f00'
+    '0000000000000000000000000000000000000000000000000000000068e779f4'
+    '000000000000000000000000000000000000000000000000ad78ebc5ac620000'
+    '000000000000000000000000000000000000000000000000000000000000267a'
+    'abababababababababababababababababababababababababababababababab'
+    '00000000000000000000000000000000000000000000000000000000000001a0'
+    '0000000000000000000000000000000000000000000000000000000000000000'
+    '00000000000000000000000000000000000000000000000029a2241af62c0000'
+    '0000000000000000000000000000000000000000000000000000000000000011'
+    '3230332e302e3131332e31303a38353435000000000000000000000000000000';
+
+/// getNodeInfo ของกระเป๋าที่ไม่เคยลงทะเบียน (ทุกช่องเป็น 0, endpoint = "")
+final _emptyNodeRet = '0x${'0' * 62}20'
+    '${'0' * 64 * 10}'
+    '${'0' * 61}1a0'
+    '${'0' * 64 * 2}'
+    '${'0' * 64}';
+
+/// getTierInfo → (100000 TPIX, max 500, active 12, lock 90, slash 1000, share 2000)
+const _tierRet =
+    '0x00000000000000000000000000000000000000000000152d02c7e14af6800000'
+    '00000000000000000000000000000000000000000000000000000000000001f4'
+    '000000000000000000000000000000000000000000000000000000000000000c'
+    '000000000000000000000000000000000000000000000000000000000000005a'
+    '00000000000000000000000000000000000000000000000000000000000003e8'
+    '00000000000000000000000000000000000000000000000000000000000007d0';
+
+final _tpix = BigInt.from(10).pow(18);
+BigInt _t(int n) => BigInt.from(n) * _tpix;
+
+String _hex(List<int> b) => bytesToHex(b, include0x: true);
+
+// ── ตัวช่วยสร้าง snapshot ──
+
+MnTierInfo _tier(
+  MnTier tier, {
+  BigInt? minStake,
+  int maxNodes = 100,
+  int active = 0,
+  int lockDays = 30,
+}) =>
+    MnTierInfo(
+      tier: tier,
+      minStake: minStake ?? _t(1000),
+      maxNodes: BigInt.from(maxNodes),
+      activeNodes: BigInt.from(active),
+      lockDays: BigInt.from(lockDays),
+      slashPercentBps: BigInt.from(1000),
+      rewardShareBps: BigInt.from(2500),
+    );
+
+MnNodeInfo _node({
+  MnStatus status = MnStatus.inactive,
+  BigInt? staked,
+  DateTime? unlock,
+  BigInt? pendingUnclaimed,
+  int tierId = 0,
+}) =>
+    MnNodeInfo(
+      operator: _operator,
+      tierId: tierId,
+      status: status,
+      stakedAmount: staked ?? BigInt.zero,
+      registeredAt: BigInt.zero,
+      unlockAt: BigInt.from((unlock ?? DateTime(2020)).millisecondsSinceEpoch ~/ 1000),
+      totalRewards: BigInt.zero,
+      uptimeBps: BigInt.from(10000),
+      endpoint: '',
+      pendingUnclaimed: pendingUnclaimed ?? BigInt.zero,
+    );
+
+MnSnapshot _snap({
+  MnNodeInfo? node,
+  List<MnTierInfo>? tiers,
+  bool paused = false,
+  BigInt? pending,
+  BigInt? claimable,
+}) =>
+    MnSnapshot(
+      registry: '0x00000000000000000000000000000000000000aa',
+      owner: _operator,
+      registrationPaused: paused,
+      tiers: tiers ??
+          [
+            _tier(MnTier.guardian, minStake: _t(100000)),
+            _tier(MnTier.sentinel, minStake: _t(10000)),
+            _tier(MnTier.light, minStake: _t(1000)),
+            _tier(MnTier.validator, minStake: _t(1000000)),
+          ],
+      node: node ?? _node(),
+      pendingReward: pending ?? BigInt.zero,
+      claimableNow: claimable ?? BigInt.zero,
+      availableFunds: BigInt.zero,
+    );
+
+// ── RPC ปลอม ──
+
+String _word(BigInt v) => v.toRadixString(16).padLeft(64, '0');
+
+http.Response _rpcOk(dynamic result) =>
+    http.Response(jsonEncode({'jsonrpc': '2.0', 'id': 1, 'result': result}), 200);
+
+http.Response _rpcRevert(String msg) => http.Response(
+    jsonEncode({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'error': {'code': 3, 'message': 'execution reverted: $msg'},
+    }),
+    200);
+
+/// เชนปลอม: ตอบ eth_call ตาม selector — [optionalSupported]=false จำลองสัญญารุ่นเก่า
+RpcClient _fakeChain({
+  bool optionalSupported = true,
+  bool paused = false,
+  String code = '0x6080604052',
+  bool unreachable = false,
+}) {
+  final mock = MockClient((req) async {
+    if (unreachable) throw const SocketException('offline');
+    final body = jsonDecode(req.body) as Map<String, dynamic>;
+    final method = body['method'] as String;
+    final params = body['params'] as List;
+    if (method == 'eth_getCode') return _rpcOk(code);
+    if (method != 'eth_call') return _rpcOk('0x0');
+    final data = (params.first as Map)['data'] as String;
+    final selector = data.substring(0, 10);
+    switch (selector) {
+      case '0x7ed85ff3': // getTierInfo(uint8) — minStake ต่างกันตาม tier id
+        final id = int.parse(data.substring(data.length - 2), radix: 16);
+        final min = [_t(100000), _t(10000), _t(1000), _t(1000000)][id];
+        return _rpcOk('0x${_word(min)}${_word(BigInt.from(500))}${_word(BigInt.from(12))}'
+            '${_word(BigInt.from(90))}${_word(BigInt.from(1000))}${_word(BigInt.from(2000))}');
+      case '0xf8bc005d': // tierAprCapBps(uint8)
+        if (!optionalSupported) return _rpcRevert('');
+        return _rpcOk('0x${_word(BigInt.from(1200))}');
+      case '0x9abbbd3b': // registrationPaused()
+        if (!optionalSupported) return _rpcRevert('');
+        return _rpcOk('0x${_word(paused ? BigInt.one : BigInt.zero)}');
+      case '0x582115fb': // getNodeInfo(address)
+        return _rpcOk(_nodeRet);
+      case '0xf40f0f52': // pendingReward(address)
+        return _rpcOk('0x${_word(_t(3))}');
+      case '0x9a78ea4a': // claimableNow(address)
+        return _rpcOk('0x${_word(BigInt.zero)}');
+      case '0xd0377094': // availableRewardFunds()
+        return _rpcOk('0x${_word(BigInt.zero)}');
+    }
+    return _rpcRevert('unknown selector $selector');
+  });
+  return RpcClient(['https://rpc.test'], httpClient: mock, timeout: const Duration(seconds: 2));
+}
+
+http.Client _configClient(int status, Object body) =>
+    MockClient((_) async => http.Response(body is String ? body : jsonEncode(body), status));
+
+Map<String, dynamic> _config({
+  String address = '0x00000000000000000000000000000000000000aa',
+  bool live = true,
+  int chainId = 4289,
+  bool paused = false,
+}) =>
+    {
+      'success': true,
+      'data': {
+        'registry_address': address,
+        'registry_live': live,
+        'kyc_contract': '',
+        'registration_paused': paused,
+        'chain_id': chainId,
+        'rpc_url': 'https://rpc.evil.example',
+        'explorer_url': 'https://explorer.tpix.online',
+      },
+    };
+
+void main() {
+  tearDown(() {
+    RpcClient.overrideForChain(4289, null);
+    MasterNodeService.clientFactory = http.Client.new;
+  });
+
+  group('ABI encode (เทียบกับ ethers)', () {
+    test('registerNode(Sentinel=1, endpoint) ตรงกับ ethers', () {
+      expect(_hex(MasterNodeService.encodeRegister(MnTier.sentinel, '203.0.113.10:8545')),
+          _registerSentinel);
+    });
+
+    test('registerNode(Guardian=0, hostname:port) ตรงกับ ethers', () {
+      expect(_hex(MasterNodeService.encodeRegister(MnTier.guardian, 'node.tpix.online:30303')),
+          _registerGuardian);
+    });
+
+    test('ฟังก์ชันไม่มีพารามิเตอร์ = selector ล้วน', () {
+      expect(_hex(MasterNodeService.encodeClaim()), '0x372500ab');
+      expect(_hex(MasterNodeService.encodeDeregister()), '0x18b1c081');
+      expect(_hex(MasterNodeService.encodeWithdrawSlashed()), '0x5698d04d');
+    });
+
+    test('tier enum ตรงกับสัญญา — ไม่ใช่ลำดับการ์ด', () {
+      expect(MnTier.guardian.id, 0);
+      expect(MnTier.sentinel.id, 1);
+      expect(MnTier.light.id, 2);
+      expect(MnTier.validator.id, 3);
+
+      // การ์ดเรียงตามสเตค (Light ก่อน) แต่ calldata ต้องยังเป็นเลข enum ของระดับนั้น
+      final order = _snap().displayTiers.map((t) => t.tier).toList();
+      expect(order, [MnTier.light, MnTier.sentinel, MnTier.guardian, MnTier.validator]);
+      for (final t in order) {
+        final hex = _hex(MasterNodeService.encodeRegister(t, '1.2.3.4:1'));
+        final tierWord = BigInt.parse(hex.substring(10, 74), radix: 16).toInt();
+        expect(tierWord, t.id, reason: '${t.label} ต้องส่ง ${t.id}');
+      }
+    });
+  });
+
+  group('ABI decode (ข้อมูลจาก ethers)', () {
+    test('getNodeInfo — tuple ที่มี string อยู่ข้างใน', () {
+      final n = MasterNodeService.decodeNodeInfo(_nodeRet);
+      expect(n.operator.toLowerCase(), _operator);
+      expect(n.tier, MnTier.sentinel);
+      expect(n.status, MnStatus.active);
+      expect(n.stakedAmount, _t(100000));
+      expect(n.registeredAt, BigInt.from(1760000000));
+      expect(n.unlockAt, BigInt.from(1767776000));
+      expect(n.totalRewards, BigInt.parse('12500000000000000000'));
+      expect(n.uptimeBps, BigInt.from(9850));
+      expect(n.endpoint, '203.0.113.10:8545');
+      expect(n.pendingUnclaimed, _t(3));
+      expect(n.unlockTime, DateTime.fromMillisecondsSinceEpoch(1767776000 * 1000));
+    });
+
+    test('getNodeInfo ของกระเป๋าที่ไม่เคยลงทะเบียน → inactive ทุกค่าเป็น 0', () {
+      final n = MasterNodeService.decodeNodeInfo(_emptyNodeRet);
+      expect(n.status, MnStatus.inactive);
+      expect(n.stakedAmount, BigInt.zero);
+      expect(n.endpoint, '');
+    });
+
+    test('getTierInfo — tuple แบบคงที่', () {
+      final t = MasterNodeService.decodeTierInfo(MnTier.light, _tierRet, aprCapBps: 600);
+      expect(t.minStake, _t(100000));
+      expect(t.maxNodes, BigInt.from(500));
+      expect(t.activeNodes, BigInt.from(12));
+      expect(t.lockDays, BigInt.from(90));
+      expect(t.slashPercentBps, BigInt.from(1000));
+      expect(t.rewardShareBps, BigInt.from(2000));
+      expect(t.aprCapBps, 600);
+    });
+
+    test('"0x" (ไม่มีโค้ด/ไม่มีฟังก์ชัน) → MnContractMismatchException ไม่ใช่ RangeError', () {
+      expect(() => MasterNodeService.decodeNodeInfo('0x'),
+          throwsA(isA<MnContractMismatchException>()));
+      expect(() => MasterNodeService.decodeUint('pendingReward', null),
+          throwsA(isA<MnContractMismatchException>()));
+      expect(() => MasterNodeService.decodeTierInfo(MnTier.light, '0x1234'),
+          throwsA(isA<MnContractMismatchException>()));
+    });
+
+    test('สถานะที่แอปไม่รู้จัก → unknown (ปิดทุกปุ่ม)', () {
+      expect(MnStatus.fromId(4), MnStatus.slashedWithdrawable);
+      expect(MnStatus.fromId(9), MnStatus.unknown);
+      expect(MnStatus.fromId(-1), MnStatus.unknown);
+    });
+
+    test('unlockAt เพี้ยนเกินช่วง DateTime → ไม่ throw', () {
+      final n = MnNodeInfo(
+        operator: _operator,
+        tierId: 0,
+        status: MnStatus.active,
+        stakedAmount: BigInt.one,
+        registeredAt: BigInt.zero,
+        unlockAt: BigInt.two.pow(255),
+        totalRewards: BigInt.zero,
+        uptimeBps: BigInt.zero,
+        endpoint: '',
+        pendingUnclaimed: BigInt.zero,
+      );
+      expect(n.unlockTime.isAfter(DateTime(3000)), isTrue);
+    });
+  });
+
+  group('ปุ่มสเตค (registerBlock)', () {
+    final enough = _t(200000);
+
+    test('ปกติ + ยอดพอ → กดได้', () {
+      expect(_snap().registerBlock(MnTier.light, enough), isNull);
+    });
+
+    test('Validator ต้อง KYC → ไปเว็บเสมอ', () {
+      expect(_snap().registerBlock(MnTier.validator, _t(10000000)),
+          MnBlock.validatorWebsiteOnly);
+    });
+
+    test('ปิดรับลงทะเบียน', () {
+      expect(_snap(paused: true).registerBlock(MnTier.light, enough), MnBlock.paused);
+    });
+
+    test('ระดับเต็ม (maxNodes > 0 และ active ถึงเพดาน)', () {
+      final s = _snap(tiers: [
+        _tier(MnTier.guardian),
+        _tier(MnTier.sentinel),
+        _tier(MnTier.light, maxNodes: 5, active: 5),
+        _tier(MnTier.validator),
+      ]);
+      expect(s.registerBlock(MnTier.light, enough), MnBlock.full);
+    });
+
+    test('maxNodes = 0 คือไม่จำกัด ไม่ใช่เต็ม', () {
+      final s = _snap(tiers: [
+        _tier(MnTier.guardian),
+        _tier(MnTier.sentinel),
+        _tier(MnTier.light, maxNodes: 0, active: 9999),
+        _tier(MnTier.validator),
+      ]);
+      expect(s.tierInfo(MnTier.light).isUnlimited, isTrue);
+      expect(s.registerBlock(MnTier.light, enough), isNull);
+    });
+
+    test('minStake = 0 = ระดับยังไม่ตั้งค่า', () {
+      final s = _snap(tiers: [
+        _tier(MnTier.guardian, minStake: BigInt.zero),
+        _tier(MnTier.sentinel),
+        _tier(MnTier.light),
+        _tier(MnTier.validator),
+      ]);
+      expect(s.registerBlock(MnTier.guardian, enough), MnBlock.unavailable);
+    });
+
+    test('มีโหนดอยู่แล้ว (active/slashed) → สเตคเพิ่มไม่ได้', () {
+      expect(_snap(node: _node(status: MnStatus.active)).registerBlock(MnTier.light, enough),
+          MnBlock.hasNode);
+      expect(_snap(node: _node(status: MnStatus.slashed)).registerBlock(MnTier.light, enough),
+          MnBlock.hasNode);
+    });
+
+    test('ถอนแล้วแต่ยังมีรางวัลค้าง → ต้องรับก่อน (สัญญาเช็ก pendingUnclaimed)', () {
+      final s = _snap(node: _node(pendingUnclaimed: BigInt.one));
+      expect(s.registerBlock(MnTier.light, enough), MnBlock.claimFirst);
+    });
+
+    test('ยังไม่รู้ยอด / ยอดไม่พอ (ขาดแค่ 1 wei ก็ไม่ได้)', () {
+      expect(_snap().registerBlock(MnTier.light, null), MnBlock.balanceUnknown);
+      expect(_snap().registerBlock(MnTier.light, _t(1000) - BigInt.one),
+          MnBlock.insufficientBalance);
+      // ค่าแก๊ส 0 → ยอดเท่ากับ minStake พอดีก็พอ
+      expect(_snap().registerBlock(MnTier.light, _t(1000)), isNull);
+    });
+  });
+
+  group('ปุ่มรับรางวัล / ถอน', () {
+    test('มีให้รับ → กดได้', () {
+      expect(_snap(pending: _t(5), claimable: _t(5)).claimBlock(), isNull);
+    });
+
+    test('รางวัลสะสมแต่กองว่าง → poolEmpty (รางวัลไม่หาย)', () {
+      expect(_snap(pending: _t(5), claimable: BigInt.zero).claimBlock(), MnBlock.poolEmpty);
+    });
+
+    test('ยังไม่มีรางวัล', () {
+      expect(_snap().claimBlock(), MnBlock.nothingToClaim);
+    });
+
+    test('ถอนสเตค: ยังล็อก / พ้นล็อก / ไม่ active', () {
+      final now = DateTime(2026, 10, 11);
+      final locked = _snap(
+          node: _node(status: MnStatus.active, unlock: now.add(const Duration(days: 1))));
+      expect(locked.unstakeBlock(now), MnBlock.locked);
+      final free = _snap(
+          node: _node(status: MnStatus.active, unlock: now.subtract(const Duration(seconds: 1))));
+      expect(free.unstakeBlock(now), isNull);
+      expect(_snap(node: _node(status: MnStatus.slashed)).unstakeBlock(now), MnBlock.notActive);
+    });
+
+    test('ถอนสเตคที่เหลือหลังโดนปรับ', () {
+      expect(_snap(node: _node(status: MnStatus.slashed, staked: _t(900))).canWithdrawSlashed,
+          isTrue);
+      expect(
+          _snap(node: _node(status: MnStatus.slashedWithdrawable, staked: _t(900)))
+              .canWithdrawSlashed,
+          isTrue);
+      expect(_snap(node: _node(status: MnStatus.slashed, staked: BigInt.zero)).canWithdrawSlashed,
+          isFalse);
+      expect(_snap(node: _node(status: MnStatus.active, staked: _t(900))).canWithdrawSlashed,
+          isFalse);
+    });
+
+    test('การ์ดโหนดของฉัน: มีโหนด หรือมีรางวัลค้าง', () {
+      expect(_snap().hasNodeCard, isFalse);
+      expect(_snap(node: _node(status: MnStatus.active)).hasNodeCard, isTrue);
+      expect(_snap(pending: BigInt.one).hasNodeCard, isTrue);
+    });
+  });
+
+  group('ตรวจ endpoint', () {
+    final cases = <String, MnEndpointError?>{
+      '203.0.113.10:8545': null,
+      ' node.tpix.online:30303 ': null,
+      'validator-1.example.co.th:443': null,
+      '[2001:db8::1]:8545': null,
+      '': MnEndpointError.empty,
+      '   ': MnEndpointError.empty,
+      '203.0.113.10': MnEndpointError.format,
+      'http://203.0.113.10:8545': MnEndpointError.format,
+      '203.0.113.10:8545/rpc': MnEndpointError.format,
+      '256.1.1.1:8545': MnEndpointError.format,
+      '1.2.3:8545': MnEndpointError.format,
+      '-bad.example:80': MnEndpointError.format,
+      'โหนด.example:80': MnEndpointError.format,
+      '203.0.113.10:0': MnEndpointError.port,
+      '203.0.113.10:65536': MnEndpointError.port,
+      '203.0.113.10:0080808': MnEndpointError.port,
+      'localhost:8545': MnEndpointError.local,
+      '127.0.0.1:8545': MnEndpointError.local,
+      '0.0.0.0:8545': MnEndpointError.local,
+      '[::1]:8545': MnEndpointError.local,
+    };
+    cases.forEach((input, expected) {
+      test('"$input" → ${expected?.name ?? 'ผ่าน'}', () {
+        expect(MasterNodeService.validateEndpoint(input), expected);
+      });
+    });
+
+    test('ยาว 100 ตัวผ่าน / 101 ตัวไม่ผ่าน (สัญญานับเป็นไบต์)', () {
+      String host(int len) {
+        // ป้ายละไม่เกิน 63 ตัว คั่นด้วยจุด
+        final parts = <String>[];
+        var left = len;
+        while (left > 0) {
+          final n = left > 60 ? 60 : left;
+          parts.add('a' * n);
+          left -= n + 1;
+        }
+        return parts.join('.');
+      }
+
+      final ok = '${host(95)}:8545'; // 95 + 5
+      expect(ok.length, lessThanOrEqualTo(100));
+      expect(MasterNodeService.validateEndpoint(ok), isNull);
+      final tooLong = '${'a' * 60}.${'b' * 35}:85450';
+      expect(tooLong.length, 102);
+      expect(MasterNodeService.validateEndpoint(tooLong), MnEndpointError.tooLong);
+    });
+  });
+
+  group('ข้อความ revert → เหตุผล', () {
+    final cases = <String, MnRevert>{
+      'execution reverted: Registration paused': MnRevert.paused,
+      'execution reverted: Tier full': MnRevert.full,
+      'execution reverted: Still locked': MnRevert.locked,
+      'execution reverted: KYC not approved': MnRevert.kyc,
+      'execution reverted: Insufficient stake': MnRevert.stakeMismatch,
+      'execution reverted: Stake must equal tier minimum': MnRevert.stakeMismatch,
+      'execution reverted: Already registered': MnRevert.alreadyRegistered,
+      'execution reverted: Claim pending rewards first': MnRevert.claimFirst,
+      'execution reverted: Endpoint too long': MnRevert.endpoint,
+      'execution reverted: Not active': MnRevert.stateChanged,
+      'insufficient funds for gas * price + value': MnRevert.insufficientFunds,
+      'execution reverted': MnRevert.unknown,
+    };
+    cases.forEach((msg, expected) {
+      test(msg, () => expect(MasterNodeService.classifyRevert(msg), expected));
+    });
+  });
+
+  group('ตัวเลข', () {
+    test('formatTpix: ใส่จุลภาค ตัดทศนิยมไม่ปัดขึ้น', () {
+      expect(MasterNodeService.formatTpix(_t(1000000)), '1,000,000');
+      expect(MasterNodeService.formatTpix(BigInt.parse('1234567899999999999999')),
+          '1,234.5678');
+      expect(MasterNodeService.formatTpix(BigInt.zero), '0');
+      expect(MasterNodeService.formatTpix(BigInt.one, maxDecimals: 18), '0.000000000000000001');
+      expect(MasterNodeService.formatTpix(BigInt.one), '0');
+    });
+
+    test('formatBps', () {
+      expect(MasterNodeService.formatBps(1200), '12%');
+      expect(MasterNodeService.formatBps(1250), '12.5%');
+      expect(MasterNodeService.formatBps(9850), '98.5%');
+      expect(MasterNodeService.formatBps(5), '0.05%');
+    });
+
+    test('gasLimit = max(ประเมิน×1.3 ปัดขึ้น, พื้น)', () {
+      expect(MasterNodeService.gasLimit(367423, MasterNodeService.gasFloorRegister), 600000);
+      expect(MasterNodeService.gasLimit(500000, MasterNodeService.gasFloorRegister), 650000);
+      expect(MasterNodeService.gasLimit(158170, MasterNodeService.gasFloorClaim), 250000);
+      expect(MasterNodeService.gasLimit(1000001, 0), 1300002);
+    });
+  });
+
+  group('ค้นหาสัญญา (discover)', () {
+    test('เว็บยังไม่มี endpoint (404) → ยังไม่เปิด', () async {
+      MasterNodeService.clientFactory = () => _configClient(404, '<html>Not Found</html>');
+      final r = await MasterNodeService.discover();
+      expect(r.availability, MnAvailability.notDeployed);
+    });
+
+    test('registry_address ว่าง / registry_live=false → ยังไม่เปิด', () async {
+      MasterNodeService.clientFactory = () => _configClient(200, _config(address: ''));
+      expect((await MasterNodeService.discover()).availability, MnAvailability.notDeployed);
+      MasterNodeService.clientFactory = () => _configClient(200, _config(live: false));
+      expect((await MasterNodeService.discover()).availability, MnAvailability.notDeployed);
+    });
+
+    test('เว็บบอกเชนอื่น → unverified (ห้ามเขียน)', () async {
+      MasterNodeService.clientFactory = () => _configClient(200, _config(chainId: 56));
+      RpcClient.overrideForChain(4289, _fakeChain());
+      expect((await MasterNodeService.discover()).availability, MnAvailability.unverified);
+    });
+
+    test('ที่อยู่ไม่มีโค้ดบนเชน → unverified', () async {
+      MasterNodeService.clientFactory = () => _configClient(200, _config());
+      RpcClient.overrideForChain(4289, _fakeChain(code: '0x'));
+      expect((await MasterNodeService.discover()).availability, MnAvailability.unverified);
+    });
+
+    test('polygon-edge: EOA ที่มียอดตอบ error "unable to fetch code" → unverified ไม่ใช่ RPC ล่ม',
+        () async {
+      MasterNodeService.clientFactory = () => _configClient(200, _config());
+      RpcClient.overrideForChain(
+        4289,
+        RpcClient(['https://rpc.test'],
+            httpClient: MockClient((_) async => http.Response(
+                jsonEncode({
+                  'jsonrpc': '2.0',
+                  'id': 1,
+                  'error': {'code': -32600, 'message': 'unable to fetch code'},
+                }),
+                200))),
+      );
+      expect((await MasterNodeService.discover()).availability, MnAvailability.unverified);
+    });
+
+    test('มีโค้ดจริง → ready (ใช้ RPC ของแอป ไม่ใช่ rpc_url จากเว็บ)', () async {
+      final seenHosts = <String>[];
+      MasterNodeService.clientFactory = () => _configClient(200, _config());
+      RpcClient.overrideForChain(
+        4289,
+        RpcClient(['https://rpc.test'],
+            httpClient: MockClient((req) async {
+              seenHosts.add(req.url.host);
+              return _rpcOk('0x6080');
+            })),
+      );
+      final r = await MasterNodeService.discover();
+      expect(r.availability, MnAvailability.ready);
+      expect(r.address, '0x00000000000000000000000000000000000000aa');
+      expect(seenHosts, isNotEmpty);
+      expect(seenHosts, everyElement('rpc.test'));
+    });
+
+    test('Cloudflare ตอบ HTML 200 / 5xx / เน็ตหลุด → MnUnavailableException (ให้ลองใหม่)',
+        () async {
+      MasterNodeService.clientFactory = () => _configClient(200, '<!DOCTYPE html><html></html>');
+      await expectLater(MasterNodeService.discover(), throwsA(isA<MnUnavailableException>()));
+      MasterNodeService.clientFactory = () => _configClient(503, 'down');
+      await expectLater(MasterNodeService.discover(), throwsA(isA<MnUnavailableException>()));
+      MasterNodeService.clientFactory =
+          () => MockClient((_) async => throw const SocketException('offline'));
+      await expectLater(MasterNodeService.discover(), throwsA(isA<MnUnavailableException>()));
+    });
+
+    test('config ดี แต่ RPC ติดต่อไม่ได้ → MnUnavailableException', () async {
+      MasterNodeService.clientFactory = () => _configClient(200, _config());
+      RpcClient.overrideForChain(4289, _fakeChain(unreachable: true));
+      await expectLater(MasterNodeService.discover(), throwsA(isA<MnUnavailableException>()));
+    });
+  });
+
+  group('โหลด snapshot', () {
+    test('อ่านครบทุกฟังก์ชัน + กองรางวัลว่าง → poolEmpty', () async {
+      RpcClient.overrideForChain(4289, _fakeChain(paused: true));
+      final s = await MasterNodeService.loadSnapshot(
+        registry: '0x00000000000000000000000000000000000000aa',
+        owner: _operator,
+      );
+      expect(s.registrationPaused, isTrue);
+      expect(s.tierInfo(MnTier.guardian).minStake, _t(100000));
+      expect(s.tierInfo(MnTier.light).minStake, _t(1000));
+      expect(s.tierInfo(MnTier.light).aprCapBps, 1200);
+      expect(s.node.status, MnStatus.active);
+      expect(s.pendingReward, _t(3));
+      expect(s.claimBlock(), MnBlock.poolEmpty);
+    });
+
+    test('สัญญารุ่นเก่า (ไม่มี registrationPaused/tierAprCapBps) → ใช้ค่าจากเว็บ ไม่พังทั้งหน้า',
+        () async {
+      RpcClient.overrideForChain(4289, _fakeChain(optionalSupported: false));
+      final s = await MasterNodeService.loadSnapshot(
+        registry: '0x00000000000000000000000000000000000000aa',
+        owner: _operator,
+        configPaused: true,
+      );
+      expect(s.registrationPaused, isTrue);
+      expect(s.tierInfo(MnTier.light).aprCapBps, isNull);
+    });
+
+    test('RPC ล่ม → MnUnavailableException', () async {
+      RpcClient.overrideForChain(4289, _fakeChain(unreachable: true));
+      await expectLater(
+        MasterNodeService.loadSnapshot(
+          registry: '0x00000000000000000000000000000000000000aa',
+          owner: _operator,
+        ),
+        throwsA(isA<MnUnavailableException>()),
+      );
+    });
+  });
+
+  test('ข้อความทุกตัวที่หน้ามาสเตอร์โหนดใช้ มีทั้งไทยและอังกฤษ', () {
+    final locale = File('lib/core/locale_provider.dart').readAsStringSync();
+    final screen = File('lib/screens/masternode_screen.dart').readAsStringSync();
+    final keys = <String>{
+      ...RegExp(r"'(mn\.[A-Za-z.]+)'").allMatches(screen).map((m) => m.group(1)!),
+      // คีย์ที่ประกอบจากชื่อ enum
+      for (final b in MnBlock.values) 'mn.block.${b.name}',
+      for (final r in MnRevert.values)
+        if (r != MnRevert.unknown) 'mn.revert.${r.name}',
+      for (final s in MnStatus.values) 'mn.status.${s.name}',
+      for (final e in MnEndpointError.values) 'mn.endpointErr.${e.name}',
+    };
+    final missing = <String>[];
+    for (final k in keys) {
+      final n = RegExp("'${RegExp.escape(k)}':").allMatches(locale).length;
+      if (n != 2) missing.add('$k (พบ $n ครั้ง ต้องมี th + en = 2)');
+    }
+    expect(missing, isEmpty, reason: missing.join('\n'));
+  });
+}
