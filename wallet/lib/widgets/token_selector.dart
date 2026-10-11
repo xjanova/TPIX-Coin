@@ -3,6 +3,7 @@ import '../core/themes/tokens.dart';
 import '../core/theme.dart';
 import '../models/chain_config.dart';
 import '../services/swap_service.dart';
+import 'tpix_coin_logo.dart';
 
 /// Bottom sheet for selecting a token from the active chain
 class TokenSelectorSheet extends StatefulWidget {
@@ -321,20 +322,9 @@ class _TokenLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // TPIX native token uses local asset
+    // เหรียญ TPIX ใช้โลโก้เหรียญในตัวแอป (ไม่ใช่ไอคอนแอป)
     if (token.isNative && chain.chainId == 4289) {
-      // ถอดรหัสตามขนาดที่วาดจริง (size x 3 dpr) ไม่ใช่ 512px เต็มไฟล์
-      final px = (size * 3).round();
-      return ClipOval(
-        child: Image.asset(
-          'assets/images/logowallet.png',
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          cacheWidth: px,
-          cacheHeight: px,
-        ),
-      );
+      return TpixCoinLogo(size: size);
     }
 
     // Determine logo URL
@@ -399,19 +389,9 @@ class ChainLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // TPIX Chain ใช้โลโก้เหรียญ TPIX
     if (chain.chainId == 4289) {
-      // ถอดรหัสตามขนาดที่วาดจริง (size x 3 dpr) ไม่ใช่ 512px เต็มไฟล์
-      final px = (size * 3).round();
-      return ClipOval(
-        child: Image.asset(
-          'assets/images/logowallet.png',
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          cacheWidth: px,
-          cacheHeight: px,
-        ),
-      );
+      return TpixCoinLogo(size: size);
     }
 
     final logoUrl = chain.chainLogoUrl;

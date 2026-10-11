@@ -29,7 +29,8 @@ class WalletConnectService extends ChangeNotifier {
     name: 'TPIX Wallet',
     description: 'Official wallet for TPIX Chain — gasless, fast, secure.',
     url: 'https://tpix.online',
-    icons: ['https://tpix.online/tpixlogo.webp'],
+    // โลโก้เหรียญ TPIX ตัวใหม่ (แทน /tpixlogo.webp ตัวเก่า) — ?v=2 กันแคช Cloudflare รูปเก่า
+    icons: ['https://tpix.online/images/brand/tpix-coin.png?v=2'],
     redirect: Redirect(
       native: 'tpixwallet://',
       universal: 'https://tpix.online/wallet',
