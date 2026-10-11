@@ -102,5 +102,18 @@ module.exports = {
       chainId: 4289,
       gasPrice: 0,
     },
+    // ── ฝั่ง BSC ของสะพาน TPIX ↔ wTPIX (deploy-wtpix-bsc.js) ──────────────────
+    // ซ้อมบน testnet ก่อนเสมอ — tBNB ขอได้จาก faucet ของ BNB Chain
+    // evmVersion london ใช้บน BSC ได้ปกติ (BSC รองรับใหม่กว่านั้นอยู่แล้ว)
+    bscTestnet: {
+      url: process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.bnbchain.org:8545",
+      chainId: 97,
+      accounts: process.env.DEPLOYER_KEY ? [process.env.DEPLOYER_KEY] : [],
+    },
+    bsc: {
+      url: process.env.BSC_RPC_URL || "https://bsc-dataseed.bnbchain.org",
+      chainId: 56,
+      accounts: process.env.DEPLOYER_KEY ? [process.env.DEPLOYER_KEY] : [],
+    },
   },
 };
