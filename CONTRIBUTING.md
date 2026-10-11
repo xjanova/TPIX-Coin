@@ -28,8 +28,6 @@ cd contracts && npm install
 # Wallet (Flutter)
 cd ../wallet && flutter pub get
 
-# Masternode UI (Electron)
-cd ../masternode-ui && npm install
 ```
 
 ### 2. Branch Naming

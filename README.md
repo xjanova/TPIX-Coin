@@ -228,8 +228,6 @@ TPIX-Coin/
 │       └── deploy-factory-v2-remote.mjs  # Factory V2 + NFT deploy (GitHub Actions)
 ├── masternode/             # Polygon Edge node config & install scripts
 ├── masternode-app/         # Master Node CLI tools (Go/Wails)
-├── masternode-ui/          # Master Node Electron GUI (Windows)
-│   └── electron/           # HD wallet, identity manager, SQLite
 ├── wallet/                 # TPIX Wallet — Flutter mobile app
 │   └── lib/
 │       ├── services/       # wallet_service, identity_service
@@ -551,11 +549,7 @@ flutter build apk --release
 
 ### Build Master Node (Windows)
 
-```bash
-cd masternode-ui
-npm install
-npm run build
-```
+The Master Node desktop app is maintained in the separate **TPIX-Masternode** repository.
 
 ### Deploy Smart Contracts
 

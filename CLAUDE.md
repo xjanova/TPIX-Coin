@@ -17,9 +17,6 @@ Genesis: 4 validators (Validator tier, 10M TPIX each), 6 allocation pools (BIP-4
 ```
 TPIX-Coin/
 ├── wallet/              # Flutter mobile wallet (Android/iOS)
-├── masternode-ui/       # Electron desktop GUI (Windows)
-│   ├── electron/        # Main process (node-manager, wallet-manager, database, identity, tx, auto-updater)
-│   └── src/             # Vue 3 SPA (renderer.js, index.html, styles.css)
 ├── masternode/          # Go backend (API server, monitoring, Docker)
 ├── contracts/           # Hardhat smart contracts
 │   ├── masternode/      # NodeRegistry, NodeRegistryV2, ValidatorGovernance, ValidatorKYC
@@ -30,8 +27,11 @@ TPIX-Coin/
 ├── infrastructure/      # Infra setup
 ├── scripts/             # Utility scripts
 ├── docs/                # Documentation
-└── .github/workflows/   # CI/CD (build-apk, build-masternode, release-masternode-ui)
+└── .github/workflows/   # CI/CD (build-apk, build-masternode)
 ```
+
+> The Master Node desktop app (Electron) lives in its own repo, **TPIX-Masternode** (since 2026-08-23).
+> The old `masternode-ui/` copy here was removed on 2026-10-11 — do not recreate it.
 
 ## Masternode UI Architecture
 
