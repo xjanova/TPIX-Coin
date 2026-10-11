@@ -10,14 +10,12 @@ Genesis: 4 validators (Validator tier, 10M TPIX each), 6 allocation pools (BIP-4
 |---------|------|----------|
 | **Flutter Wallet** | Flutter 3.38+, Dart 3.x, Provider | Android/iOS |
 | **Masternode UI** | Electron 29, Vue 3.5, SQLite, ethers 6 | Windows x64 |
-| **Masternode Backend** | Go 1.22, go-ethereum, gorilla/mux | Linux/Docker |
 | **Smart Contracts** | Hardhat 2.22, Solidity 0.8.20, OpenZeppelin 5.6 | EVM |
 
 ### Repository Structure
 ```
 TPIX-Coin/
 ├── wallet/              # Flutter mobile wallet (Android/iOS)
-├── masternode/          # Go backend (API server, monitoring, Docker)
 ├── contracts/           # Hardhat smart contracts
 │   ├── masternode/      # NodeRegistry, NodeRegistryV2, ValidatorGovernance, ValidatorKYC
 │   ├── identity/        # TPIXIdentity
@@ -87,9 +85,8 @@ TPIX-Coin/
 ## Tech Stack
 - **Wallet**: Flutter 3.38+, Dart 3.x, Provider, web3dart, bip39/bip32, flutter_secure_storage
 - **Masternode UI**: Electron 29, Vue 3.5, better-sqlite3, ethers 6.11, Leaflet 1.9.4, qrcode, jsQR
-- **Masternode Backend**: Go 1.22, go-ethereum 1.14, gorilla/mux, gopsutil
 - **Contracts**: Hardhat 2.22, Solidity 0.8.20, OpenZeppelin 5.6.1, ethers v6
-- **CI/CD**: GitHub Actions — `v*` tag triggers builds (APK, Go binaries, Electron installer/portable)
+- **CI/CD**: GitHub Actions — `v*` tag triggers builds (APK; the Master Node Electron app builds in the TPIX-Masternode repo)
 
 ## Roadmap
 

@@ -226,8 +226,6 @@ TPIX-Coin/
 │   └── blockchain/
 │       ├── create-token.js               # Token Factory V1 deployment
 │       └── deploy-factory-v2-remote.mjs  # Factory V2 + NFT deploy (GitHub Actions)
-├── masternode/             # Polygon Edge node config & install scripts
-├── masternode-app/         # Master Node CLI tools (Go/Wails)
 ├── wallet/                 # TPIX Wallet — Flutter mobile app
 │   └── lib/
 │       ├── services/       # wallet_service, identity_service

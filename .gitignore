@@ -39,7 +39,6 @@ wallet/build/
 # Electron/Node
 masternode-ui/node_modules/
 masternode-ui/dist/
-masternode-app/node_modules/
 
 # Environment
 .env
