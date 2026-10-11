@@ -2,7 +2,10 @@
 ///
 /// ต้องไม่มีทางกดสเตคได้เมื่อ: เว็บยังไม่ประกาศสัญญา / ติดต่อเว็บไม่ได้
 /// และกรณีติดต่อไม่ได้ต้องมีปุ่มลองใหม่ ไม่ใช่หน้าว่างหรือ Exception ดิบ
+/// และสัญญาที่ bytecode ไม่ตรงกับที่ตรึงไว้ = ให้อัปเดตแอป ไม่มีปุ่มสเตค
 library;
+
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +18,7 @@ import 'package:tpix_wallet/providers/wallet_provider.dart';
 import 'package:tpix_wallet/screens/masternode_screen.dart';
 import 'package:tpix_wallet/services/masternode_service.dart';
 import 'package:tpix_wallet/services/price_service.dart';
+import 'package:tpix_wallet/services/rpc_client.dart';
 
 import 'support/test_theme.dart';
 
@@ -35,8 +39,40 @@ void main() {
 
   tearDown(() {
     MasterNodeService.clientFactory = http.Client.new;
+    MasterNodeService.resetVerifiedRegistries();
+    RpcClient.overrideForChain(4289, null);
     PriceService.clientFactory = http.Client.new;
     PriceService.reset();
+  });
+
+  testWidgets('สัญญามีโค้ดแต่ไม่ใช่ build ที่ตรวจแล้ว → ให้อัปเดตแอป ไม่มีปุ่มสเตค', (tester) async {
+    MasterNodeService.clientFactory = () => MockClient((_) async => http.Response(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'registry_address': '0x00000000000000000000000000000000000000aa',
+            'registry_live': true,
+            'registration_paused': false,
+            'chain_id': 4289,
+          },
+        }),
+        200));
+    RpcClient.overrideForChain(
+      4289,
+      RpcClient(['https://rpc.test'],
+          httpClient: MockClient((_) async => http.Response(
+              jsonEncode({'jsonrpc': '2.0', 'id': 1, 'result': '0x6080604052'}), 200))),
+    );
+    await tester.pumpWidget(_harness());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final l = LocaleProvider();
+    expect(find.text(l.t('mn.unknownCodeTitle')), findsOneWidget);
+    expect(find.text(l.t('mn.updateApp')), findsOneWidget);
+    expect(find.text(l.t('mn.stakeButton')), findsNothing);
+    expect(find.text(l.t('mn.openWebsite')), findsNothing,
+        reason: 'สัญญาที่แอปไม่รู้จัก — ห้ามชี้ไปสเตคที่เว็บแทน');
   });
 
   testWidgets('เว็บยังไม่มีสัญญา → การ์ด "ยังไม่เปิด" ไม่มีปุ่มสเตค', (tester) async {

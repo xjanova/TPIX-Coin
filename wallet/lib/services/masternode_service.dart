@@ -4,8 +4,9 @@
 ///   - TPIX เป็นเหรียญหลักของเชน → สเตค = ส่ง msg.value ไปกับ registerNode()
 ///     ไม่มี approve แบบ ERC-20
 ///   - ที่อยู่สัญญามาจากเว็บ (`/api/v1/masternode/config`) แต่ "ไม่เชื่อเว็บอย่างเดียว":
-///     ต้อง chain_id = 4289 และ eth_getCode ต้องมีโค้ดจริง ก่อนจะยอมให้กดเขียนธุรกรรม
-///     (ถ้าเว็บโดนแก้/ตอบผิด ผู้ใช้ต้องไม่ส่งเงินไปที่อยู่ที่ไม่มีสัญญา)
+///     ต้อง chain_id = 4289 และ keccak256(eth_getCode) ต้องตรงกับ bytecode ที่ตรึงไว้ในแอป
+///     ([knownRegistryCodeHashes]) ก่อนจะยอมให้กดเขียนธุรกรรม — และตรวจซ้ำก่อนเขียนทุกครั้ง
+///     (ถ้าเว็บโดนแก้/ตอบผิด ผู้ใช้ต้องไม่ส่งเงินไปที่อยู่ที่ไม่มีสัญญา หรือสัญญาปลอมที่ตอบ ABI เหมือนกัน)
 ///   - RPC ใช้ RpcClient.tpix ของแอปเอง (หลัก+สำรอง) ไม่ใช้ rpc_url ที่เว็บส่งมา
 ///   - ★ tier ที่ส่งเข้าสัญญาคือเลข enum (Guardian=0, Sentinel=1, Light=2, Validator=3)
 ///     ไม่ใช่ลำดับการ์ดบนจอ — เว็บเคยพลาดส่งลำดับการ์ดไปแล้วครั้งหนึ่ง
@@ -20,7 +21,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:web3dart/crypto.dart' show bytesToHex;
+import 'package:web3dart/crypto.dart' show bytesToHex, hexToBytes, keccak256;
 import 'package:web3dart/web3dart.dart';
 
 import 'rpc_client.dart';
@@ -115,6 +116,9 @@ enum MnAvailability {
   /// เว็บบอกว่ามี แต่ตรวจบนเชนไม่ผ่าน (chain id ผิด / ไม่มีโค้ดที่อยู่นั้น) → ห้ามเขียน
   unverified,
 
+  /// ที่อยู่นั้นมีสัญญา แต่ bytecode ไม่ใช่ build ที่แอปรุ่นนี้ตรวจแล้ว → ห้ามเขียน ให้อัปเดตแอป
+  unknownCode,
+
   /// พร้อมใช้
   ready,
 }
@@ -131,6 +135,13 @@ class MnContractMismatchException implements Exception {
   const MnContractMismatchException();
   @override
   String toString() => 'Registry contract did not answer as expected';
+}
+
+/// bytecode ของสัญญาไม่ตรงกับที่แอปรุ่นนี้ตรึงไว้ — ห้ามเขียนธุรกรรม ให้อัปเดตแอป
+class MnUnknownCodeException implements Exception {
+  const MnUnknownCodeException();
+  @override
+  String toString() => 'Registry bytecode is not a build this app has verified';
 }
 
 /// ค่าจาก `GET /api/v1/masternode/config`
@@ -344,6 +355,9 @@ class MasterNodeService {
   static const int chainId = 4289;
   static const configUrl = 'https://tpix.online/api/v1/masternode/config';
   static const websiteUrl = 'https://tpix.online/masternode';
+
+  /// หน้าดาวน์โหลดแอปรุ่นล่าสุด (เมื่อเจอสัญญาที่แอปรุ่นนี้ยังไม่รู้จัก)
+  static const downloadUrl = 'https://tpix.online/download';
   static const int maxEndpointLength = 100;
   static const _timeout = Duration(seconds: 10);
 
@@ -352,6 +366,82 @@ class MasterNodeService {
   static http.Client Function() clientFactory = http.Client.new;
 
   static RpcClient get _rpc => RpcClient.tpix;
+
+  // ================================================================
+  // ตรึง bytecode ของสัญญา
+  // ================================================================
+  //
+  // ที่อยู่สัญญามาจากเว็บ — "มีโค้ด + ตอบ getTierInfo ได้" ไม่พอ: เชนนี้ค่าแก๊ส 0
+  // ใครก็ deploy สัญญาปลอมที่ตอบ ABI เหมือนกันได้ฟรี ถ้าเว็บโดนแก้ แอปจะพาเงินสเตคไปเข้าสัญญานั้น
+  // NodeRegistryV2 ไม่มี immutable → build เดียวกันได้ hash เดียวกันทุกที่อยู่
+  // (ชุดเดียวกับแอป Master Node บนเดสก์ท็อป electron/node-registry.js)
+  //
+  // ⚠️ deploy build ใหม่ (แก้สัญญา/เปลี่ยน compiler) ต้องเพิ่ม hash ที่นี่และปล่อยแอปรุ่นใหม่
+  //    **ก่อน** เปลี่ยนที่อยู่บนเว็บ ไม่งั้นแอปจะปฏิเสธสัญญาใหม่ (ปลอดภัย แต่สเตคไม่ได้)
+  //    hash = keccak256(eth_getCode(<ที่อยู่>)) เทียบกับ deployedBytecode ที่ compile จาก commit นั้น
+
+  /// keccak256 ของ runtime bytecode ของ NodeRegistryV2 ที่แอปยอมเขียนธุรกรรมเข้า (ตัวเล็กล้วน)
+  static const knownRegistryCodeHashes = <String>{
+    // TPIX-Coin 026f5f9 — ตัวที่ deploy จริง 0x9c3662972921705FeFa9E9bF0d91190d7B514A2B
+    // (ตรวจซ้ำจาก eth_getCode บน rpc1.tpix.online แล้ว 2026-10-11)
+    '0x127979541deea4d4cd468271bea206277d593660634fc78197c5354782c76ce3',
+    // TPIX-Coin 7e37dbd — ห้ามแก้ minStake ของระดับที่มีโหนดอยู่ (ถ้า redeploy ตัวนี้)
+    '0x8e14ff731f16f502264211c48cc47595f02a4016724f69b67d679c42758765a0',
+  };
+
+  /// ที่อยู่ที่ตรวจ bytecode ผ่านแล้วในรอบนี้ (ตัวเล็ก) — โค้ดของสัญญา CREATE ที่ไม่มี selfdestruct
+  /// เปลี่ยนไม่ได้ จำไว้ได้ทั้งรอบ ไม่ต้องยิง eth_getCode ซ้ำก่อนเขียนทุกครั้ง
+  static final Set<String> _verifiedRegistries = {};
+
+  /// ล้างที่จำไว้ (เทสต์)
+  @visibleForTesting
+  static void resetVerifiedRegistries() => _verifiedRegistries.clear();
+
+  /// keccak256 ของ bytecode (hex) — null ถ้าไม่ใช่ hex ที่มีเนื้อ
+  static String? codeHash(String? code) {
+    if (code == null) return null;
+    final body = code.startsWith('0x') || code.startsWith('0X') ? code.substring(2) : code;
+    if (body.isEmpty || body.length.isOdd || !RegExp(r'^[0-9a-fA-F]+$').hasMatch(body)) {
+      return null;
+    }
+    return bytesToHex(keccak256(hexToBytes(body)), include0x: true).toLowerCase();
+  }
+
+  /// โค้ดนี้เป็น NodeRegistryV2 build ที่แอปรุ่นนี้ตรวจแล้วไหม
+  static bool isKnownRegistryCode(String? code) {
+    final h = codeHash(code);
+    return h != null && knownRegistryCodeHashes.contains(h);
+  }
+
+  /// ด่านก่อนเขียนทุกครั้ง (สเตค/รับรางวัล/ถอน) — ผ่าน = คืนเฉยๆ
+  ///
+  /// throws [MnUnavailableException] เมื่อถามเชนไม่ได้ (ห้ามถือว่าผ่าน)
+  /// throws [MnContractMismatchException] เมื่อโหนดตอบว่าที่อยู่นั้นไม่มีโค้ด
+  /// throws [MnUnknownCodeException] เมื่อ bytecode ไม่ตรงกับที่ตรึงไว้
+  static Future<void> verifyRegistryCode(String registry) async {
+    final key = registry.toLowerCase();
+    if (_verifiedRegistries.contains(key)) return;
+    final String code;
+    try {
+      code = await _rpc.getCode(registry);
+    } on RpcUnavailableException {
+      throw const MnUnavailableException();
+    } on RpcException {
+      // polygon-edge: ที่อยู่ที่ไม่มีโค้ดตอบ error แทน "0x" — ยังไงก็ไม่ใช่สัญญาที่เขียนเข้าได้
+      throw const MnContractMismatchException();
+    } on FormatException {
+      throw const MnUnavailableException();
+    }
+    if (!_hasCode(code)) throw const MnContractMismatchException();
+    if (!isKnownRegistryCode(code)) throw const MnUnknownCodeException();
+    _verifiedRegistries.add(key);
+  }
+
+  /// "0x" / ศูนย์ล้วน = ไม่มีโค้ด
+  static bool _hasCode(String code) {
+    final body = code.startsWith('0x') ? code.substring(2) : code;
+    return body.isNotEmpty && !RegExp(r'^0*$').hasMatch(body);
+  }
 
   // ── ABI (JSON ของ NodeRegistryV2 เฉพาะฟังก์ชันที่แอปใช้) ──
   static const _abiJson = '''
@@ -483,7 +573,7 @@ class MasterNodeService {
   // ค้นหา + ตรวจสัญญา
   // ================================================================
 
-  /// อ่าน config จากเว็บ แล้วตรวจบนเชนเองว่าที่อยู่นั้นมีสัญญาจริง
+  /// อ่าน config จากเว็บ แล้วตรวจบนเชนเองว่าที่อยู่นั้นเป็นสัญญา build ที่แอปรู้จัก
   ///
   /// throws [MnUnavailableException] เมื่อเว็บ/เชนติดต่อไม่ได้ (ให้ผู้ใช้ลองใหม่)
   static Future<MnRegistry> discover() async {
@@ -508,10 +598,14 @@ class MasterNodeService {
     } on FormatException {
       throw const MnUnavailableException();
     }
-    final body = code.startsWith('0x') ? code.substring(2) : code;
-    if (body.isEmpty || RegExp(r'^0*$').hasMatch(body)) {
+    if (!_hasCode(code)) {
       return MnRegistry(MnAvailability.unverified, config: config);
     }
+    // มีโค้ด แต่ไม่ใช่ build ที่ตรวจแล้ว (สัญญาปลอม หรือ redeploy ที่แอปรุ่นนี้ยังไม่รู้จัก)
+    if (!isKnownRegistryCode(code)) {
+      return MnRegistry(MnAvailability.unknownCode, config: config);
+    }
+    _verifiedRegistries.add(config.registryAddress.toLowerCase());
     return MnRegistry(
       MnAvailability.ready,
       address: config.registryAddress,

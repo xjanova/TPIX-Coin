@@ -2,7 +2,8 @@
 ///
 /// ด่านความปลอดภัย (เรียงตามลำดับที่ผู้ใช้เจอ):
 ///   1. เว็บยังไม่ประกาศสัญญา → โชว์ "ยังไม่เปิด" ไม่มีปุ่มเขียนเลย
-///   2. ที่อยู่สัญญาต้องมีโค้ดจริงบนเชน 4289 (ตรวจใน MasterNodeService.discover)
+///   2. ที่อยู่สัญญาต้องเป็น bytecode ที่แอปตรึงไว้บนเชน 4289 (ตรวจใน MasterNodeService.discover
+///      และตรวจซ้ำก่อนเขียนทุกครั้ง) — ไม่รู้จัก = ให้อัปเดตแอป, ถามเชนไม่ได้ = ไม่ส่ง
 ///   3. ปุ่มที่ใช้ไม่ได้ต้องบอกเหตุผล (ปิดรับ/เต็ม/ล็อกอยู่/กองรางวัลว่าง/ยอดไม่พอ)
 ///   4. กล่องยืนยันโชว์ระดับ จำนวนเต็มทุกหลัก วันล็อก ที่อยู่สัญญา → แล้วค่อยถาม PIN
 ///   5. ยกเลิกที่ PIN = ไม่ส่งอะไรเลย / สลับกระเป๋าระหว่างทาง = ยกเลิก
@@ -31,7 +32,7 @@ import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
 import '../widgets/tx_auth.dart';
 
-enum _Phase { loading, error, notDeployed, unverified, ready }
+enum _Phase { loading, error, notDeployed, unverified, unknownCode, ready }
 
 enum _Action { stake, claim, unstake, withdraw }
 
@@ -106,9 +107,11 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
         setState(() {
           _snapshot = null;
           _refreshing = false;
-          _phase = reg.availability == MnAvailability.notDeployed
-              ? _Phase.notDeployed
-              : _Phase.unverified;
+          _phase = switch (reg.availability) {
+            MnAvailability.notDeployed => _Phase.notDeployed,
+            MnAvailability.unknownCode => _Phase.unknownCode,
+            _ => _Phase.unverified,
+          };
         });
         return;
       }
@@ -177,6 +180,10 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
   }
 
   String _friendlyError(Object e, LocaleProvider l) {
+    // ด่านตรวจ bytecode ก่อนเขียน — ทุกกรณีคือ "ยังไม่ได้ส่งอะไร"
+    if (e is MnUnknownCodeException) return l.t('mn.unknownCodeTitle');
+    if (e is MnContractMismatchException) return l.t('mn.unverifiedTitle');
+    if (e is MnUnavailableException) return l.t('mn.errVerifyNetwork');
     if (e is RpcUnavailableException) return l.t('send.errNetwork');
     if (e is WalletChangedException) return l.t('send.errWalletChanged');
     if (e is RpcException) {
@@ -381,7 +388,12 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
     });
     var sent = false;
     try {
-      // ด่านแรก: จำลองบนเชนก่อน — สัญญาจะปฏิเสธ (เต็ม/ล็อก/ปิดรับ) ก็บอกเหตุผลเลย
+      // ด่านแรก: สัญญาที่จะส่งเงินเข้าต้องยังเป็น bytecode ที่แอปตรึงไว้ (จำผลไว้ทั้งรอบ)
+      // ถามเชนไม่ได้ = ไม่ส่ง — ห้ามถือว่าผ่าน
+      await MasterNodeService.verifyRegistryCode(snap.registry);
+      if (!mounted) return;
+
+      // จำลองบนเชนก่อน — สัญญาจะปฏิเสธ (เต็ม/ล็อก/ปิดรับ) ก็บอกเหตุผลเลย
       // ไม่ต้องให้ผู้ใช้ใส่ PIN เพื่อไปเจอธุรกรรมที่ล้มแน่ๆ
       final estimated = await MasterNodeService.estimateGas(
         registry: snap.registry,
@@ -597,6 +609,17 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
             _textButton(l.t('mn.openWebsite'), _openWebsite),
           ],
         );
+      case _Phase.unknownCode:
+        return _messageCard(
+          icon: Icons.system_update_rounded,
+          color: AppTheme.danger,
+          title: l.t('mn.unknownCodeTitle'),
+          body: l.t('mn.unknownCodeBody'),
+          actions: [
+            _primaryButton(l.t('mn.updateApp'), _openDownloadPage),
+            _textButton(l.t('mn.retry'), _load),
+          ],
+        );
       case _Phase.ready:
         final snap = _snapshot!;
         return RefreshIndicator(
@@ -631,6 +654,16 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
   Future<void> _openWebsite() async {
     try {
       await launchUrl(Uri.parse(MasterNodeService.websiteUrl),
+          mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) _snack(context.read<LocaleProvider>().t('common.browser_error'), error: true);
+    }
+  }
+
+  /// หน้าดาวน์โหลดแอป — ไม่พาไปสเตคที่เว็บ เพราะแอปยังไม่รู้จักสัญญาตัวนี้
+  Future<void> _openDownloadPage() async {
+    try {
+      await launchUrl(Uri.parse(MasterNodeService.downloadUrl),
           mode: LaunchMode.externalApplication);
     } catch (_) {
       if (mounted) _snack(context.read<LocaleProvider>().t('common.browser_error'), error: true);

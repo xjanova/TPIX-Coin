@@ -6,6 +6,8 @@
 ///   - tier ที่ส่งเข้าสัญญา = เลข enum (Guardian=0 … Validator=3) ไม่ใช่ลำดับการ์ดบนจอ
 ///   - ปุ่มที่กดไม่ได้ต้องมีเหตุผลที่ถูกต้อง (ปิดรับ/เต็ม/ล็อก/กองรางวัลว่าง/ยอดไม่พอ)
 ///   - เว็บยังไม่มีสัญญา / ที่อยู่ไม่มีโค้ด / เว็บล่ม — แยกออกจากกันชัดเจน
+///   - bytecode ของสัญญาต้องตรงกับที่ตรึงไว้ (ไฟล์ test/support/node_registry_v2_026f5f9.hex
+///     คือ eth_getCode จริงของ 0x9c36…2A2B — hash ที่คาดหวังคำนวณด้วย ethers.keccak256 ไม่ใช่โค้ดเรา)
 library;
 
 import 'dart:convert';
@@ -35,6 +37,15 @@ const _registerGuardian =
     '6e6f64652e747069782e6f6e6c696e653a333033303300000000000000000000';
 
 const _operator = '0x1234567890abcdef1234567890abcdef12345678';
+
+/// runtime bytecode จริงของ NodeRegistryV2 ที่ deploy แล้ว (TPIX-Coin 026f5f9)
+final _liveCode = File('test/support/node_registry_v2_026f5f9.hex').readAsStringSync().trim();
+
+/// ethers.keccak256(_liveCode)
+const _liveCodeHash = '0x127979541deea4d4cd468271bea206277d593660634fc78197c5354782c76ce3';
+
+/// สัญญาอื่นที่มีโค้ด (ตอบ ABI เหมือนกันได้ แต่ไม่ใช่ build ที่ตรวจแล้ว)
+const _otherCode = '0x6080604052';
 
 /// getNodeInfo → (operator, tier=1, status=1, 100000 TPIX, registeredAt=1760000000,
 /// unlockAt=1767776000, lastRewardAt=1760000500, totalRewards=12.5, uptime=9850,
@@ -160,7 +171,7 @@ http.Response _rpcRevert(String msg) => http.Response(
 RpcClient _fakeChain({
   bool optionalSupported = true,
   bool paused = false,
-  String code = '0x6080604052',
+  String? code,
   bool unreachable = false,
 }) {
   final mock = MockClient((req) async {
@@ -168,7 +179,7 @@ RpcClient _fakeChain({
     final body = jsonDecode(req.body) as Map<String, dynamic>;
     final method = body['method'] as String;
     final params = body['params'] as List;
-    if (method == 'eth_getCode') return _rpcOk(code);
+    if (method == 'eth_getCode') return _rpcOk(code ?? _liveCode);
     if (method != 'eth_call') return _rpcOk('0x0');
     final data = (params.first as Map)['data'] as String;
     final selector = data.substring(0, 10);
@@ -224,6 +235,7 @@ void main() {
   tearDown(() {
     RpcClient.overrideForChain(4289, null);
     MasterNodeService.clientFactory = http.Client.new;
+    MasterNodeService.resetVerifiedRegistries();
   });
 
   group('ABI encode (เทียบกับ ethers)', () {
@@ -534,6 +546,100 @@ void main() {
     });
   });
 
+  group('ตรึง bytecode ของสัญญา', () {
+    const registry = '0x9c3662972921705FeFa9E9bF0d91190d7B514A2B';
+
+    /// เชนปลอมที่นับจำนวนครั้งที่ถาม eth_getCode
+    RpcClient countingChain(List<int> calls, http.Response Function() respond) => RpcClient(
+          ['https://rpc.test'],
+          timeout: const Duration(seconds: 2),
+          httpClient: MockClient((req) async {
+            final method = (jsonDecode(req.body) as Map)['method'];
+            if (method == 'eth_getCode') calls.add(1);
+            return respond();
+          }),
+        );
+
+    test('keccak256 ของโค้ดจริงตรงกับค่าจาก ethers และอยู่ในรายการที่ตรึงไว้', () {
+      expect(MasterNodeService.codeHash(_liveCode), _liveCodeHash);
+      expect(MasterNodeService.knownRegistryCodeHashes, contains(_liveCodeHash));
+      expect(MasterNodeService.isKnownRegistryCode(_liveCode), isTrue);
+      // ตัวพิมพ์ใหญ่ใน hex ไม่ทำให้ hash เปลี่ยน
+      expect(MasterNodeService.isKnownRegistryCode('0x${_liveCode.substring(2).toUpperCase()}'),
+          isTrue);
+    });
+
+    test('แก้แค่ไบต์เดียว / ไม่มีโค้ด / ไม่ใช่ hex → ไม่รู้จัก', () {
+      final last = _liveCode.substring(_liveCode.length - 2);
+      final tampered =
+          '${_liveCode.substring(0, _liveCode.length - 2)}${last == '00' ? '01' : '00'}';
+      expect(MasterNodeService.isKnownRegistryCode(tampered), isFalse);
+      expect(MasterNodeService.isKnownRegistryCode(_otherCode), isFalse);
+      expect(MasterNodeService.isKnownRegistryCode('0x'), isFalse);
+      expect(MasterNodeService.isKnownRegistryCode('0x123'), isFalse);
+      expect(MasterNodeService.isKnownRegistryCode('0xzz'), isFalse);
+      expect(MasterNodeService.isKnownRegistryCode(null), isFalse);
+    });
+
+    test('ก่อนเขียน: ตรง → ผ่าน และจำไว้ (ครั้งต่อไปไม่ยิง RPC ซ้ำ)', () async {
+      final calls = <int>[];
+      RpcClient.overrideForChain(4289, countingChain(calls, () => _rpcOk(_liveCode)));
+      await MasterNodeService.verifyRegistryCode(registry);
+      await MasterNodeService.verifyRegistryCode(registry.toLowerCase());
+      expect(calls, hasLength(1));
+    });
+
+    test('ก่อนเขียน: bytecode ไม่ตรง → MnUnknownCodeException และไม่จำว่าผ่าน', () async {
+      final calls = <int>[];
+      RpcClient.overrideForChain(4289, countingChain(calls, () => _rpcOk(_otherCode)));
+      await expectLater(MasterNodeService.verifyRegistryCode(registry),
+          throwsA(isA<MnUnknownCodeException>()));
+      await expectLater(MasterNodeService.verifyRegistryCode(registry),
+          throwsA(isA<MnUnknownCodeException>()));
+      expect(calls, hasLength(2));
+    });
+
+    test('ก่อนเขียน: RPC ล่ม → MnUnavailableException (ไม่ถือว่าผ่าน) แล้วตรวจใหม่รอบหน้า',
+        () async {
+      RpcClient.overrideForChain(4289, _fakeChain(unreachable: true));
+      await expectLater(MasterNodeService.verifyRegistryCode(registry),
+          throwsA(isA<MnUnavailableException>()));
+      // เน็ตกลับมา → ตรวจจริงแล้วผ่าน
+      RpcClient.overrideForChain(4289, _fakeChain());
+      await MasterNodeService.verifyRegistryCode(registry);
+    });
+
+    test('ก่อนเขียน: ที่อยู่ไม่มีโค้ด ("0x" / polygon-edge "unable to fetch code") → ไม่ผ่าน',
+        () async {
+      RpcClient.overrideForChain(4289, _fakeChain(code: '0x'));
+      await expectLater(MasterNodeService.verifyRegistryCode(registry),
+          throwsA(isA<MnContractMismatchException>()));
+      RpcClient.overrideForChain(
+        4289,
+        countingChain(
+            [],
+            () => http.Response(
+                jsonEncode({
+                  'jsonrpc': '2.0',
+                  'id': 1,
+                  'error': {'code': -32600, 'message': 'unable to fetch code'},
+                }),
+                200)),
+      );
+      await expectLater(MasterNodeService.verifyRegistryCode(registry),
+          throwsA(isA<MnContractMismatchException>()));
+    });
+
+    test('discover ผ่านแล้ว → ด่านก่อนเขียนใช้ผลที่จำไว้ ไม่ยิง RPC เพิ่ม', () async {
+      MasterNodeService.clientFactory = () => _configClient(200, _config(address: registry));
+      final calls = <int>[];
+      RpcClient.overrideForChain(4289, countingChain(calls, () => _rpcOk(_liveCode)));
+      expect((await MasterNodeService.discover()).availability, MnAvailability.ready);
+      await MasterNodeService.verifyRegistryCode(registry);
+      expect(calls, hasLength(1));
+    });
+  });
+
   group('ค้นหาสัญญา (discover)', () {
     test('เว็บยังไม่มี endpoint (404) → ยังไม่เปิด', () async {
       MasterNodeService.clientFactory = () => _configClient(404, '<html>Not Found</html>');
@@ -577,7 +683,7 @@ void main() {
       expect((await MasterNodeService.discover()).availability, MnAvailability.unverified);
     });
 
-    test('มีโค้ดจริง → ready (ใช้ RPC ของแอป ไม่ใช่ rpc_url จากเว็บ)', () async {
+    test('bytecode ตรงกับที่ตรึงไว้ → ready (ใช้ RPC ของแอป ไม่ใช่ rpc_url จากเว็บ)', () async {
       final seenHosts = <String>[];
       MasterNodeService.clientFactory = () => _configClient(200, _config());
       RpcClient.overrideForChain(
@@ -585,7 +691,7 @@ void main() {
         RpcClient(['https://rpc.test'],
             httpClient: MockClient((req) async {
               seenHosts.add(req.url.host);
-              return _rpcOk('0x6080');
+              return _rpcOk(_liveCode);
             })),
       );
       final r = await MasterNodeService.discover();
@@ -593,6 +699,14 @@ void main() {
       expect(r.address, '0x00000000000000000000000000000000000000aa');
       expect(seenHosts, isNotEmpty);
       expect(seenHosts, everyElement('rpc.test'));
+    });
+
+    test('มีโค้ดแต่ไม่ใช่ build ที่ตรวจแล้ว → unknownCode (ห้ามเขียน ให้อัปเดตแอป)', () async {
+      MasterNodeService.clientFactory = () => _configClient(200, _config());
+      RpcClient.overrideForChain(4289, _fakeChain(code: _otherCode));
+      final r = await MasterNodeService.discover();
+      expect(r.availability, MnAvailability.unknownCode);
+      expect(r.address, isNull);
     });
 
     test('Cloudflare ตอบ HTML 200 / 5xx / เน็ตหลุด → MnUnavailableException (ให้ลองใหม่)',
