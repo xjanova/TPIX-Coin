@@ -37,6 +37,8 @@ const CTOR_ARGS = {
     ValidatorGovernance: [SAMPLE],
     // TPIXBondingCurve(tpix, usdt, liquidityWallet, supply, startPrice, endPrice, raiseTarget, sellTarget)
     TPIXBondingCurve: [SAMPLE, SAMPLE, SAMPLE, 10n ** 26n, 10n ** 17n, 10n ** 18n, 5_000_000n * 10n ** 6n, 35n * 10n ** 25n],
+    // constructor ตรวจว่า token มีโค้ดจริง — ต้องใช้ USDT_TPIX ตัวจริงบนเชน ไม่งั้น constructor revert ก่อนรันจบ
+    TPIXBridgeMinter: ["0x0A4Ee87551eF041f3EecFBBfdcfFC1B46a4878f1", 1_000n * 10n ** 6n, 5_000n * 10n ** 6n],
 };
 
 function walk(dir, out = []) {
