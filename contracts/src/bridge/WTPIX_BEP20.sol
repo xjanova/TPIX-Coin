@@ -29,6 +29,13 @@ import "@openzeppelin/contracts/access/Ownable2Step.sol";
  *
  * ⚠️ เจ้าของสั่ง pause() ได้ = หยุดการโอนทุกกระเป๋า (เบรกฉุกเฉินเมื่อสะพานถูกโจมตี)
  *    ตัวตรวจเหรียญ/CMC จะขึ้นเตือน "owner can pause transfers" — เจ้าของต้องเป็น multisig ก่อนเปิดพูลจริง
+ *
+ * ⚠️ burn() ทุกครั้ง = ข้ามสะพานกลับ: เซิร์ฟเวอร์ปล่อย TPIX จาก TPIXBridgeVault ให้ที่อยู่เดียวกันบน TPIX Chain
+ *    - ห้ามใช้ burn เพื่อ "ลด supply" (tokenomics burn) — TPIX ไม่ได้หายไปไหน ผู้เผาได้ TPIX คืน
+ *      อยากลด supply จริงต้องเผาฝั่ง TPIX Chain ไม่ใช่ที่นี่
+ *    - เผาครั้งเดียวเกิน maxPerTx ของคลัง (ปริยาย 100,000) ปล่อยคืนในรายการเดียวไม่ได้ — เงินไม่หาย
+ *      แต่ค้างรอคนตรวจ: เจ้าของคลังขยาย maxPerTx/dailyCap ชั่วคราวแล้วลดกลับ
+ *      หน้า /bridge กันไว้แล้ว ทางเดียวที่ติดคือเรียก burn() ตรงที่สัญญา
  */
 contract WTPIX is ERC20, ERC20Burnable, ERC20Pausable, Ownable2Step {
     /// @notice จำนวน supply สูงสุดที่สามารถ mint ได้ (ตรงกับ Token Sale allocation)

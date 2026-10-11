@@ -79,6 +79,12 @@ async function main() {
         if (owner.toLowerCase() !== deployer.address.toLowerCase()) {
             throw new Error(`wTPIX ${existingWtpix} เป็นของ ${owner} ไม่ใช่ deployer — ผูก minter ให้ไม่ได้`);
         }
+        // เหรียญที่มี supply อยู่ก่อนแล้วไม่ได้ถูก mint ผ่าน minter ตัวใหม่ → supply > minter.totalMinted
+        // ตัวเฝ้าเหตุผิดปกติของเว็บจะถือว่าเป็นการ mint ที่ระบบไม่ได้สั่ง แล้วหยุดสะพานทันที
+        const existingSupply = await wtpix.totalSupply();
+        if (existingSupply > 0n) {
+            throw new Error(`wTPIX ${existingWtpix} มี supply อยู่แล้ว ${hre.ethers.formatEther(existingSupply)} — ใช้ซ้ำไม่ได้ ให้ deploy ตัวใหม่ (ไม่ต้องตั้ง WTPIX_BSC_ADDRESS)`);
+        }
         console.log("[1/4] wTPIX (reused):", existingWtpix);
     } else {
         console.log("[1/4] Deploying wTPIX (BEP-20)...");
