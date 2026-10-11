@@ -19,6 +19,16 @@ import "@openzeppelin/contracts/access/Ownable2Step.sol";
  *   - Ownable2Step (กัน typo เปลี่ยน owner)
  *   - ERC20Pausable (emergency stop เผื่อ minter exploit)
  *   - Bridge contract change มี 2-day timelock (กัน rug แบบเปลี่ยน bridge ฉับพลัน)
+ *
+ * 2026-10-11 (รีวิวจากเซสชันสะพาน USDT):
+ *   - เดิม setMinter() เพิ่ม minter ได้ทันที → คีย์เจ้าของหลุด = เพิ่ม minter ของตัวเองแล้ว mint ถึง MAX_SUPPLY
+ *     ข้ามเพดานรายวันของ WTPIXBridgeMinter ไปทั้งหมด แล้วเทใส่พูล PancakeSwap
+ *   - ตอนนี้: ตั้ง minter ตัวแรกได้ครั้งเดียว (setInitialMinter — สคริปต์ deploy ผูก WTPIXBridgeMinter ทันที)
+ *     เพิ่มตัวต่อไปต้อง queueMinter → รอ 2 วัน → executeMinter (คนเห็นทันบน explorer)
+ *     ถอด minter ทำได้ทันที (removeMinter) เพื่อตัดตัวที่มีปัญหาได้เร็ว
+ *
+ * ⚠️ เจ้าของสั่ง pause() ได้ = หยุดการโอนทุกกระเป๋า (เบรกฉุกเฉินเมื่อสะพานถูกโจมตี)
+ *    ตัวตรวจเหรียญ/CMC จะขึ้นเตือน "owner can pause transfers" — เจ้าของต้องเป็น multisig ก่อนเปิดพูลจริง
  */
 contract WTPIX is ERC20, ERC20Burnable, ERC20Pausable, Ownable2Step {
     /// @notice จำนวน supply สูงสุดที่สามารถ mint ได้ (ตรงกับ Token Sale allocation)
@@ -36,10 +46,21 @@ contract WTPIX is ERC20, ERC20Burnable, ERC20Pausable, Ownable2Step {
     /// @notice Timestamp เมื่อ pending bridge change execute ได้
     uint256 public pendingBridgeExecuteAfter;
 
-    /// @notice Minter addresses — TokenSale contract + bridge
+    /// @notice Timelock สำหรับการ "เพิ่ม" minter (2 days) — การถอดไม่ต้องรอ
+    uint256 public constant MINTER_ADD_TIMELOCK = 2 days;
+
+    /// @notice Minter addresses — ปกติมีตัวเดียวคือ WTPIXBridgeMinter
     mapping(address => bool) public minters;
 
+    /// @notice ตั้ง minter ตัวแรกไปแล้วหรือยัง (setInitialMinter ใช้ได้ครั้งเดียวตลอดอายุสัญญา)
+    bool public initialMinterSet;
+
+    /// @notice เวลาที่ minter ที่รอคิวจะ execute ได้ (0 = ไม่มีคิว)
+    mapping(address => uint256) public pendingMinterExecuteAfter;
+
     event MinterSet(address indexed minter, bool status);
+    event MinterQueued(address indexed minter, uint256 executeAfter);
+    event MinterCancelled(address indexed minter);
     event BridgeContractQueued(address indexed bridge, uint256 executeAfter);
     event BridgeContractCancelled(address indexed bridge);
     event BridgeContractSet(address indexed bridge);
@@ -47,14 +68,55 @@ contract WTPIX is ERC20, ERC20Burnable, ERC20Pausable, Ownable2Step {
     constructor() ERC20("Wrapped TPIX", "wTPIX") Ownable(msg.sender) {}
 
     /**
-     * @notice ตั้งค่า minter (TokenSale contract หรือ bridge)
+     * @notice ตั้ง minter ตัวแรกทันที — ใช้ได้ครั้งเดียว (สคริปต์ deploy ผูก WTPIXBridgeMinter ในรอบเดียวกับที่ deploy)
      * @param minter ที่อยู่ contract ที่มีสิทธิ์ mint
-     * @param status เปิด/ปิดสิทธิ์
      */
-    function setMinter(address minter, bool status) external onlyOwner {
+    function setInitialMinter(address minter) external onlyOwner {
+        require(!initialMinterSet, "WTPIX: initial minter already set");
         require(minter != address(0), "WTPIX: zero minter");
-        minters[minter] = status;
-        emit MinterSet(minter, status);
+        initialMinterSet = true;
+        minters[minter] = true;
+        emit MinterSet(minter, true);
+    }
+
+    /**
+     * @notice เข้าคิวเพิ่ม minter — execute ได้หลัง MINTER_ADD_TIMELOCK
+     * @dev คีย์เจ้าของหลุดก็เพิ่ม minter ฉับพลันไม่ได้ — ทีมมีเวลา 2 วันเห็น event แล้วย้ายเจ้าของ/pause
+     */
+    function queueMinter(address minter) external onlyOwner {
+        require(minter != address(0), "WTPIX: zero minter");
+        require(!minters[minter], "WTPIX: already a minter");
+        uint256 executeAfter = block.timestamp + MINTER_ADD_TIMELOCK;
+        pendingMinterExecuteAfter[minter] = executeAfter;
+        emit MinterQueued(minter, executeAfter);
+    }
+
+    /// @notice ยกเลิกคิวเพิ่ม minter
+    function cancelMinter(address minter) external onlyOwner {
+        require(pendingMinterExecuteAfter[minter] != 0, "WTPIX: no pending minter");
+        delete pendingMinterExecuteAfter[minter];
+        emit MinterCancelled(minter);
+    }
+
+    /// @notice เพิ่ม minter ที่รอคิวครบเวลาแล้ว
+    function executeMinter(address minter) external onlyOwner {
+        uint256 executeAfter = pendingMinterExecuteAfter[minter];
+        require(executeAfter != 0, "WTPIX: no pending minter");
+        require(block.timestamp >= executeAfter, "WTPIX: timelock not expired");
+        delete pendingMinterExecuteAfter[minter];
+        minters[minter] = true;
+        emit MinterSet(minter, true);
+    }
+
+    /// @notice ถอดสิทธิ์ minter ทันที (และล้างคิวของที่อยู่นั้นถ้ามี) — ทางตัดตัวที่มีปัญหาให้เร็วที่สุด
+    function removeMinter(address minter) external onlyOwner {
+        require(minters[minter] || pendingMinterExecuteAfter[minter] != 0, "WTPIX: not a minter");
+        minters[minter] = false;
+        if (pendingMinterExecuteAfter[minter] != 0) {
+            delete pendingMinterExecuteAfter[minter];
+            emit MinterCancelled(minter);
+        }
+        emit MinterSet(minter, false);
     }
 
     /**

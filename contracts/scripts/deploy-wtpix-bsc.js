@@ -77,7 +77,7 @@ async function main() {
         wtpix = await hre.ethers.getContractAt(WTPIX_FQN, existingWtpix, deployer);
         const owner = await wtpix.owner();
         if (owner.toLowerCase() !== deployer.address.toLowerCase()) {
-            throw new Error(`wTPIX ${existingWtpix} เป็นของ ${owner} ไม่ใช่ deployer — setMinter ให้ไม่ได้`);
+            throw new Error(`wTPIX ${existingWtpix} เป็นของ ${owner} ไม่ใช่ deployer — ผูก minter ให้ไม่ได้`);
         }
         console.log("[1/4] wTPIX (reused):", existingWtpix);
     } else {
@@ -100,8 +100,16 @@ async function main() {
 
     // ── 3) ผูกสิทธิ์ ─────────────────────────────────────────────────────────────
     console.log("\n[3/4] Roles");
-    await (await wtpix.setMinter(minterAddress, true)).wait();
-    console.log("   wTPIX.setMinter(minter, true) ✓  ← ทางเดียวที่ mint wTPIX ได้");
+    // ตัวแรกตั้งได้ทันทีครั้งเดียว — ถ้า wTPIX ตัวนี้เคยตั้งไปแล้ว (reuse) ต้องเข้าคิวรอ 2 วัน
+    let minterPending = false;
+    if (!(await wtpix.initialMinterSet())) {
+        await (await wtpix.setInitialMinter(minterAddress)).wait();
+        console.log("   wTPIX.setInitialMinter(minter) ✓  ← ทางเดียวที่ mint wTPIX ได้");
+    } else {
+        await (await wtpix.queueMinter(minterAddress)).wait();
+        minterPending = true;
+        console.log("   wTPIX.queueMinter(minter) ✓  ← เพิ่มได้จริงหลัง 2 วัน (executeMinter)");
+    }
     if (relayer) {
         await (await minter.setRelayer(relayer, true)).wait();
         console.log(`   minter.setRelayer(${relayer}, true) ✓`);
@@ -146,11 +154,13 @@ async function main() {
     }
 
     const todo = [];
+    if (minterPending) todo.push(`ครบ 2 วันแล้วรัน wTPIX(${wtpixAddress}).executeMinter(${minterAddress}) — ก่อนหน้านั้น mint ไม่ได้`);
     if (!relayer) todo.push(`WTPIXBridgeMinter(${minterAddress}).setRelayer(<ที่อยู่ relayer ของเซิร์ฟเวอร์>, true)`);
     if (!guardian) todo.push(`WTPIXBridgeMinter(${minterAddress}).setGuardian(<ที่อยู่ guardian>, true)   ← ไม่บังคับ`);
     todo.push("เติม BNB ให้ relayer ไว้จ่ายแก๊ส mint (ครั้งละไม่กี่เซ็นต์)");
     todo.push("verify ซอร์สบน BscScan: Verify & Publish → Solidity (Standard JSON) จาก artifacts/build-info");
-    todo.push("ย้ายเจ้าของไป multisig (Safe) ก่อนเปิดพูลใหญ่: transferOwnership → acceptOwnership");
+    todo.push("⚠️ ก่อนเปิดพูล PancakeSwap: ย้ายเจ้าของ wTPIX + WTPIXBridgeMinter + TPIXBridgeVault ไป multisig (Safe) — transferOwnership → acceptOwnership");
+    todo.push("   (เจ้าของสั่ง pause หยุดการโอน wTPIX ได้ และเข้าคิวเพิ่ม minter ได้ — ตัวตรวจเหรียญ/CMC ดูเรื่องนี้)");
 
     console.log("\nขั้นตอนที่ยังเหลือ:");
     todo.forEach((line, i) => console.log(`  ${i + 1}. ${line}`));

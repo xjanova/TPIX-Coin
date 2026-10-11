@@ -295,7 +295,7 @@ describe("TPIXBridgeVault", function () {
             const wtpix = await WTPIX.deploy();
             const Minter = await ethers.getContractFactory("WTPIXBridgeMinter");
             const minter = await Minter.deploy(await wtpix.getAddress(), MAX_PER_TX, DAILY_CAP);
-            await wtpix.setMinter(await minter.getAddress(), true);
+            await wtpix.setInitialMinter(await minter.getAddress());
             await minter.setRelayer(relayer.address, true);
 
             // 1) ล็อก 1000 TPIX บน "TPIX Chain"

@@ -22,7 +22,7 @@ describe("WTPIX_BEP20", function () {
         const wtpix = await WTPIX.deploy();
         await wtpix.waitForDeployment();
 
-        await wtpix.connect(owner).setMinter(minter.address, true);
+        await wtpix.connect(owner).setInitialMinter(minter.address);
 
         // ตั้ง bridgeContract ผ่าน timelock 2 วัน
         await wtpix.connect(owner).queueBridgeContract(bridge.address);
@@ -115,6 +115,85 @@ describe("WTPIX_BEP20", function () {
             const { wtpix, alice, bob } = await loadFixture(deployFixture);
             await expect(wtpix.connect(alice).queueBridgeContract(bob.address))
                 .to.be.revertedWithCustomError(wtpix, "OwnableUnauthorizedAccount");
+        });
+    });
+
+    /**
+     * 2026-10-11: เดิม setMinter() เพิ่ม minter ได้ทันที — คีย์เจ้าของหลุด = mint ถึง MAX_SUPPLY ข้ามเพดานของสะพาน
+     * ตอนนี้ตัวแรกตั้งได้ครั้งเดียว ตัวต่อไปต้องรอ 2 วัน ส่วนการถอดทำได้ทันที
+     */
+    describe("minter timelock", function () {
+        it("ไม่มีฟังก์ชันเพิ่ม minter ทันทีแบบเดิมแล้ว", async function () {
+            const { wtpix } = await loadFixture(deployFixture);
+            const names = wtpix.interface.fragments.filter((f) => f.type === "function").map((f) => f.name);
+            expect(names).to.not.include("setMinter");
+        });
+
+        it("setInitialMinter ใช้ได้ครั้งเดียว", async function () {
+            const { wtpix, owner, bob } = await loadFixture(deployFixture);
+            expect(await wtpix.initialMinterSet()).to.equal(true);
+            await expect(wtpix.connect(owner).setInitialMinter(bob.address))
+                .to.be.revertedWith("WTPIX: initial minter already set");
+        });
+
+        it("คนที่ไม่ใช่ owner ตั้ง/เข้าคิว/ถอด minter ไม่ได้", async function () {
+            const WTPIX = await ethers.getContractFactory(FQN);
+            const fresh = await WTPIX.deploy();
+            const [, , , alice, bob] = await ethers.getSigners();
+            await expect(fresh.connect(alice).setInitialMinter(bob.address))
+                .to.be.revertedWithCustomError(fresh, "OwnableUnauthorizedAccount");
+            await expect(fresh.connect(alice).queueMinter(bob.address))
+                .to.be.revertedWithCustomError(fresh, "OwnableUnauthorizedAccount");
+            await expect(fresh.connect(alice).removeMinter(bob.address))
+                .to.be.revertedWithCustomError(fresh, "OwnableUnauthorizedAccount");
+        });
+
+        it("เพิ่ม minter ตัวที่สองต้องรอครบ 2 วัน", async function () {
+            const { wtpix, owner, bob } = await loadFixture(deployFixture);
+            await expect(wtpix.connect(owner).queueMinter(bob.address))
+                .to.emit(wtpix, "MinterQueued");
+            await expect(wtpix.connect(owner).executeMinter(bob.address))
+                .to.be.revertedWith("WTPIX: timelock not expired");
+            await expect(wtpix.connect(bob).mint(bob.address, 1))
+                .to.be.revertedWith("WTPIX: not a minter");
+
+            await time.increase(TIMELOCK + 1);
+            await expect(wtpix.connect(owner).executeMinter(bob.address))
+                .to.emit(wtpix, "MinterSet").withArgs(bob.address, true);
+            await wtpix.connect(bob).mint(bob.address, 1);
+            expect(await wtpix.balanceOf(bob.address)).to.equal(1);
+        });
+
+        it("ยกเลิกคิวแล้ว execute ไม่ได้", async function () {
+            const { wtpix, owner, bob } = await loadFixture(deployFixture);
+            await wtpix.connect(owner).queueMinter(bob.address);
+            await expect(wtpix.connect(owner).cancelMinter(bob.address))
+                .to.emit(wtpix, "MinterCancelled").withArgs(bob.address);
+            await time.increase(TIMELOCK + 1);
+            await expect(wtpix.connect(owner).executeMinter(bob.address))
+                .to.be.revertedWith("WTPIX: no pending minter");
+        });
+
+        it("ถอด minter มีผลทันที และล้างคิวของที่อยู่นั้นด้วย", async function () {
+            const { wtpix, owner, minter, bob } = await loadFixture(deployFixture);
+            await expect(wtpix.connect(owner).removeMinter(minter.address))
+                .to.emit(wtpix, "MinterSet").withArgs(minter.address, false);
+            await expect(wtpix.connect(minter).mint(bob.address, 1))
+                .to.be.revertedWith("WTPIX: not a minter");
+
+            await wtpix.connect(owner).queueMinter(bob.address);
+            await wtpix.connect(owner).removeMinter(bob.address);
+            await time.increase(TIMELOCK + 1);
+            await expect(wtpix.connect(owner).executeMinter(bob.address))
+                .to.be.revertedWith("WTPIX: no pending minter");
+        });
+
+        it("เข้าคิวที่อยู่ที่เป็น minter อยู่แล้ว หรือที่อยู่ศูนย์ไม่ได้", async function () {
+            const { wtpix, owner, minter } = await loadFixture(deployFixture);
+            await expect(wtpix.connect(owner).queueMinter(minter.address))
+                .to.be.revertedWith("WTPIX: already a minter");
+            await expect(wtpix.connect(owner).queueMinter(ethers.ZeroAddress))
+                .to.be.revertedWith("WTPIX: zero minter");
         });
     });
 

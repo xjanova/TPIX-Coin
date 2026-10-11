@@ -39,7 +39,7 @@ describe("WTPIXBridgeMinter", function () {
         await minter.waitForDeployment();
 
         // ขั้นตอนเจ้าของหลัง deploy — minter เป็นที่อยู่เดียวที่ mint wTPIX ได้
-        await wtpix.setMinter(await minter.getAddress(), true);
+        await wtpix.setInitialMinter(await minter.getAddress());
         await minter.setRelayer(relayer.address, true);
         await minter.setGuardian(guardian.address, true);
 
@@ -189,7 +189,7 @@ describe("WTPIXBridgeMinter", function () {
                 .to.be.revertedWithCustomError(wtpix, "EnforcedPause");
             await wtpix.unpause();
 
-            await wtpix.setMinter(await minter.getAddress(), false);
+            await wtpix.removeMinter(await minter.getAddress());
             await expect(minter.connect(relayer).mint(alice.address, T(1), dep(51)))
                 .to.be.revertedWith("WTPIX: not a minter");
 
@@ -202,7 +202,9 @@ describe("WTPIXBridgeMinter", function () {
             const Minter = await ethers.getContractFactory("WTPIXBridgeMinter");
             const big = T(800_000_000);
             const wide = await Minter.deploy(await wtpix.getAddress(), big, big);
-            await wtpix.setMinter(await wide.getAddress(), true);
+            await wtpix.queueMinter(await wide.getAddress());
+            await time.increase(2 * 86400 + 1);
+            await wtpix.executeMinter(await wide.getAddress());
             await wide.setRelayer(relayer.address, true);
 
             await wide.connect(relayer).mint(alice.address, T(700_000_000), dep(60));
