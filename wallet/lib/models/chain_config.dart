@@ -172,8 +172,11 @@ class ChainConfig {
     name: 'Polygon',
     shortName: 'POL',
     symbol: 'POL',
-    rpcUrl: 'https://polygon-rpc.com',
+    // ตรวจสด 2026-10-12: polygon-rpc.com ต้องมีคีย์แล้ว (ตอบ 403 "API key disabled")
+    // → ใช้ตัวฟรีที่ยังตอบได้ (ชุดเดียวกับที่สะพานฝั่งเซิร์ฟเวอร์ใช้)
+    rpcUrl: 'https://polygon-bor-rpc.publicnode.com',
     fallbackRpcs: [
+      'https://polygon.drpc.org',
       'https://rpc-mainnet.matic.quiknode.pro',
     ],
     explorerUrl: 'https://polygonscan.com',
@@ -207,9 +210,11 @@ class ChainConfig {
     name: 'Ethereum',
     shortName: 'ETH',
     symbol: 'ETH',
-    rpcUrl: 'https://eth.llamarpc.com',
+    // ตรวจสด 2026-10-12: eth.llamarpc.com ตอบ 525 / rpc.ankr.com ต้องมีคีย์ → ส่งธุรกรรมบน ETH ไม่ได้เลย
+    rpcUrl: 'https://ethereum-rpc.publicnode.com',
     fallbackRpcs: [
-      'https://rpc.ankr.com/eth',
+      'https://eth.drpc.org',
+      'https://rpc.mevblocker.io',
     ],
     explorerUrl: 'https://etherscan.io',
     dexRouterAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D', // Uniswap V2
