@@ -493,6 +493,7 @@ class WalletProvider extends ChangeNotifier {
 
   /// Sign and send a transaction on any EVM chain (BSC, Polygon, ETH, etc.)
   /// Used by swap screens for DEX interactions and bridge for fund transfers
+  /// [historyAs] = แถวประวัติที่ควรโชว์แทนค่าเริ่มต้น (ดู [TxHistoryOverride])
   Future<String> sendEvmTransaction({
     required String rpcUrl,
     required int chainId,
@@ -502,6 +503,7 @@ class WalletProvider extends ChangeNotifier {
     int? maxGas,
     BigInt? gasPrice,
     String? expectedFrom,
+    TxHistoryOverride? historyAs,
   }) async {
     return _walletService.sendEvmTransaction(
       rpcUrl: rpcUrl,
@@ -512,6 +514,7 @@ class WalletProvider extends ChangeNotifier {
       maxGas: maxGas,
       gasPrice: gasPrice,
       expectedFrom: expectedFrom,
+      historyAs: historyAs,
     );
   }
 

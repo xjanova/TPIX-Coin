@@ -985,6 +985,8 @@ class WalletService {
   /// Used by swap (DEX routers on BSC/Polygon/ETH), bridge, WalletConnect, peer sign-tx
   /// The same HD-derived private key works on all EVM chains
   /// [rpcUrl] ของเชนที่รู้จัก → ได้ RPC สำรองของเชนนั้นด้วย (RpcClient.forUrl)
+  /// [historyAs] = แถวที่ควรโชว์ในประวัติแทนค่าเริ่มต้น (เช่น โอน USDT เข้าสะพาน = "ส่ง 25 USDT"
+  /// ไม่ใช่ "ส่ง 0 BNB ให้สัญญา") — ไม่ส่ง = บันทึกแบบเดิม
   Future<String> sendEvmTransaction({
     required String rpcUrl,
     required int chainId,
@@ -994,6 +996,7 @@ class WalletService {
     int? maxGas,
     BigInt? gasPrice,
     String? expectedFrom,
+    TxHistoryOverride? historyAs,
   }) async {
     final slot = _activeSlot;
     final sent = await _signAndSend(
@@ -1011,16 +1014,28 @@ class WalletService {
     // เชนอื่นเก็บสัญลักษณ์/ทศนิยมของเชนนั้น ไม่งั้นประวัติโชว์ BNB เป็น "TPIX"
     final chain = chainId == TpixChain.chainId ? null : ChainConfig.byId(chainId);
     await DbService.insertTx(
-      TxRecord(
-        txHash: sent.hash,
-        fromAddress: sent.from,
-        toAddress: toAddress,
-        value: (value ?? BigInt.zero).toString(),
-        direction: 'sent',
-        status: 'pending',
-        tokenSymbol: chain?.symbol,
-        tokenDecimals: chain?.decimals,
-      ),
+      historyAs != null
+          ? TxRecord(
+              txHash: sent.hash,
+              fromAddress: sent.from,
+              toAddress: historyAs.to,
+              value: historyAs.value.toString(),
+              direction: 'sent',
+              status: 'pending',
+              tokenAddress: historyAs.tokenAddress,
+              tokenSymbol: historyAs.symbol,
+              tokenDecimals: historyAs.decimals,
+            )
+          : TxRecord(
+              txHash: sent.hash,
+              fromAddress: sent.from,
+              toAddress: toAddress,
+              value: (value ?? BigInt.zero).toString(),
+              direction: 'sent',
+              status: 'pending',
+              tokenSymbol: chain?.symbol,
+              tokenDecimals: chain?.decimals,
+            ),
       slot,
     );
     return sent.hash;
@@ -1170,6 +1185,19 @@ class WalletService {
     _credentials = null;
   }
 }
+
+/// แถวประวัติที่ผู้เรียกอยากให้บันทึกแทนค่าเริ่มต้นของ sendEvmTransaction
+///
+/// ใช้เมื่อธุรกรรมคือ "เรียกสัญญา" แต่ความหมายต่อผู้ใช้คือการย้ายเงิน
+/// (โอน USDT เข้าสะพาน / เผา wTPIX) — [value] หน่วยย่อยของ [symbol] · [decimals]
+/// [symbol] null = เหรียญหลัก TPIX (ค่าเริ่มต้นของ TxRecord)
+typedef TxHistoryOverride = ({
+  String to,
+  BigInt value,
+  String? tokenAddress,
+  String? symbol,
+  int? decimals,
+});
 
 /// กระเป๋าที่ใช้อยู่ไม่ใช่ใบที่ผู้ใช้กดยืนยัน (สลับกระเป๋าระหว่างกำลังส่ง) → ยกเลิกการส่ง
 class WalletChangedException implements Exception {
