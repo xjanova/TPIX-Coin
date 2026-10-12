@@ -3,22 +3,22 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 /// Centralized fee configuration fetched from tpix.online
-/// Controls swap and bridge fees, fee wallet addresses, and limits
+/// Controls swap fees, fee wallet address, and limits
+///
+/// ส่วน `bridge` ของ /api/v1/fees ไม่ถูกใช้แล้ว — สะพานรุ่นใหม่อ่านจาก /api/v1/bridge/info
+/// (เซิร์ฟเวอร์ยังส่ง `bridge` ให้แอปรุ่นเก่าอยู่ แอปรุ่นนี้แค่ไม่อ่าน)
 class FeeConfig {
   final SwapFeeConfig swap;
-  final BridgeFeeConfig bridge;
   final DateTime fetchedAt;
 
   const FeeConfig({
     required this.swap,
-    required this.bridge,
     required this.fetchedAt,
   });
 
   factory FeeConfig.fromJson(Map<String, dynamic> json) {
     return FeeConfig(
       swap: SwapFeeConfig.fromJson(json['swap'] as Map<String, dynamic>? ?? {}),
-      bridge: BridgeFeeConfig.fromJson(json['bridge'] as Map<String, dynamic>? ?? {}),
       fetchedAt: DateTime.now(),
     );
   }
@@ -27,7 +27,6 @@ class FeeConfig {
   /// Note: feePercent is 0 in fallback because we have no valid feeWallet
   factory FeeConfig.fallback() => FeeConfig(
         swap: SwapFeeConfig.fallback(),
-        bridge: BridgeFeeConfig.fallback(),
         fetchedAt: DateTime.now(),
       );
 }
@@ -80,71 +79,6 @@ class SwapFeeConfig {
   /// Amount after fee deduction
   BigInt amountAfterFee(BigInt amountIn) {
     return amountIn - calculateFee(amountIn);
-  }
-}
-
-/// Bridge fee configuration from tpix.online
-class BridgeFeeConfig {
-  final double feePercent; // bridge fee (e.g. 0.1%)
-  final String feeWallet; // wallet address to send bridge funds to
-  final double minAmount;
-  final double maxAmount;
-  final int estimatedMinutes;
-  final bool enabled;
-
-  const BridgeFeeConfig({
-    required this.feePercent,
-    required this.feeWallet,
-    required this.minAmount,
-    required this.maxAmount,
-    required this.estimatedMinutes,
-    required this.enabled,
-  });
-
-  factory BridgeFeeConfig.fromJson(Map<String, dynamic> json) {
-    final wallet = json['feeWallet'] as String? ?? '';
-    final validWallet = _isValidAddress(wallet);
-    return BridgeFeeConfig(
-      feePercent: validWallet ? ((json['feePercent'] as num?)?.toDouble() ?? 0.1) : 0,
-      feeWallet: validWallet ? wallet : '',
-      minAmount: (json['minAmount'] as num?)?.toDouble() ?? 100,
-      maxAmount: (json['maxAmount'] as num?)?.toDouble() ?? 1000000,
-      estimatedMinutes: json['estimatedMinutes'] as int? ?? 10,
-      enabled: json['enabled'] as bool? ?? true,
-    );
-  }
-
-  /// Fallback: no fee (no valid wallet to collect it)
-  factory BridgeFeeConfig.fallback() => const BridgeFeeConfig(
-        feePercent: 0,
-        feeWallet: '',
-        minAmount: 100,
-        maxAmount: 1000000,
-        estimatedMinutes: 10,
-        enabled: true,
-      );
-
-  /// Calculate fee for a given amount (double convenience for UI display)
-  double calculateFee(double amount) {
-    if (feePercent <= 0 || feeWallet.isEmpty) return 0;
-    return amount * feePercent / 100;
-  }
-
-  /// Calculate fee using BigInt for precision (use for actual transactions)
-  BigInt calculateFeeBigInt(BigInt amountIn) {
-    if (feePercent <= 0 || feeWallet.isEmpty) return BigInt.zero;
-    final feeBasis = (feePercent * 10000).round(); // e.g. 0.1% → 1000
-    return amountIn * BigInt.from(feeBasis) ~/ BigInt.from(1000000);
-  }
-
-  /// Amount user receives after fee
-  double receiveAmount(double amount) {
-    return amount - calculateFee(amount);
-  }
-
-  /// Amount user receives after fee (BigInt precision)
-  BigInt receiveAmountBigInt(BigInt amountIn) {
-    return amountIn - calculateFeeBigInt(amountIn);
   }
 }
 
@@ -216,12 +150,6 @@ class FeeService {
     return config.swap;
   }
 
-  /// Get bridge fee config (convenience)
-  static Future<BridgeFeeConfig> getBridgeFee() async {
-    final config = await getConfig();
-    return config.bridge;
-  }
-
   /// Whether cached config is still within TTL
   static bool get _isCacheValid =>
       _cachedConfig != null &&
@@ -231,11 +159,6 @@ class FeeService {
   /// Returns fallback if cache is expired — call getConfig() to refresh.
   static SwapFeeConfig get swapFee =>
       _isCacheValid ? _cachedConfig!.swap : SwapFeeConfig.fallback();
-
-  /// Cached bridge fee (sync, for UI display after initial fetch).
-  /// Returns fallback if cache is expired — call getConfig() to refresh.
-  static BridgeFeeConfig get bridgeFee =>
-      _isCacheValid ? _cachedConfig!.bridge : BridgeFeeConfig.fallback();
 
   /// Short fee wallet display (0x1234...5678)
   static String shortWallet(String address) {

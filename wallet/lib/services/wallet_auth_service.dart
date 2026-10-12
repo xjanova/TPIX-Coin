@@ -267,43 +267,6 @@ class WalletAuthService {
     }
   }
 
-  /// Initiate a bridge transfer on the backend.
-  /// POST /api/v1/bridge/initiate
-  ///
-  /// Returns the bridge ID from backend, or null on failure.
-  /// Caller MUST handle null — means the bridge wasn't registered.
-  static Future<String?> initiateBridge({
-    required String walletAddress,
-    required double amount,
-    required String direction,
-    required String sourceTxHash,
-    required int chainId,
-    required Future<String> Function(String message) signFn,
-  }) async {
-    final response = await _protectedPost(
-      url: '$_apiBase/bridge/initiate',
-      body: {
-        'wallet_address': walletAddress.toLowerCase(),
-        'amount': amount,
-        'direction': direction,
-        'tx_hash': sourceTxHash,
-      },
-      walletAddress: walletAddress,
-      signFn: signFn,
-      chainId: chainId,
-    );
-
-    if (response != null &&
-        (response.statusCode == 200 || response.statusCode == 201)) {
-      final body = jsonDecode(response.body);
-      final data = body['data'] as Map<String, dynamic>?;
-      if (data != null) {
-        return data['id']?.toString();
-      }
-    }
-    return null;
-  }
-
   /// Clear cached verification session.
   /// Call on wallet switch, lock, or disconnect.
   static void clearSession() {
