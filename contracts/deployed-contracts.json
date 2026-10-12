@@ -1,7 +1,7 @@
 {
   "_doc": "Registry of deployed contracts on TPIX Chain (4289). Keep in sync after each deploy. Feeds scripts/verify-sources.js and external explorers/aggregators.",
   "_schema_version": 2,
-  "updated": "2026-10-10",
+  "updated": "2026-10-11",
   "chain": {
     "chainId": 4289,
     "name": "TPIX Chain",
@@ -91,6 +91,38 @@
       "sourceFile": "contracts/src/dex/amm/TPIXDEXPair.sol",
       "description": "Liquidity pair WTPIX/USDT — pool หลักของกระดาน TPIX/USDT",
       "verifyNote": "verified from runtime bytecode — Blockscout has no creator record for contract-created contracts (internal-tx fetcher off: polygon-edge 0.9.0 traces are malformed)"
+    },
+    {
+      "name": "NodeRegistryV2",
+      "category": "masternode",
+      "address": "0x9c3662972921705FeFa9E9bF0d91190d7B514A2B",
+      "sourceFile": "contracts/src/masternode/NodeRegistryV2.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": false,
+      "deployedAt": "2026-10-11",
+      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+      "description": "Master node staking + reward distribution (APR-capped). Reward pool must be funded separately."
+    },
+    {
+      "name": "ValidatorKYC",
+      "category": "masternode",
+      "address": "0x443E487CA031fae41a285cf35BD89e90BE7340e7",
+      "sourceFile": "contracts/src/masternode/ValidatorKYC.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": false,
+      "deployedAt": "2026-10-11",
+      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+      "description": "KYC gate for the Validator tier of NodeRegistryV2"
     }
   ],
   "retired": [
@@ -123,13 +155,6 @@
       "retiredOn": "2026-08-06",
       "retiredReason": "Deployed on the pre-regenesis chain. eth_getCode = 0x on the current chain — the address holds no code and must be redeployed.",
       "description": "Coordinator for NFT deployment — single NFT + collection"
-    }
-  ],
-  "pending": [
-    {
-      "name": "NodeRegistry",
-      "sourceFile": "contracts/masternode/NodeRegistry.sol",
-      "blocks": "Real masternode staking. Until this is deployed, staking and reward figures in masternode-ui and on tpix.online are local database records only — no stake is locked and no reward is paid on chain."
     }
   ],
   "notes": {
