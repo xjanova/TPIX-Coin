@@ -37,6 +37,8 @@ dependencies:
   lottie: ^3.3.1
   flutter_animate: ^4.5.2
   qr_flutter: ^4.1.0
+  # ธีม Obsidian: คลิปพื้นหลังวนลูป (ไม่มีเสียง) หลังครึ่งบนของจอ
+  video_player: ^2.11.1
   mobile_scanner: ^7.0.2
   # โลโก้โทเค็น: แคชลงดิสก์ เปิดแอปออฟไลน์ก็ยังเห็นโลโก้ ไม่โหลดซ้ำทุกครั้ง
   cached_network_image: ^3.4.1
@@ -93,3 +95,57 @@ flutter:
     - assets/images/
     # โฟลเดอร์ย่อยต้องประกาศแยก Flutter ไม่ไล่ให้อัตโนมัติ
     - assets/images/icons/
+    # ── ธีม Obsidian ──
+    # ประกาศทีละไฟล์โดยตั้งใจ (ไม่ใช้ทั้งโฟลเดอร์) — กันไฟล์ต้นฉบับใหญ่ ๆ หลุดลง APK
+    # ต้นฉบับอยู่ที่ D:/Code/TPIX/design/tpix-wallet-v2 ย่อไว้ราว 2 เท่าของขนาดที่วาดจริง:
+    #   ไอคอนมีกรอบ 176px · ไอคอนลอย 112px · ตราระดับโหนด 256px · หน้าบัตร 1024px JPEG q85
+    #   ตราเชน (หน้ากากขาว) 192px · โลโก้เชน/เหรียญสีทางการ 96px · คลิป 544x800 ตามต้นฉบับ
+    - assets/obsidian/cards/card_bnb.jpg
+    - assets/obsidian/cards/card_eth.jpg
+    - assets/obsidian/cards/card_pol.jpg
+    - assets/obsidian/cards/card_tpix.jpg
+    - assets/obsidian/icons/ic_activity.webp
+    - assets/obsidian/icons/ic_addtoken.webp
+    - assets/obsidian/icons/ic_backup.webp
+    - assets/obsidian/icons/ic_bell.webp
+    - assets/obsidian/icons/ic_bridge.webp
+    - assets/obsidian/icons/ic_bug.webp
+    - assets/obsidian/icons/ic_chart.webp
+    - assets/obsidian/icons/ic_coins.webp
+    - assets/obsidian/icons/ic_contacts.webp
+    - assets/obsidian/icons/ic_copy.webp
+    - assets/obsidian/icons/ic_fingerprint.webp
+    - assets/obsidian/icons/ic_home.webp
+    - assets/obsidian/icons/ic_info.webp
+    - assets/obsidian/icons/ic_language.webp
+    - assets/obsidian/icons/ic_link.webp
+    - assets/obsidian/icons/ic_lock.webp
+    - assets/obsidian/icons/ic_network.webp
+    - assets/obsidian/icons/ic_node.webp
+    - assets/obsidian/icons/ic_qr.webp
+    - assets/obsidian/icons/ic_receive.webp
+    - assets/obsidian/icons/ic_scan.webp
+    - assets/obsidian/icons/ic_send.webp
+    - assets/obsidian/icons/ic_settings.webp
+    - assets/obsidian/icons/ic_share.webp
+    - assets/obsidian/icons/ic_shield.webp
+    - assets/obsidian/icons/ic_signhist.webp
+    - assets/obsidian/icons/ic_swap.webp
+    - assets/obsidian/icons/ic_theme.webp
+    - assets/obsidian/icons/ic_tier_guardian.webp
+    - assets/obsidian/icons/ic_tier_light.webp
+    - assets/obsidian/icons/ic_tier_sentinel.webp
+    - assets/obsidian/icons/ic_tier_validator.webp
+    - assets/obsidian/icons/ic_trash.webp
+    - assets/obsidian/icons/ic_update.webp
+    - assets/obsidian/icons/ic_wallet.webp
+    - assets/obsidian/logos/chip_bnb.webp
+    - assets/obsidian/logos/chip_eth.webp
+    - assets/obsidian/logos/chip_pol.webp
+    - assets/obsidian/logos/chip_usdc.webp
+    - assets/obsidian/logos/chip_usdt.webp
+    - assets/obsidian/logos/mask_bnb.webp
+    - assets/obsidian/logos/mask_eth.webp
+    - assets/obsidian/logos/mask_pol.webp
+    - assets/obsidian/video/bg_loop.mp4
+    - assets/obsidian/video/bg_loop_poster.jpg
