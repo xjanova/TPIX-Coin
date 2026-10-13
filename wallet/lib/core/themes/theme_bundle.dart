@@ -11,15 +11,20 @@ enum ThemeId {
   liquid('liquid'),
   synthwave('synthwave'),
   terminal('terminal'),
-  xpSilver('xp_silver');
+  xpSilver('xp_silver'),
+  // ดีไซน์ A (Obsidian Premium) — ค่าเริ่มต้นของเครื่องใหม่ตั้งแต่ 2026-10
+  obsidian('obsidian');
 
   final String key;
   const ThemeId(this.key);
 
+  /// ธีมเริ่มต้นของแอป (เครื่องใหม่ / คีย์ที่บันทึกไว้อ่านไม่ออก)
+  static const ThemeId defaultId = ThemeId.obsidian;
+
   static ThemeId fromKey(String? k) {
     return ThemeId.values.firstWhere(
       (t) => t.key == k,
-      orElse: () => ThemeId.classic,
+      orElse: () => defaultId,
     );
   }
 }

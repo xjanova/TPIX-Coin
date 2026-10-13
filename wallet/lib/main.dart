@@ -38,7 +38,12 @@ Future<void> _boot() async {
       ],
       child: FutureBuilder(
         future: Future.wait([localeProvider.init(), themeProvider.init()]),
-        builder: (_, __) => const TPIXWalletApp(),
+        // รอธีม/ภาษาที่บันทึกไว้ก่อนค่อยวาดแอป (อ่าน SharedPreferences ไม่กี่มิลลิวินาที)
+        // ไม่งั้นเฟรมแรกจะเป็นธีมเริ่มต้นแล้วค่อยครอสเฟดไปธีมที่ผู้ใช้เลือก —
+        // และธีม Obsidian จะสร้างตัวเล่นวิดีโอขึ้นมาแล้วทิ้งเปล่า ๆ
+        builder: (_, snap) => snap.connectionState == ConnectionState.done
+            ? const TPIXWalletApp()
+            : const ColoredBox(color: Color(0xFF07080C)),
       ),
     ),
   );

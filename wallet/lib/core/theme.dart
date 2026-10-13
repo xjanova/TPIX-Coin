@@ -342,6 +342,27 @@ BoxDecoration adaptiveGlassCard(
     );
   }
 
+  if (ext.themeId == ThemeId.obsidian) {
+    // Obsidian — กระจกขาว 6%→2% ไล่บนลงล่าง + เงาดำใต้แผง (ค่าจาก mock)
+    // หน้าที่ยังไม่รื้อเป็น ObsidianPanel ได้หน้าตาใกล้เคียงไปก่อน
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(radius),
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Colors.white.withValues(alpha: 0.06),
+          Colors.white.withValues(alpha: 0.02),
+        ],
+      ),
+      border: Border.all(color: borderColor ?? Colors.white.withValues(alpha: 0.08)),
+      boxShadow: const [
+        // CSS: 0 20px 40px -24px rgba(0,0,0,.9)
+        BoxShadow(color: Color(0xE6000000), offset: Offset(0, 20), blurRadius: 33.8, spreadRadius: -24),
+      ],
+    );
+  }
+
   // Classic glass card (default)
   return BoxDecoration(
     borderRadius: BorderRadius.circular(radius),

@@ -69,9 +69,10 @@ void main() {
 
     test('คีย์ liquid ที่บันทึกไว้ อ่านกลับมาได้ถูกตัว', () {
       expect(ThemeId.fromKey('liquid'), ThemeId.liquid);
-      // คีย์แปลกปลอม → ตกกลับไปคลาสสิก ไม่ throw
-      expect(ThemeId.fromKey('ไม่มีธีมนี้'), ThemeId.classic);
-      expect(ThemeId.fromKey(null), ThemeId.classic);
+      // คีย์แปลกปลอม → ตกกลับไปธีมเริ่มต้น (Obsidian ตั้งแต่ 2026-10) ไม่ throw
+      expect(ThemeId.fromKey('ไม่มีธีมนี้'), ThemeId.defaultId);
+      expect(ThemeId.fromKey(null), ThemeId.defaultId);
+      expect(ThemeId.defaultId, ThemeId.obsidian);
     });
 
     test('ทุกธีมใน registry มี id ไม่ซ้ำกัน', () {

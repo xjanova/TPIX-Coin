@@ -13,6 +13,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme.dart';
+import '../theme_bundle.dart';
 import 'luxe_texture.dart';
 
 class TpixScreenBackground extends StatelessWidget {
@@ -33,6 +34,10 @@ class TpixScreenBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Obsidian วาดพื้นหลังทั้งแอปเองใน wrapApp (คลิปเคลื่อนไหว + ไล่ดำ)
+    // ถ้าวาดไล่สี/ลายทับตรงนี้อีกชั้น คลิปพื้นหลังจะถูกบังหมดทุกหน้า
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) return child;
+
     final c = AppColors.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
