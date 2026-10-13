@@ -246,6 +246,9 @@ class LocaleProvider extends ChangeNotifier {
       'obs.rcv.received': 'ได้รับเงินแล้ว',
       'obs.rcv.qrLabel': 'QR ที่อยู่กระเป๋าบน {name}',
       'obs.rcv.warning': 'ส่งมาเฉพาะเหรียญบน {name} (Chain ID {id}) เท่านั้น',
+      'obs.scan.found': 'พบ QR แล้ว',
+      'obs.scan.hint': 'วาง QR ให้อยู่ในกรอบ ระบบจะอ่านให้เอง',
+      'obs.scan.myQr': 'QR รับเงิน',
       // obsidian: end
 
       // Transaction History
@@ -984,6 +987,9 @@ class LocaleProvider extends ChangeNotifier {
       'obs.rcv.received': 'Payment received',
       'obs.rcv.qrLabel': 'Wallet address QR on {name}',
       'obs.rcv.warning': 'Only send assets on {name} (Chain ID {id}) to this address',
+      'obs.scan.found': 'QR found',
+      'obs.scan.hint': 'Fit the QR inside the frame — it scans automatically',
+      'obs.scan.myQr': 'My QR',
       // obsidian: end
 
       // Transaction History

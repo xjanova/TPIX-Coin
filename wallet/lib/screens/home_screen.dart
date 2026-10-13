@@ -405,6 +405,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Navigator.pop(context);
             _routeScannedValue(value);
           },
+          // ธีม Obsidian มีแท็บสลับไป "QR รับเงิน" ในหน้าสแกน (ธีมอื่นไม่โชว์)
+          onShowMyQr: () => Navigator.pushReplacement(
+              context, MaterialPageRoute(builder: (_) => const ReceiveScreen())),
         ),
       ),
     );
