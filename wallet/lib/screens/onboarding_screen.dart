@@ -4,7 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_brand_orb.dart';
 import '../providers/wallet_provider.dart';
 import 'backup_screen.dart';
 import 'import_screen.dart';
@@ -19,6 +22,9 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+
+  /// กันกด "สร้างกระเป๋า" ซ้ำระหว่างกำลังสร้าง (ไม่งั้นได้กระเป๋า/วลีสองชุด)
+  bool _creating = false;
 
   @override
   void initState() {
@@ -36,6 +42,16 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   void _createWallet() async {
+    if (_creating) return;
+    _creating = true;
+    try {
+      await _createWalletOnce();
+    } finally {
+      _creating = false;
+    }
+  }
+
+  Future<void> _createWalletOnce() async {
     final l = context.read<LocaleProvider>();
     // Ask for wallet name first
     final name = await _askWalletName(l);
@@ -123,8 +139,115 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
   }
 
+  /// ธีม Obsidian: จานโลโก้ + ปุ่มสร้าง (ขาวนูน) / นำเข้า (กระจก) — ตัวจัดการเดิม
+  Widget _buildObsidian() {
+    final st = ObsidianStyle.of(context);
+    final l = context.watch<LocaleProvider>();
+    Widget choice({
+      required ObsidianSurface surface,
+      required String icon,
+      required String label,
+      required String sub,
+      required Color fg,
+      required Color subColor,
+      required VoidCallback onTap,
+    }) =>
+        ObsidianPanel(
+          surface: surface,
+          onTap: onTap,
+          semanticLabel: label,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
+            children: [
+              Icon3D(icon, size: 40),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: st.ui(fontSize: 17, fontWeight: FontWeight.w600, color: fg)),
+                    Text(sub, style: st.ui(fontSize: 12, color: subColor)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: subColor, size: 22),
+            ],
+          ),
+        );
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            children: [
+              const Spacer(flex: 2),
+              FadeTransition(
+                opacity: CurvedAnimation(parent: _controller, curve: const Interval(0, 0.5)),
+                child: const ObsidianBrandOrb(size: 128),
+              ),
+              const SizedBox(height: 36),
+              FadeTransition(
+                opacity: CurvedAnimation(parent: _controller, curve: const Interval(0.3, 0.7)),
+                child: Column(
+                  children: [
+                    ShaderMask(
+                      shaderCallback: (b) => ObsidianColors.accentGradient.createShader(b),
+                      child: Text(
+                        'TPIX Wallet',
+                        style: st.number(fontSize: 34, fontWeight: FontWeight.w700, color: Colors.white),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      l.t('onboarding.subtitle'),
+                      textAlign: TextAlign.center,
+                      style: st.ui(fontSize: 15, color: ObsidianColors.textSec, height: 1.6),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(flex: 2),
+              FadeTransition(
+                opacity: CurvedAnimation(parent: _controller, curve: const Interval(0.5, 1.0)),
+                child: Column(
+                  children: [
+                    choice(
+                      surface: ObsidianSurface.primaryButton.copyWith(radius: 22),
+                      icon: ObsidianIcons.wallet,
+                      label: l.t('onboarding.createWallet'),
+                      sub: l.t('onboarding.createWalletSub'),
+                      fg: const Color(0xFF0A0B0F),
+                      subColor: const Color(0xFF4B5060),
+                      onTap: _createWallet,
+                    ),
+                    const SizedBox(height: 14),
+                    choice(
+                      surface: ObsidianSurface.raised.copyWith(radius: 22),
+                      icon: ObsidianIcons.backup,
+                      label: l.t('onboarding.importWallet'),
+                      sub: l.t('onboarding.importWalletSub'),
+                      fg: ObsidianColors.text,
+                      subColor: ObsidianColors.textMuted,
+                      onTap: _importWallet,
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              Text('by Xman Studio', style: st.ui(fontSize: 11, color: ObsidianColors.textMuted)),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) return _buildObsidian();
     final c = AppColors.of(context);
     return Scaffold(
       body: TpixScreenBackground(
