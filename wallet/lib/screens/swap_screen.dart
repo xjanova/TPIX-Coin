@@ -10,10 +10,15 @@ import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../models/chain_config.dart';
 import '../services/fee_service.dart';
+import '../services/rpc_client.dart';
 import '../services/swap_service.dart';
 import '../services/synth_service.dart';
+import '../services/tpix_dex_service.dart';
 import '../services/wallet_auth_service.dart';
+import '../services/wallet_service.dart' show InsufficientGasException, WalletChangedException;
+import '../providers/tpix_swap_controller.dart';
 import '../providers/wallet_provider.dart';
+import '../utils/units.dart';
 import '../widgets/obsidian/obsidian.dart';
 import '../widgets/token_selector.dart';
 
@@ -88,6 +93,17 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
 
   void _obsSet(VoidCallback fn) => setState(fn);
 
+  // ── โหมด TPIX Chain (TPIX DEX) — ตรรกะทั้งหมดอยู่ใน TpixSwapController ทุกธีมใช้ร่วมกัน ──
+  late final TpixSwapController _tpix;
+
+  /// กันกดซ้ำตั้งแต่แตะครั้งแรก (ก่อนกล่องยืนยันขึ้น / ระหว่างขอราคาใหม่)
+  bool _tpixTapBusy = false;
+
+  bool get _isTpix => _chain.chainId == ChainConfig.tpix.chainId;
+
+  /// ระหว่างอนุมัติ/สวอป (ทุกเครือข่าย) ห้ามสลับเชนหรือแก้อินพุต — ธุรกรรมกับผลที่รออยู่ต้องเป็นของชุดเดิม
+  bool get _networkLocked => _busy || _tpix.busy || _tpixTapBusy;
+
   @override
   void initState() {
     super.initState();
@@ -95,11 +111,26 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
+    final wallet = context.read<WalletProvider>();
+    _tpix = TpixSwapController(wallet: wallet)..addListener(_onTpixChanged);
+    // เปิดจากเชน TPIX → เริ่มที่ TPIX Chain (ยังไม่พร้อม = บอกเหตุผล + ปุ่มไปสวอปบน BSC)
+    if (wallet.activeChainId == ChainConfig.tpix.chainId) _chain = ChainConfig.tpix;
     // Default tokens for BSC
-    _tokenIn = _chain.nativeToken;
-    _tokenOut = _chain.knownTokens.isNotEmpty ? _chain.knownTokens.first : null;
+    final evmChain = _isTpix ? ChainConfig.bsc : _chain;
+    _tokenIn = evmChain.nativeToken;
+    _tokenOut = evmChain.knownTokens.isNotEmpty ? evmChain.knownTokens.first : null;
     _loadBalance();
     _loadFeeConfig();
+    _tpix.load();
+  }
+
+  void _onTpixChanged() {
+    if (!mounted) return;
+    // ตัวควบคุมล้างจำนวนเอง (สลับฝั่ง / สวอปเสร็จ) — ช่องกรอกต้องตามให้ตรง
+    if (_isTpix && _amountController.text != _tpix.amountText) {
+      _amountController.text = _tpix.amountText;
+    }
+    setState(() {});
   }
 
   Future<void> _loadFeeConfig() async {
@@ -131,6 +162,8 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     _flipController.dispose();
     _obsRefreshTimer?.cancel();
     _obsRefreshLeft.dispose();
+    _tpix.removeListener(_onTpixChanged);
+    _tpix.dispose();
     super.dispose();
   }
 
@@ -145,20 +178,33 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   void _onChainChanged(ChainConfig chain) {
-    if (_busy) return; // ธุรกรรมที่รอผลอยู่อ้างอิงเชนเดิม — ห้ามสลับกลางทาง
+    if (_networkLocked) return; // ธุรกรรมที่รอผลอยู่อ้างอิงเชนเดิม — ห้ามสลับกลางทาง
     setState(() {
       _chain = chain;
-      _tokenIn = chain.nativeToken;
-      _tokenOut = chain.knownTokens.isNotEmpty ? chain.knownTokens.first : null;
+      if (!_isTpix) {
+        _tokenIn = chain.nativeToken;
+        _tokenOut = chain.knownTokens.isNotEmpty ? chain.knownTokens.first : null;
+      }
       _invalidateQuote();
       _allowance = BigInt.zero;
       _amountController.clear();
     });
-    _loadBalance();
+    if (_isTpix) {
+      _tpix.setAmount('');
+      // เคยปิด/ติดต่อไม่ได้ → ถามทะเบียนใหม่ทุกครั้งที่ผู้ใช้กลับมาที่แท็บนี้
+      if (_tpix.phase == TpixSwapPhase.ready) {
+        _tpix.refreshBalance();
+      } else if (_tpix.phase != TpixSwapPhase.loading) {
+        _tpix.load(force: true);
+      }
+    } else {
+      _loadBalance();
+    }
     SynthService.playTap();
   }
 
   Future<void> _loadBalance() async {
+    if (_isTpix) return; // โหมด TPIX Chain อ่านยอดผ่าน TpixSwapController
     final address = context.read<WalletProvider>().address;
     final tokenIn = _tokenIn;
     final chain = _chain;
@@ -283,6 +329,178 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       _invalidateQuote();
     });
     if (_amountController.text.isNotEmpty) _fetchQuote();
+  }
+
+  // ================================================================
+  // โหมด TPIX Chain — หน้าจอแค่ถามยืนยัน/แสดงผล ตรรกะอยู่ใน TpixSwapController
+  // ================================================================
+
+  Future<void> _selectTpixToken({required bool isFrom}) async {
+    if (_tpix.busy) return;
+    final owner = context.read<WalletProvider>().address;
+    final other = isFrom ? _tpix.to : _tpix.from;
+    final token = await TokenSelectorSheet.show(
+      context,
+      chain: ChainConfig.tpix,
+      walletAddress: owner,
+      excludeAddress: other?.address,
+      tokens: _tpix.tokens,
+      balanceOf: owner == null ? null : (t) => TpixDexService.balanceOf(t, owner),
+    );
+    if (token == null || !mounted) return;
+    isFrom ? _tpix.selectFrom(token) : _tpix.selectTo(token);
+  }
+
+  /// เต็มยอดแบบตรงตัว (BigInt → ข้อความ) — เชน TPIX ไม่มีค่าแก๊ส ไม่ต้องเผื่อ
+  void _onTpixMax() {
+    final text = _tpix.maxAmountText;
+    if (text == null || _tpix.busy) return;
+    _amountController.text = text;
+    _tpix.setAmount(text);
+  }
+
+  void _flipTpix() {
+    if (_tpix.busy) return;
+    _flipController.forward().then((_) => _flipController.reset());
+    SynthService.playTap();
+    _tpix.flip(); // ช่องกรอกถูกล้างตามใน _onTpixChanged
+  }
+
+  Future<void> _approveTpix() async {
+    if (_tpixTapBusy || _tpix.busy) return;
+    _tpixTapBusy = true;
+    SynthService.playTap();
+    try {
+      await _tpix.approve();
+      if (!mounted) return;
+      SynthService.playSendSuccess();
+    } catch (e) {
+      if (!mounted) return;
+      SynthService.playError();
+      _showTpixError('swap.approvalFailed', e);
+    } finally {
+      _tpixTapBusy = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _executeTpixSwap() async {
+    if (_tpixTapBusy || _tpix.busy) return; // กันกดซ้ำตั้งแต่แตะครั้งแรก
+    _tpixTapBusy = true;
+    try {
+      // ราคาเก่า → ขอใหม่ก่อน ผู้ใช้ต้องยืนยันกับตัวเลขล่าสุด
+      if (_tpix.quoteIsStale) {
+        await _tpix.refreshQuote();
+        if (!mounted) return;
+      }
+      final quote = _tpix.quote;
+      // ราคาใหม่เกินเพดาน/ขอไม่สำเร็จ → ปุ่มบอกเหตุผลเอง ไม่เปิดกล่องยืนยัน
+      if (quote == null || _tpix.block != TpixSwapBlock.none) return;
+
+      final confirmed = await _showTpixConfirmDialog(quote);
+      if (confirmed != true || !mounted) return;
+
+      SynthService.playSend();
+      // ส่งตาม quote ที่ผู้ใช้เห็นในกล่องยืนยันเท่านั้น (minOut ผูกกับตัวเลขนั้น)
+      final result = await _tpix.swap(quote: quote, slippagePct: _slippagePercent);
+      if (!mounted || result == null) return;
+      SynthService.playSendSuccess();
+      _showSuccessDialog(result.txHash);
+    } catch (e) {
+      if (!mounted) return;
+      SynthService.playError();
+      _showTpixError('swap.failed', e);
+    } finally {
+      _tpixTapBusy = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _showTpixError(String titleKey, Object e) {
+    final l = context.read<LocaleProvider>();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${l.t(titleKey)}: ${_tpixErrorText(e, l)}'), backgroundColor: AppTheme.danger),
+    );
+  }
+
+  /// แปลง error เป็นข้อความตามภาษาของแอป — ห้ามโชว์ "Exception: ..." ดิบ
+  String _tpixErrorText(Object e, LocaleProvider l) {
+    if (e is TpixDexException) return l.t(e.localeKey);
+    if (e is RpcUnavailableException) return l.t('swap.tpix.err.unreachable');
+    if (e is WalletChangedException) return l.t('send.errWalletChanged');
+    if (e is InsufficientGasException) return l.t('send.errGas');
+    if (e is RpcException) {
+      final m = e.message.toLowerCase();
+      if (m.contains('insufficient funds') || m.contains('exceeds balance')) {
+        return l.t('send.insufficientBalance');
+      }
+      // จำลองธุรกรรม (estimateGas) แล้ว revert = ราคาขยับเกิน slippage / allowance ไม่พอ
+      if (m.contains('revert')) return l.t('swap.tpix.err.reverted');
+    }
+    return l.t('swap.tpix.err.generic');
+  }
+
+  String _impactText(TpixDexQuote q, LocaleProvider l) {
+    final bps = q.impactBps;
+    if (bps == null) return l.t('swap.tpix.impactUnknownValue');
+    if (bps == 0) return '< 0.01%';
+    return '${(bps / 100).toStringAsFixed(2)}%';
+  }
+
+  String _routeText(TpixDexQuote q) => [q.from.symbol, if (q.viaWtpix) 'WTPIX', q.to.symbol].join(' → ');
+
+  String get _slippageText => '${_slippagePercent % 1 == 0 ? _slippagePercent.toInt() : _slippagePercent}%';
+
+  Future<bool?> _showTpixConfirmDialog(TpixDexQuote q) {
+    final l = context.read<LocaleProvider>();
+    final BigInt minOut;
+    try {
+      minOut = q.minOut(_slippagePercent);
+    } on TpixDexException catch (e) {
+      _showTpixError('swap.failed', e);
+      return Future.value(false);
+    }
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.lg)),
+        title: Text(
+          l.t('swap.confirmTitle'),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _confirmRow(l.t('swap.from'), '${TpixDexMath.display(q.amountIn, q.from.decimals)} ${q.from.symbol}'),
+            _confirmRow(l.t('swap.toEstimated'), '${TpixDexMath.display(q.amountOut, q.to.decimals)} ${q.to.symbol}'),
+            _confirmRow(l.t('swap.minReceived'), '${TpixDexMath.display(minOut, q.to.decimals)} ${q.to.symbol}'),
+            _confirmRow(l.t('swap.tpix.priceImpact'), _impactText(q, l)),
+            _confirmRow(l.t('swap.slippage'), _slippageText),
+            const Divider(color: AppTheme.textMuted, height: 16),
+            _confirmRow(l.t('swap.tpix.poolFee'), l.t('swap.tpix.poolFeeValue')),
+            _confirmRow(l.t('swap.tpix.gasFee'), l.t('swap.tpix.gasFeeValue')),
+            _confirmRow(l.t('swap.tpix.route'), _routeText(q)),
+            _confirmRow(l.t('swap.network'), ChainConfig.tpix.name),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l.t('send.cancel'), style: const TextStyle(color: AppTheme.textMuted)),
+          ),
+          TextButton(
+            key: const ValueKey('tpix-confirm-swap'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              l.t('swap.button'),
+              style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   bool get _needsApproval {
@@ -644,15 +862,20 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                     children: [
                       _buildChainSelector(),
                       const SizedBox(height: TpixGap.xl),
-                      _buildFromCard(l),
-                      _buildFlipButton(),
-                      _buildToCard(l),
-                      const SizedBox(height: TpixGap.lg),
-                      _buildSlippageSelector(),
-                      const SizedBox(height: TpixGap.lg),
-                      if (_quoteAmount != null) _buildRateInfo(),
-                      const SizedBox(height: TpixGap.xxl),
-                      _buildSwapButton(l),
+                      // TPIX Chain ยังไม่พร้อม = ไม่มีฟอร์ม ไม่มีปุ่มส่ง (fail-closed) + บอกเหตุผล
+                      if (_isTpix && _tpix.phase != TpixSwapPhase.ready)
+                        _buildTpixStatus(l)
+                      else ...[
+                        _buildFromCard(l),
+                        _buildFlipButton(),
+                        _buildToCard(l),
+                        const SizedBox(height: TpixGap.lg),
+                        _buildSlippageSelector(),
+                        const SizedBox(height: TpixGap.lg),
+                        if (_isTpix) _buildTpixQuoteInfo(l) else if (_quoteAmount != null) _buildRateInfo(),
+                        const SizedBox(height: TpixGap.xxl),
+                        if (_isTpix) _buildTpixSwapButton(l) else _buildSwapButton(l),
+                      ],
                     ],
                   ),
                 ),
@@ -689,7 +912,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           const Spacer(),
           // Settings icon for slippage
           GestureDetector(
-            onTap: _busy ? null : _showSlippageDialog,
+            onTap: _networkLocked ? null : _showSlippageDialog,
             child: Container(
               width: 36,
               height: 36,
@@ -714,12 +937,18 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Row(
-        children: ChainConfig.all.where((c) => c.hasSwap).map((chain) {
+        // TPIX Chain ไม่มี router ใน ChainConfig (ที่อยู่ DEX มาจากทะเบียนบนเซิร์ฟเวอร์เท่านั้น)
+        children: [ChainConfig.tpix, ...ChainConfig.all.where((c) => c.hasSwap)].map((chain) {
           final isActive = chain.chainId == _chain.chainId;
+          // ทะเบียนไม่พร้อม/ติดต่อไม่ได้ — ยังแตะได้ (ถามใหม่ + บอกเหตุผล) แต่จางลง
+          final dimmed =
+              chain.chainId == ChainConfig.tpix.chainId &&
+              (_tpix.phase == TpixSwapPhase.unavailable || _tpix.phase == TpixSwapPhase.unreachable);
           return Expanded(
             child: GestureDetector(
+              key: ValueKey('swap-chain-${chain.chainId}'),
               // ระหว่างอนุมัติ/แลก ห้ามสลับเชน (ธุรกรรมที่รอผลอ้างอิงเชนเดิม)
-              onTap: _busy ? null : () => _onChainChanged(chain),
+              onTap: _networkLocked ? null : () => _onChainChanged(chain),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 10),
@@ -740,7 +969,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                        color: isActive ? chain.color : AppTheme.textMuted,
+                        color: isActive ? chain.color : AppTheme.textMuted.withValues(alpha: dimmed ? 0.45 : 1),
                       ),
                     ),
                   ],
@@ -767,7 +996,16 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildFromCard(LocaleProvider l) {
+    final tpix = _isTpix;
+    final tokenIn = tpix ? _tpix.from : _tokenIn;
     final formattedBalance = SwapService.formatAmount(_balanceIn, _tokenIn?.decimals ?? 18);
+    // โหมด TPIX: ยอดเป็น BigInt ตรงตัว · อ่านไม่ได้ = "—" (ไม่ใช่ 0)
+    final tpixBalance = _tpix.balanceIn;
+    final balanceText = !tpix
+        ? formattedBalance.toStringAsFixed(4)
+        : (tpixBalance == null || tokenIn == null
+              ? '—'
+              : TpixDexMath.display(tpixBalance, tokenIn.decimals, maxFraction: 4));
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -785,19 +1023,22 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               Text(l.t('swap.from'), style: const TextStyle(fontSize: 13, color: AppTheme.textMuted)),
               Row(
                 children: [
-                  if (_loadingBalance)
+                  if (tpix ? _tpix.loadingBalance : _loadingBalance)
                     const Padding(
                       padding: EdgeInsets.only(right: 4),
                       child: SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: AppTheme.textMuted)),
                     ),
                   Text(
-                    '${l.t('swap.balance')}: ${formattedBalance.toStringAsFixed(4)}',
+                    '${l.t('swap.balance')}: $balanceText',
                     style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
                   ),
                   const SizedBox(width: TpixGap.sm),
                   GestureDetector(
-                    onTap: _busy
+                    key: const ValueKey('swap-max'),
+                    onTap: _networkLocked
                         ? null
+                        : tpix
+                        ? _onTpixMax
                         : () {
                             _amountController.text = _maxAmountText();
                             _onAmountChanged(_amountController.text);
@@ -820,7 +1061,8 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
             children: [
               // Token selector button
               GestureDetector(
-                onTap: _busy ? null : _selectTokenIn,
+                key: const ValueKey('swap-token-in'),
+                onTap: _networkLocked ? null : (tpix ? () => _selectTpixToken(isFrom: true) : _selectTokenIn),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
@@ -830,11 +1072,11 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_tokenIn != null) ...[
-                        TokenLogo(token: _tokenIn!, chain: _chain, size: 28),
+                      if (tokenIn != null) ...[
+                        TokenLogo(token: tokenIn, chain: _chain, size: 28),
                         const SizedBox(width: TpixGap.sm),
                         Text(
-                          _tokenIn!.symbol,
+                          tokenIn.symbol,
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
                       ] else
@@ -849,8 +1091,10 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               // Amount input
               Expanded(
                 child: TextField(
+                  key: const ValueKey('swap-amount'),
                   controller: _amountController,
-                  enabled: !_busy,
+                  // ระหว่างอนุมัติ/สวอปห้ามแก้จำนวน — ธุรกรรมที่รออยู่ผูกกับจำนวนเดิม
+                  enabled: !_networkLocked,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))],
                   style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: Colors.white),
@@ -861,7 +1105,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
                   ),
-                  onChanged: _onAmountChanged,
+                  onChanged: tpix ? _tpix.setAmount : _onAmountChanged,
                 ),
               ),
             ],
@@ -876,7 +1120,8 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Center(
         child: GestureDetector(
-          onTap: _busy ? null : _flipTokens,
+          key: const ValueKey('swap-flip'),
+          onTap: _networkLocked ? null : (_isTpix ? _flipTpix : _flipTokens),
           child: RotationTransition(
             turns: Tween(begin: 0.0, end: 0.5).animate(
               CurvedAnimation(parent: _flipController, curve: Curves.easeInOut),
@@ -901,9 +1146,18 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildToCard(LocaleProvider l) {
-    final outFormatted = _quoteAmount != null && _tokenOut != null
-        ? SwapService.formatAmount(_quoteAmount!, _tokenOut!.decimals)
-        : null;
+    final tpix = _isTpix;
+    final tokenOut = tpix ? _tpix.to : _tokenOut;
+    final tpixQuote = _tpix.quote;
+    final String? outText;
+    if (tpix) {
+      outText = tpixQuote == null ? null : TpixDexMath.display(tpixQuote.amountOut, tpixQuote.to.decimals);
+    } else {
+      outText = _quoteAmount != null && _tokenOut != null
+          ? SwapService.formatAmount(_quoteAmount!, _tokenOut!.decimals).toStringAsFixed(6)
+          : null;
+    }
+    final quoting = tpix ? _tpix.quoting && tpixQuote == null : _isQuoting;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -920,7 +1174,8 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           Row(
             children: [
               GestureDetector(
-                onTap: _busy ? null : _selectTokenOut,
+                key: const ValueKey('swap-token-out'),
+                onTap: _networkLocked ? null : (tpix ? () => _selectTpixToken(isFrom: false) : _selectTokenOut),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
@@ -930,11 +1185,11 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_tokenOut != null) ...[
-                        TokenLogo(token: _tokenOut!, chain: _chain, size: 28),
+                      if (tokenOut != null) ...[
+                        TokenLogo(token: tokenOut, chain: _chain, size: 28),
                         const SizedBox(width: TpixGap.sm),
                         Text(
-                          _tokenOut!.symbol,
+                          tokenOut.symbol,
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
                       ] else
@@ -947,7 +1202,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               ),
               const SizedBox(width: TpixGap.md),
               Expanded(
-                child: _isQuoting
+                child: quoting
                     ? const Align(
                         alignment: Alignment.centerRight,
                         child: SizedBox(
@@ -957,12 +1212,15 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                         ),
                       )
                     : Text(
-                        outFormatted != null ? outFormatted.toStringAsFixed(6) : '0.0',
+                        outText ?? '0.0',
+                        key: const ValueKey('swap-amount-out'),
                         textAlign: TextAlign.right,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
-                          color: outFormatted != null ? Colors.white : AppTheme.textMuted.withValues(alpha: 0.3),
+                          color: outText != null ? Colors.white : AppTheme.textMuted.withValues(alpha: 0.3),
                         ),
                       ),
               ),
@@ -991,7 +1249,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           return Padding(
             padding: const EdgeInsets.only(right: 6),
             child: GestureDetector(
-              onTap: _busy
+              onTap: _networkLocked
                   ? null
                   : () {
                       setState(() => _slippagePercent = s);
@@ -1020,7 +1278,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         }),
         const Spacer(),
         GestureDetector(
-          onTap: _busy ? null : _showSlippageDialog,
+          onTap: _networkLocked ? null : _showSlippageDialog,
           child: Text(
             l.t('swap.custom'),
             style: TextStyle(
@@ -1100,22 +1358,239 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _infoRow(String label, String value) {
+  Widget _infoRow(String label, String value, {Color? valueColor, Key? valueKey}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+          const SizedBox(width: TpixGap.sm),
           Flexible(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+              key: valueKey,
+              style: TextStyle(fontSize: 12, color: valueColor ?? AppTheme.textSecondary, fontWeight: FontWeight.w600),
               textAlign: TextAlign.end,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// สถานะโหมด TPIX Chain ตอนยังใช้ไม่ได้ — โหลดอยู่ / ทะเบียนไม่พร้อม / ติดต่อไม่ได้
+  Widget _buildTpixStatus(LocaleProvider l) {
+    final colors = AppColors.of(context);
+    if (_tpix.phase == TpixSwapPhase.loading) {
+      return Padding(
+        key: const ValueKey('tpix-swap-loading'),
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        child: Column(
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+            ),
+            const SizedBox(height: TpixGap.md),
+            Text(l.t('swap.tpix.loading'), style: TextStyle(fontSize: 13, color: colors.textMuted)),
+          ],
+        ),
+      );
+    }
+
+    final unreachable = _tpix.phase == TpixSwapPhase.unreachable;
+    return Container(
+      key: const ValueKey('tpix-swap-closed'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(TpixRadius.lg),
+        color: Colors.white.withValues(alpha: 0.04),
+        border: Border.all(color: colors.brandWarm.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(unreachable ? Icons.cloud_off_rounded : Icons.lock_clock_rounded, color: colors.brandWarm, size: 20),
+              const SizedBox(width: TpixGap.sm),
+              Expanded(
+                child: Text(
+                  l.t(unreachable ? 'swap.tpix.unreachable' : 'swap.tpix.unavailable'),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: colors.text),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: TpixGap.sm),
+          Text(
+            l.t(unreachable ? 'swap.tpix.unreachableBody' : 'swap.tpix.unavailableBody'),
+            style: TextStyle(fontSize: 13, height: 1.4, color: colors.textSec),
+          ),
+          const SizedBox(height: TpixGap.lg),
+          Wrap(
+            spacing: TpixGap.sm,
+            runSpacing: TpixGap.sm,
+            children: [
+              TextButton.icon(
+                key: const ValueKey('tpix-retry'),
+                onPressed: () => _tpix.load(force: true),
+                icon: const Icon(Icons.refresh_rounded, size: 18, color: AppTheme.primary),
+                label: Text(
+                  l.t('swap.tpix.retry'),
+                  style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton(
+                key: const ValueKey('tpix-use-bsc'),
+                onPressed: () => _onChainChanged(ChainConfig.bsc),
+                child: Text(l.t('swap.tpix.useBsc'), style: TextStyle(color: colors.textSec)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ราคา / ผลกระทบต่อราคา / ค่าธรรมเนียมในพูล ของโหมด TPIX Chain
+  Widget _buildTpixQuoteInfo(LocaleProvider l) {
+    final colors = AppColors.of(context);
+    final q = _tpix.quote;
+    final err = _tpix.quoteError;
+    if (q == null) {
+      if (err == null || _tpix.quoting) return const SizedBox.shrink();
+      return Text(
+        l.t(err.localeKey),
+        key: const ValueKey('tpix-quote-error'),
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 13, color: colors.brandDanger),
+      );
+    }
+
+    final inAmount = Units.toDouble(q.amountIn, q.from.decimals);
+    final outAmount = Units.toDouble(q.amountOut, q.to.decimals);
+    final rate = inAmount > 0 ? outAmount / inAmount : 0.0; // แสดงผลเท่านั้น
+    String minText;
+    try {
+      minText = '${TpixDexMath.display(q.minOut(_slippagePercent), q.to.decimals)} ${q.to.symbol}';
+    } on TpixDexException {
+      minText = '—';
+    }
+    final bps = q.impactBps;
+    final impactColor = bps == null || q.exceedsImpactLimit
+        ? colors.brandDanger
+        : (bps >= 300 ? colors.brandWarm : null);
+    final maxIn = q.exceedsImpactLimit ? q.maxAmountInUnderLimit : null;
+
+    return Container(
+      key: const ValueKey('tpix-quote-info'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(TpixRadius.md),
+        color: Colors.white.withValues(alpha: 0.03),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        children: [
+          _infoRow(l.t('swap.rate'), '1 ${q.from.symbol} = ${rate.toStringAsFixed(6)} ${q.to.symbol}'),
+          _infoRow(l.t('swap.minReceived'), minText),
+          _infoRow(
+            l.t('swap.tpix.priceImpact'),
+            _impactText(q, l),
+            valueColor: impactColor,
+            valueKey: const ValueKey('tpix-impact'),
+          ),
+          _infoRow(l.t('swap.slippage'), _slippageText),
+          _infoRow(l.t('swap.tpix.poolFee'), l.t('swap.tpix.poolFeeValue')),
+          _infoRow(l.t('swap.tpix.gasFee'), l.t('swap.tpix.gasFeeValue')),
+          _infoRow(l.t('swap.tpix.route'), _routeText(q)),
+          _infoRow(l.t('swap.network'), ChainConfig.tpix.name),
+          if (maxIn != null && maxIn > BigInt.zero) ...[
+            const SizedBox(height: TpixGap.sm),
+            Text(
+              l
+                  .t('swap.tpix.maxHint')
+                  .replaceAll('{amount}', TpixDexMath.display(maxIn, q.from.decimals, maxFraction: 4))
+                  .replaceAll('{symbol}', q.from.symbol),
+              key: const ValueKey('tpix-max-hint'),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: colors.brandDanger),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTpixSwapButton(LocaleProvider l) {
+    final block = _tpix.block;
+    String text;
+    Color color;
+    VoidCallback? onTap;
+    switch (block) {
+      case TpixSwapBlock.enterAmount:
+        text = l.t('swap.enterAmount');
+        color = AppTheme.textMuted;
+      case TpixSwapBlock.invalidAmount:
+        text = l.t('swap.tpix.invalidAmount');
+        color = AppTheme.danger;
+      case TpixSwapBlock.tooManyDecimals:
+        text = l.t('swap.tpix.tooManyDecimals');
+        color = AppTheme.danger;
+      case TpixSwapBlock.loading:
+        text = l.t('swap.tpix.loadingShort');
+        color = AppTheme.textMuted;
+      case TpixSwapBlock.balanceUnknown:
+        text = l.t('swap.tpix.balanceUnknown');
+        color = AppTheme.accent;
+        onTap = _tpix.refreshBalance;
+      case TpixSwapBlock.insufficient:
+        text = l.t('swap.insufficient');
+        color = AppTheme.danger;
+      case TpixSwapBlock.quoting:
+        text = l.t('swap.tpix.quoting');
+        color = AppTheme.textMuted;
+      case TpixSwapBlock.quoteFailed:
+        text = l.t('swap.tpix.retryQuote');
+        color = AppTheme.accent;
+        onTap = _tpix.refreshQuote;
+      case TpixSwapBlock.impactUnknown:
+        text = l.t('swap.tpix.impactUnknownButton');
+        color = AppTheme.danger;
+      case TpixSwapBlock.impactTooHigh:
+        text = l.t('swap.tpix.impactTooHighButton');
+        color = AppTheme.danger;
+      case TpixSwapBlock.needsApproval:
+        text = _tpix.approving ? l.t('swap.approving') : '${l.t('swap.approve')} ${_tpix.from?.symbol ?? ''}';
+        color = AppTheme.accent;
+        onTap = _tpix.busy ? null : _approveTpix;
+      case TpixSwapBlock.none:
+        text = _tpix.swapping ? l.t('swap.swapping') : l.t('swap.button');
+        color = AppTheme.primary;
+        onTap = _tpix.busy ? null : _executeTpixSwap;
+    }
+
+    return Column(
+      children: [
+        _actionButton(
+          key: const ValueKey('tpix-swap-button'),
+          text: text,
+          color: color,
+          onTap: onTap,
+          busy: _tpix.busy,
+        ),
+        if (block == TpixSwapBlock.needsApproval) ...[
+          const SizedBox(height: TpixGap.sm),
+          Text(
+            l.t('swap.tpix.approveNote'),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: AppColors.of(context).textMuted),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1150,7 +1625,21 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       onTap = canSwap ? _executeSwap : null;
     }
 
+    return _actionButton(text: buttonText, color: buttonColor, onTap: onTap, busy: _isSwapping || _isApproving);
+  }
+
+  /// ปุ่มหลักของหน้า (อนุมัติ/แลก) — หน้าตาเดียวกันทุกเครือข่าย
+  Widget _actionButton({
+    Key? key,
+    required String text,
+    required Color color,
+    required VoidCallback? onTap,
+    required bool busy,
+  }) {
+    final buttonText = text;
+    final buttonColor = color;
     return GestureDetector(
+      key: key,
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -1167,7 +1656,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               : null,
         ),
         alignment: Alignment.center,
-        child: (_isSwapping || _isApproving)
+        child: busy
             ? Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

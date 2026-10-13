@@ -17,12 +17,20 @@ class TokenSelectorSheet extends StatefulWidget {
   final String? excludeAddress; // already-selected token to dim
   final bool showNative;
 
+  /// รายการเหรียญแทนของ [chain] (เช่น เหรียญของ TPIX DEX จากเซิร์ฟเวอร์) — null = ใช้ของเชน
+  final List<TokenDef>? tokens;
+
+  /// ตัวอ่านยอดแทนค่าเริ่มต้น — คืน null เมื่ออ่านไม่ได้ (ไม่แสดงยอด ไม่ใช่ 0)
+  final Future<BigInt?> Function(TokenDef token)? balanceOf;
+
   const TokenSelectorSheet({
     super.key,
     required this.chain,
     this.walletAddress,
     this.excludeAddress,
     this.showNative = true,
+    this.tokens,
+    this.balanceOf,
   });
 
   /// Show the selector and return the chosen TokenDef (or null)
@@ -32,6 +40,8 @@ class TokenSelectorSheet extends StatefulWidget {
     String? walletAddress,
     String? excludeAddress,
     bool showNative = true,
+    List<TokenDef>? tokens,
+    Future<BigInt?> Function(TokenDef token)? balanceOf,
   }) {
     return showModalBottomSheet<TokenDef>(
       context: context,
@@ -42,6 +52,8 @@ class TokenSelectorSheet extends StatefulWidget {
         walletAddress: walletAddress,
         excludeAddress: excludeAddress,
         showNative: showNative,
+        tokens: tokens,
+        balanceOf: balanceOf,
       ),
     );
   }
@@ -72,6 +84,17 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
     if (widget.walletAddress == null) return;
     setState(() => _loadingBalances = true);
 
+    final reader = widget.balanceOf;
+    if (reader != null) {
+      for (final token in _allTokens) {
+        final bal = await reader(token);
+        if (!mounted) return;
+        if (bal != null) _balances[token.address.toLowerCase()] = bal;
+      }
+      setState(() => _loadingBalances = false);
+      return;
+    }
+
     try {
       // Load native balance
       final nativeBal = await SwapService.getNativeBalance(
@@ -96,8 +119,10 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
     if (mounted) setState(() => _loadingBalances = false);
   }
 
+  List<TokenDef> get _allTokens => widget.tokens ?? widget.chain.allTokens;
+
   List<TokenDef> get _filteredTokens {
-    final all = widget.chain.allTokens;
+    final all = _allTokens;
     if (_query.isEmpty) return all;
     final q = _query.toLowerCase();
     return all.where((t) {

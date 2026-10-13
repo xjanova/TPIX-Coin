@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 /// Wallet authentication service for tpix.online protected endpoints
@@ -14,6 +15,10 @@ import 'package:http/http.dart' as http;
 class WalletAuthService {
   static const _apiBase = 'https://tpix.online/api/v1';
   static const _sessionTtl = Duration(hours: 3, minutes: 30);
+
+  /// เทสต์ใช้แทน http.Client จริง
+  @visibleForTesting
+  static http.Client Function() clientFactory = http.Client.new;
 
   // Cached verification state
   static String? _verifiedAddress;
@@ -100,7 +105,7 @@ class WalletAuthService {
 
   /// POST /api/v1/wallet/connect — register wallet with backend
   static Future<void> _connectWallet(String address, int chainId) async {
-    final client = http.Client();
+    final client = clientFactory();
     try {
       await client.post(
         Uri.parse('$_apiBase/wallet/connect'),
@@ -120,7 +125,7 @@ class WalletAuthService {
   static Future<Map<String, dynamic>?> _requestChallenge(
     String address,
   ) async {
-    final client = http.Client();
+    final client = clientFactory();
     try {
       final response = await client.post(
         Uri.parse('$_apiBase/wallet/sign'),
@@ -150,7 +155,7 @@ class WalletAuthService {
     required String nonce,
     required int chainId,
   }) async {
-    final client = http.Client();
+    final client = clientFactory();
     try {
       final response = await client.post(
         Uri.parse('$_apiBase/wallet/verify-signature'),
@@ -190,7 +195,7 @@ class WalletAuthService {
 
     http.Response response;
 
-    var client = http.Client();
+    var client = clientFactory();
     try {
       response = await client.post(
         Uri.parse(url),
@@ -210,7 +215,7 @@ class WalletAuthService {
         chainId: chainId,
       );
 
-      client = http.Client();
+      client = clientFactory();
       try {
         response = await client.post(
           Uri.parse(url),

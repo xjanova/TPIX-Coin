@@ -58,6 +58,13 @@ class _FakeBsc {
       });
 }
 
+/// หน้าแลกเปิดตามเชนที่กระเป๋าใช้อยู่ (ค่าเริ่มต้น = TPIX Chain → แท็บ TPIX DEX)
+/// เทสต์นี้ทดสอบทางเดินของ BSC จึงให้กระเป๋าอยู่บน BSC (ไม่เรียก switchChain = ไม่ยิงเน็ตจริง)
+class _BscWallet extends WalletProvider {
+  @override
+  int get activeChainId => 56;
+}
+
 Widget _harness(WalletProvider wallet, ThemeId theme) => MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: wallet),
@@ -87,7 +94,7 @@ void main() {
   });
 
   Future<WalletProvider> unlockedWallet() async {
-    final wallet = WalletProvider();
+    final wallet = _BscWallet();
     await wallet.importFromPrivateKey('0x${'4c' * 32}');
     return wallet;
   }
