@@ -177,6 +177,9 @@ class WalletProvider extends ChangeNotifier {
   /// ราคา TPIX/USD — null = ยังไม่เคยได้ราคาจริง (UI ต้องโชว์ "ไม่พร้อมใช้งาน")
   double? get tpixPrice => _priceQuote?.price;
 
+  /// เปลี่ยนแปลงราคา TPIX 24 ชม. (%) จากเซิร์ฟเวอร์ — null = ไม่รู้ (ห้ามเดา)
+  double? get tpixChange24h => _priceQuote?.change24h;
+
   /// ราคาที่โชว์เป็นราคาเก่า (ดึงล่าสุดไม่สำเร็จ)
   bool get isPriceStale => _priceStale;
   DateTime? get priceUpdatedAt => _priceQuote?.fetchedAt;

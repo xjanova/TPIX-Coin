@@ -42,7 +42,14 @@ import '../widgets/action_button.dart';
 import '../widgets/liquid_nav_bar.dart';
 import '../widgets/qr_scanner_screen.dart';
 import 'package:app_links/app_links.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/tx_record.dart';
+import '../services/identity_service.dart';
+import '../widgets/obsidian/obsidian.dart';
+
+// หน้าแรกธีม Obsidian (ใช้ตัวจัดการเดิมของหน้านี้ร่วมกัน)
+part 'home_obsidian.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -59,6 +66,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   StreamSubscription? _deepLinkSub;
   // ใช้เลื่อนกลับบนสุดเมื่อกดเมนู "หน้าหลัก" ตอนอยู่หน้านี้อยู่แล้ว
   final ScrollController _scrollCtrl = ScrollController();
+
+  /// ระดับการปกป้องตัวตน 0-3 (ธีม Obsidian โชว์ใต้ชื่อกระเป๋า) — null = ยังอ่านไม่เสร็จ
+  int? _identityLevel;
+
+  /// กำลังเปิดหน้าใหม่อยู่ — กันแตะรัว ๆ แล้วหน้าเดิมซ้อนสองชั้น
+  bool _routeBusy = false;
 
   @override
   void initState() {
@@ -78,6 +91,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     _loadVersion();
+    _loadIdentityLevel();
     _initWalletConnect();
     _initDeepLinks();
     _checkForUpdate();
@@ -185,6 +199,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
+  /// อ่านระดับการปกป้องตัวตนจาก secure storage (คำถามกันลืม / พิกัด / Recovery PIN)
+  Future<void> _loadIdentityLevel() async {
+    try {
+      final status = await IdentityService().getStatus();
+      if (!mounted) return;
+      setState(() => _identityLevel = (status['level'] as int?) ?? 0);
+    } catch (e) {
+      // อ่านไม่ได้ → ไม่โชว์สถานะเลย (ดีกว่าบอกผิด ๆ ว่ายังไม่ได้ป้องกัน)
+      debugPrint('identity status: ${e.runtimeType}');
+    }
+  }
+
+  /// เปิดหน้าใหม่ทีละหน้า — แตะซ้ำระหว่างหน้ากำลังเปิด/ยังเปิดอยู่ ไม่ push ซ้อน
+  Future<void> _obsOpen(Widget page) async {
+    if (_routeBusy) return;
+    _routeBusy = true;
+    try {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    } finally {
+      _routeBusy = false;
+    }
+  }
+
+  /// หน้าตั้งค่าตัวตน → กลับมาแล้วอ่านระดับใหม่ (ผู้ใช้อาจเพิ่ง ตั้ง/ลบ)
+  Future<void> _openIdentity() async {
+    await _obsOpen(const IdentityScreen());
+    if (!mounted) return;
+    await _loadIdentityLevel();
+  }
+
+  /// ลากลงเพื่อรีเฟรช (ธีม Obsidian): ยอด TPIX + ราคา + ยอดทุกเชน + ยอดโทเค็น
+  /// ตัวที่ดึงไม่ได้คงยอดเดิม + ติดป้าย (ไม่ throw ขึ้นมาถึง UI)
+  Future<void> _obsRefreshAll(WalletProvider wallet) async {
+    try {
+      await Future.wait([
+        wallet.refreshBalance(),
+        wallet.loadChainBalances(),
+        wallet.refreshTokenBalances(),
+      ]);
+    } catch (e) {
+      debugPrint('home refresh: ${e.runtimeType}');
+    }
+  }
+
   Future<void> _loadVersion() async {
     final info = await PackageInfo.fromPlatform();
     if (!mounted) return;
@@ -203,6 +261,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    // ธีม Obsidian มีเลย์เอาต์ของตัวเอง (home_obsidian.dart) — ธีมอื่นใช้ของเดิมด้านล่าง
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return _buildObsidianHome(l);
+    }
     return Scaffold(
       // ให้เนื้อหาไหลลอดใต้แถบเมนูที่ลอยอยู่ (แถบโปร่ง ไม่ใช่ทึบเต็มความกว้าง)
       extendBody: true,
