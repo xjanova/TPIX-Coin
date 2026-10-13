@@ -632,7 +632,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     if (!mounted) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => BackupScreen(mnemonic: mnemonic)));
+    Navigator.push(context, MaterialPageRoute(builder: (_) => BackupScreen(mnemonic: mnemonic, viewOnly: true)));
   }
 
   Future<void> _confirmDeleteAll(LocaleProvider l) async {

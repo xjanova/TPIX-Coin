@@ -14,7 +14,13 @@ import 'pin_screen.dart';
 
 class BackupScreen extends StatefulWidget {
   final String mnemonic;
-  const BackupScreen({super.key, required this.mnemonic});
+
+  /// เปิดมาจากหน้าตั้งค่าเพื่อ "ดูวลีอย่างเดียว" — ปุ่มล่างคือ "เสร็จสิ้น" แล้วกลับหน้าเดิม
+  /// (false = ขั้นตอนสร้างกระเป๋าใหม่ ต่อไปตั้ง PIN ตามเดิม)
+  /// เดิมทุกทางพาไปตั้ง PIN ใหม่ + บันทึกกระเป๋าซ้ำ ทั้งที่ผู้ใช้แค่เข้ามาดูวลี
+  final bool viewOnly;
+
+  const BackupScreen({super.key, required this.mnemonic, this.viewOnly = false});
 
   @override
   State<BackupScreen> createState() => _BackupScreenState();
@@ -49,6 +55,19 @@ class _BackupScreenState extends State<BackupScreen> {
     _autoClearTimer?.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  /// ปุ่มล่าง: ล้างวลีออกจากหน่วยความจำก่อนเสมอ แล้วไปต่อตามที่มา
+  void _onContinue() {
+    _clearMnemonic();
+    if (widget.viewOnly) {
+      Navigator.pop(context);
+      return;
+    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const PinScreen(isSetup: true)),
+    );
   }
 
   void _clearMnemonic() {
@@ -171,14 +190,8 @@ class _BackupScreenState extends State<BackupScreen> {
             ],
             const SizedBox(height: 12),
             ObsidianButton(
-              label: l.t('backup.continue'),
-              onPressed: () {
-                _clearMnemonic();
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const PinScreen(isSetup: true)),
-                );
-              },
+              label: l.t(widget.viewOnly ? 'backup.done' : 'backup.continue'),
+              onPressed: _onContinue,
             ),
           ],
         ),
@@ -337,19 +350,13 @@ class _BackupScreenState extends State<BackupScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
-                      _clearMnemonic();
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) => const PinScreen(isSetup: true)),
-                      );
-                    },
+                    onPressed: _onContinue,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
                       padding: const EdgeInsets.symmetric(vertical: 18),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
                     ),
-                    child: Text(l.t('backup.continue'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                    child: Text(l.t(widget.viewOnly ? 'backup.done' : 'backup.continue'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                   ),
                 ),
               ],

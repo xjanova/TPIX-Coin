@@ -225,6 +225,7 @@ class LocaleProvider extends ChangeNotifier {
       'backup.copied': 'คัดลอกแล้ว!',
       'backup.copy': 'คัดลอก',
       'backup.continue': 'สำรองแล้ว ดำเนินการต่อ',
+      'backup.done': 'เสร็จสิ้น',
       'backup.autoCleared': 'Seed phrase ถูกลบอัตโนมัติเพื่อความปลอดภัย',
 
       // PIN
@@ -1156,6 +1157,7 @@ class LocaleProvider extends ChangeNotifier {
       'backup.copied': 'Copied!',
       'backup.copy': 'Copy',
       'backup.continue': 'I\'ve backed up, continue',
+      'backup.done': 'Done',
       'backup.autoCleared': 'Seed phrase auto-cleared for security',
 
       // PIN
