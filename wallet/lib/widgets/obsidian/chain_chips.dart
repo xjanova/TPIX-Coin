@@ -23,12 +23,20 @@ class ChainChips extends StatelessWidget {
   /// ป้ายสำหรับตัวอ่านหน้าจอของทั้งกลุ่ม (เช่น "เลือกเชน")
   final String semanticLabel;
 
+  /// ขนาดชิป — ค่าปกติตามหน้าแรก (44 / มน 15 / โลโก้ 20) · หน้าแลกใช้ 40 / 14 / 18
+  final double height;
+  final double radius;
+  final double logoSize;
+
   const ChainChips({
     super.key,
     required this.chains,
     required this.activeIndex,
     required this.onSelect,
     this.semanticLabel = '',
+    this.height = 44,
+    this.radius = 15,
+    this.logoSize = 20,
   });
 
   @override
@@ -47,6 +55,9 @@ class ChainChips extends StatelessWidget {
                   art: chains[i],
                   active: i == activeIndex,
                   onTap: i == activeIndex ? null : () => onSelect(i),
+                  height: height,
+                  radius: radius,
+                  logoSize: logoSize,
                 ),
               ),
             ],
@@ -61,13 +72,23 @@ class _ChainChip extends StatelessWidget {
   final ObsidianChainArt art;
   final bool active;
   final VoidCallback? onTap;
+  final double height;
+  final double radius;
+  final double logoSize;
 
-  const _ChainChip({required this.art, required this.active, required this.onTap});
+  const _ChainChip({
+    required this.art,
+    required this.active,
+    required this.onTap,
+    this.height = 44,
+    this.radius = 15,
+    this.logoSize = 20,
+  });
 
-  static ObsidianSurface _surface(ObsidianChainArt art, double t) {
+  static ObsidianSurface _surface(ObsidianChainArt art, double t, double radius) {
     Color mix(Color a, Color b) => Color.lerp(a, b, t)!;
     return ObsidianSurface(
-      radius: 15,
+      radius: radius,
       gradient: LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
@@ -104,9 +125,9 @@ class _ChainChip extends StatelessWidget {
           duration: const Duration(milliseconds: 350),
           curve: Curves.ease,
           builder: (context, t, _) => SizedBox(
-            height: 44,
+            height: height,
             child: CustomPaint(
-              painter: ObsidianSurfacePainter(_surface(art, t)),
+              painter: ObsidianSurfacePainter(_surface(art, t, radius)),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: FittedBox(
@@ -114,7 +135,7 @@ class _ChainChip extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ObsidianChainLogo(art: art, size: 20),
+                      ObsidianChainLogo(art: art, size: logoSize),
                       const SizedBox(width: 6),
                       ExcludeSemantics(
                         child: Text(

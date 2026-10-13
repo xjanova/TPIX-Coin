@@ -26,7 +26,13 @@ class ObsidianButton extends StatelessWidget {
   /// กำลังทำงาน — โชว์วงหมุนแทนป้าย และไม่รับการกด
   final bool loading;
 
+  /// ข้อความข้างวงหมุนระหว่าง [loading] (เช่น "กำลังตรวจบนเชน…") — null = วงหมุนอย่างเดียว
+  final String? loadingLabel;
+
   final double height;
+
+  /// สีป้ายแทนค่าปกติ (เช่น ป้ายแดงของปุ่มยืนยันการลบ) — null = ดำบนปุ่มขาว / เทาอ่อนบนปุ่มเข้ม
+  final Color? labelColor;
 
   const ObsidianButton({
     super.key,
@@ -36,6 +42,8 @@ class ObsidianButton extends StatelessWidget {
     this.trailingIcon,
     this.loading = false,
     this.height = 58,
+    this.labelColor,
+    this.loadingLabel,
   });
 
   const ObsidianButton.secondary({
@@ -45,25 +53,39 @@ class ObsidianButton extends StatelessWidget {
     this.trailingIcon,
     this.loading = false,
     this.height = 52,
+    this.labelColor,
+    this.loadingLabel,
   }) : kind = ObsidianButtonKind.secondary;
 
   @override
   Widget build(BuildContext context) {
     final primary = kind == ObsidianButtonKind.primary;
     final enabled = onPressed != null && !loading;
-    final fg = primary ? const Color(0xFF0A0B0F) : ObsidianColors.textSoft;
+    final fg = labelColor ?? (primary ? const Color(0xFF0A0B0F) : ObsidianColors.textSoft);
     final text = ObsidianStyle.of(context).ui(
           fontSize: primary ? 16.5 : 15,
           fontWeight: FontWeight.w600,
           color: fg,
         );
 
+    final spinner = SizedBox(
+      width: 22,
+      height: 22,
+      child: CircularProgressIndicator(strokeWidth: 2.4, color: fg),
+    );
     final content = loading
-        ? SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2.4, color: fg),
-          )
+        ? (loadingLabel == null
+            ? spinner
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  spinner,
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(loadingLabel!, maxLines: 1, overflow: TextOverflow.ellipsis, style: text),
+                  ),
+                ],
+              ))
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: [
