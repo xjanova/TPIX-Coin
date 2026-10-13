@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/tokens.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../models/chain_config.dart';
@@ -16,9 +18,13 @@ import '../services/token_list_service.dart';
 import '../services/token_service.dart';
 import '../services/token_trust.dart';
 import '../services/wallet_service.dart';
+import '../widgets/obsidian/obsidian.dart';
 import '../widgets/qr_scanner_screen.dart';
 import '../widgets/token_badges.dart';
 import '../widgets/tpix_coin_logo.dart';
+
+// หน้าตาธีม Obsidian (ใช้สถานะ/ตัวจัดการเดิมของหน้านี้ร่วมกัน)
+part 'add_token_obsidian.dart';
 
 /// เพิ่มโทเค็นบน TPIX Chain
 ///
@@ -105,6 +111,16 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   void _setInput(String text) {
     _controller.text = text;
     _query = text.trim();
+  }
+
+  /// วางที่อยู่จากคลิปบอร์ดแล้วค้นหาทันที
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    if (data?.text != null) {
+      _setInput(data!.text!.trim());
+      _search();
+    }
   }
 
   void _scanQR() {
@@ -259,6 +275,18 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   /// ชื่อซ้ำตัวที่ยืนยันแล้ว → ต้องยืนยันอีกชั้น (ปุ่มยกเลิกเป็นทางหลัก)
   Future<bool> _confirmLookalike(TokenInfo token) async {
     final l = context.read<LocaleProvider>();
+    // ธีม Obsidian: ข้อความชุดเดียวกัน — ปุ่มหลักคือ "ยกเลิก" (ปุ่มเพิ่มต่อเป็นป้ายแดงบนปุ่มเข้ม)
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return showObsidianConfirmDialog(
+        context,
+        title: l.t('token.lookalikeConfirmTitle'),
+        body: '${token.name} (${token.symbol})\n${token.contractAddress}\n\n'
+            '${l.t('token.lookalikeConfirmBody').replaceAll('{symbol}', token.symbol)}',
+        confirmLabel: l.t('token.addAnyway'),
+        cancelLabel: l.t('common.cancel'),
+        danger: true,
+      );
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) {
@@ -364,6 +392,8 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
     final wallet = context.watch<WalletProvider>();
+    // ธีม Obsidian มีเลย์เอาต์ของตัวเอง (add_token_obsidian.dart) — ธีมอื่นใช้ของเดิมด้านล่าง
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) return _obsBuild(l, wallet);
     final c = AppColors.of(context);
     final idle = _foundToken == null && _prefill == null && _errorMsg == null && !_isLoading;
     return Scaffold(
@@ -436,14 +466,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                                 suffixIcon: IconButton(
-                                  onPressed: () async {
-                                    final data = await Clipboard.getData(Clipboard.kTextPlain);
-                                    if (!mounted) return;
-                                    if (data?.text != null) {
-                                      _setInput(data!.text!.trim());
-                                      _search();
-                                    }
-                                  },
+                                  onPressed: _pasteFromClipboard,
                                   icon: Icon(Icons.paste, color: c.textMuted, size: 20),
                                 ),
                               ),

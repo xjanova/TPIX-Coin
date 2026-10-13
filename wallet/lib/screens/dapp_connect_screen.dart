@@ -1,10 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import 'package:tpix_wallet/core/locale_provider.dart';
 import 'package:tpix_wallet/core/theme.dart';
+import 'package:tpix_wallet/core/themes/theme_bundle.dart';
 import 'package:tpix_wallet/services/walletconnect_service.dart';
+import 'package:tpix_wallet/widgets/obsidian/obsidian.dart';
 import 'package:tpix_wallet/widgets/qr_scanner_screen.dart';
+
+// หน้าตาธีม Obsidian (ใช้สถานะ/ตัวจัดการเดิมของหน้านี้ร่วมกัน)
+part 'dapp_connect_obsidian.dart';
 
 /// Screen for managing WalletConnect dApp connections.
 ///
@@ -45,8 +52,11 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
       await wc.pair(uri);
       // Proposal will arrive via onProposalReceived callback
     } catch (e) {
+      // ห้ามโชว์ Exception ดิบ — บอกสิ่งที่ผู้ใช้ทำต่อได้ (QR หมดอายุ → สร้างใหม่บนเว็บ)
+      debugPrint('WalletConnect pair failed: ${e.runtimeType}');
+      if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = context.read<LocaleProvider>().t('wc.pairFailed');
       });
     } finally {
       if (mounted) {
@@ -65,8 +75,9 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
             if (value.startsWith('wc:')) {
               _pairWithUri(value);
             } else {
+              if (!mounted) return;
               setState(() {
-                _error = 'Invalid QR code. Please scan a WalletConnect QR code.';
+                _error = context.read<LocaleProvider>().t('wc.invalidQr');
               });
             }
           },
@@ -80,6 +91,8 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
     final wc = context.watch<WalletConnectService>();
+    // ธีม Obsidian มีเลย์เอาต์ของตัวเอง (dapp_connect_obsidian.dart) — ธีมอื่นใช้ของเดิมด้านล่าง
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) return _obsBuild(l, wc);
     final c = AppColors.of(context);
     final activeSessions = wc.sessions;
 
@@ -511,6 +524,19 @@ class _DAppConnectScreenState extends State<DAppConnectScreen> {
   }
 
   void _confirmDisconnect(String topic, String name, LocaleProvider l, WalletConnectService wc) {
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      showObsidianConfirmDialog(
+        context,
+        title: l.t('wc.disconnectTitle'),
+        body: '${l.t('wc.disconnectMsg')} $name?',
+        confirmLabel: l.t('wc.disconnect'),
+        cancelLabel: l.t('common.cancel'),
+        danger: true,
+      ).then((ok) {
+        if (ok) wc.disconnectSession(topic);
+      });
+      return;
+    }
     final c = AppColors.of(context);
     showDialog(
       context: context,

@@ -11,6 +11,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -23,7 +24,13 @@ import '../services/bridge_rules.dart';
 import '../services/bridge_service.dart';
 import '../services/bridge_tracker.dart';
 import '../services/synth_service.dart';
+import '../utils/units.dart';
+import '../widgets/bridge_obsidian.dart';
 import '../widgets/bridge_widgets.dart';
+import '../widgets/obsidian/obsidian.dart';
+
+// หน้าตาธีม Obsidian (ใช้สถานะ/ขั้นตอนส่งของแผงนี้ร่วมกัน)
+part 'bridge_usdt_obsidian.dart';
 
 enum _Tab { deposit, withdraw, track }
 
@@ -90,6 +97,9 @@ class _UsdtBridgePanelState extends State<UsdtBridgePanel> with BridgeSendFlow<U
   void _onTracker() {
     if (mounted) setState(() {});
   }
+
+  /// setState สำหรับส่วนหน้าตาของธีม Obsidian (ไฟล์ part)
+  void _obsSet(VoidCallback fn) => setState(fn);
 
   @override
   void dispose() {
@@ -470,6 +480,9 @@ class _UsdtBridgePanelState extends State<UsdtBridgePanel> with BridgeSendFlow<U
         if (next?.toLowerCase() != _owner?.toLowerCase()) _onOwnerChanged(next);
       });
     }
+
+    // ธีม Obsidian มีเลย์เอาต์ของตัวเอง — กฎ/สถานะ/ปุ่มส่งชุดเดียวกัน
+    if (bridgeIsObsidian(context)) return _obsBuild(l);
 
     if (_loading && _info == null) {
       return const Center(child: CircularProgressIndicator(color: AppTheme.primary));

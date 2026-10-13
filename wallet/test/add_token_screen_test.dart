@@ -17,6 +17,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:tpix_wallet/core/locale_provider.dart';
+import 'package:tpix_wallet/core/themes/theme_bundle.dart';
 import 'package:tpix_wallet/models/chain_config.dart';
 import 'package:tpix_wallet/models/token_list.dart';
 import 'package:tpix_wallet/providers/wallet_provider.dart';
@@ -130,14 +131,14 @@ class _PendingImage extends ImageProvider<_PendingImage> {
 
 final _navKey = GlobalKey<NavigatorState>();
 
-Widget _harness() => MultiProvider(
+Widget _harness({ThemeId theme = ThemeId.liquid}) => MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
       ],
       child: MaterialApp(
         navigatorKey: _navKey,
-        theme: testTheme(),
+        theme: testTheme(themeId: theme),
         home: const Scaffold(body: Text('HOME')),
       ),
     );
@@ -150,12 +151,12 @@ Future<void> _drain(WidgetTester tester, {int rounds = 12}) async {
   }
 }
 
-Future<void> _open(WidgetTester tester) async {
+Future<void> _open(WidgetTester tester, {ThemeId theme = ThemeId.liquid}) async {
   tester.view.physicalSize = const Size(1080, 2400);
   tester.view.devicePixelRatio = 3.0;
   addTearDown(tester.view.reset);
   await tester.runAsync(() async {
-    await tester.pumpWidget(_harness());
+    await tester.pumpWidget(_harness(theme: theme));
   });
   unawaited(_navKey.currentState!
       .push(MaterialPageRoute<void>(builder: (_) => const AddTokenScreen())));
@@ -360,6 +361,77 @@ void main() {
       await _searchFor(tester, _random);
       expect(find.text(l.t('token.unverifiedTitle')), findsOneWidget);
       expect(find.text(l.t('token.listUnavailable')), findsOneWidget);
+    });
+  });
+
+  // ── ธีม Obsidian: หน้าตาใหม่ กฎเดิมทุกข้อ ──
+  group('ธีม Obsidian', () {
+    const obs = ThemeId.obsidian;
+
+    testWidgets('รายการที่ยืนยันแล้ว + ช่องที่อยู่มีฟอนต์ไทยสำรอง', (tester) async {
+      await _open(tester, theme: obs);
+      expect(find.text(l.t('token.listTitle')), findsOneWidget);
+      expect(find.text('IDTC'), findsOneWidget);
+      expect(find.text('USDT'), findsOneWidget);
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.decoration!.hintText, l.t('token.inputHint'));
+      expect(field.style!.fontFamilyFallback, contains('Noto Sans Thai'));
+      expect(field.decoration!.hintStyle!.fontFamilyFallback, contains('Noto Sans Thai'));
+    });
+
+    testWidgets('แตะ + → อ่านสัญญาแล้วเพิ่มทันที → แถวเป็น "เพิ่มแล้ว"', (tester) async {
+      await _open(tester, theme: obs);
+      await tester.tap(find.byKey(const ValueKey('obs-quick-add-$_idtc')));
+      await tester.pump();
+      await _drain(tester);
+
+      final saved = await tester.runAsync(() => DbService.getTokensForSlot(_slot));
+      final idtc = saved!.singleWhere((t) => t.contractAddress == _idtc);
+      expect(idtc.logoUrl, _idtcLogo);
+      await _drain(tester);
+      expect(find.text(l.t('token.addedShort')), findsOneWidget);
+    });
+
+    testWidgets('อยู่ในรายการ → ป้าย "ยืนยันแล้ว" ไม่มีคำเตือน', (tester) async {
+      await _open(tester, theme: obs);
+      await _searchFor(tester, _idtc);
+      expect(find.text(l.t('token.verified')), findsOneWidget);
+      expect(find.text(l.t('token.unverifiedTitle')), findsNothing);
+      expect(find.text(l.t('token.lookalikeTitle')), findsNothing);
+    });
+
+    testWidgets('USDT ปลอม → เตือน + ยืนยันอีกชั้น (ยกเลิก = ไม่เพิ่ม · เพิ่มต่อ = เพิ่ม)', (tester) async {
+      await _open(tester, theme: obs);
+      // คำเตือนของปลอมยาว — จอสูงขึ้นให้ปุ่มเพิ่มอยู่ในจอ
+      tester.view.physicalSize = const Size(1080, 4800);
+      await tester.pump();
+      await _searchFor(tester, _fakeUsdt);
+      expect(find.text(l.t('token.lookalikeTitle')), findsOneWidget);
+      expect(find.textContaining(ChainConfig.tpixUsdtAddress), findsOneWidget);
+
+      await tester.tap(find.text(l.t('token.add')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text(l.t('token.lookalikeConfirmTitle')), findsOneWidget);
+      await tester.tap(find.text(l.t('common.cancel')));
+      await tester.pump();
+      await _drain(tester);
+      expect(await _savedAddresses(tester), isNot(contains(_fakeUsdt)));
+
+      await tester.tap(find.text(l.t('token.add')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text(l.t('token.addAnyway')));
+      await tester.pump();
+      await _drain(tester);
+      expect(await _savedAddresses(tester), contains(_fakeUsdt));
+    });
+
+    testWidgets('ไม่ใช่ที่อยู่ → ข้อความผิด (ไม่ใช่ Exception ดิบ)', (tester) async {
+      await _open(tester, theme: obs);
+      await _searchFor(tester, '0x123');
+      expect(find.text(l.t('token.invalidAddress')), findsOneWidget);
+      expect(find.textContaining('Exception'), findsNothing);
     });
   });
 

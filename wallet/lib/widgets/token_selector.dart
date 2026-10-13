@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../core/locale_provider.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/tokens.dart';
 import '../core/theme.dart';
 import '../models/chain_config.dart';
 import '../services/swap_service.dart';
 import '../services/token_list_service.dart';
+import 'obsidian/obsidian.dart';
 import 'tpix_coin_logo.dart';
 
 /// Bottom sheet for selecting a token from the active chain
@@ -106,6 +110,8 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
   @override
   Widget build(BuildContext context) {
     final tokens = _filteredTokens;
+    // ธีม Obsidian มีหน้าตาของตัวเอง — ตัวเลือก/ยอด/การค้นหาใช้ชุดเดียวกัน
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) return _buildObsidian(tokens);
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.65,
@@ -286,6 +292,181 @@ class _TokenSelectorSheetState extends State<TokenSelectorSheet> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  //  ธีม Obsidian
+  // ════════════════════════════════════════════════════════════
+
+  Widget _buildObsidian(List<TokenDef> tokens) {
+    final l = context.watch<LocaleProvider>();
+    final st = ObsidianStyle.of(context);
+    final mq = MediaQuery.of(context);
+    final art = ObsidianChainArt.all.where((a) => a.chainId == widget.chain.chainId).firstOrNull;
+    return Padding(
+      padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
+      child: Container(
+        height: mq.size.height * 0.7,
+        decoration: const BoxDecoration(
+          color: ObsidianColors.card,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(TpixRadius.sheet)),
+          border: Border(top: BorderSide(color: Color(0x1FFFFFFF))),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l.t('obs.swap.selectToken'),
+                      style: st.ui(fontSize: 18, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+                    ),
+                  ),
+                  if (_loadingBalances)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 10),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: ObsidianColors.cyan),
+                      ),
+                    ),
+                  ObsidianPanel(
+                    surface: ObsidianCards.chip.copyWith(radius: 12),
+                    padding: const EdgeInsets.fromLTRB(6, 4, 10, 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (art != null) ObsidianChainLogo(art: art, size: 18) else ChainLogo(chain: widget.chain, size: 18),
+                        const SizedBox(width: 6),
+                        Text(widget.chain.shortName,
+                            style: st.ui(fontSize: 12, fontWeight: FontWeight.w600, color: ObsidianColors.textSoft)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: ObsidianTextField(
+                controller: _searchController,
+                hint: l.t('obs.swap.search'),
+                prefix: const Icon(Icons.search_rounded, size: 20, color: ObsidianColors.textMuted),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: tokens.isEmpty
+                  ? Center(
+                      child: Text(l.t('obs.swap.noTokens'), style: st.ui(fontSize: 14, color: ObsidianColors.textMuted)),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                      itemCount: tokens.length,
+                      itemBuilder: (_, i) => _buildObsidianTile(tokens[i], st),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildObsidianTile(TokenDef token, ObsidianStyle st) {
+    final isExcluded = widget.excludeAddress != null &&
+        token.address.toLowerCase() == widget.excludeAddress!.toLowerCase();
+    final balance = _balances[token.address.toLowerCase()];
+    final formattedBal = balance != null ? SwapService.formatAmount(balance, token.decimals) : null;
+    return Opacity(
+      opacity: isExcluded ? 0.35 : 1.0,
+      child: ObsidianPressable(
+        onTap: isExcluded ? null : () => Navigator.pop(context, token),
+        semanticLabel: token.symbol,
+        pressedScale: 0.985,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          child: Row(
+            children: [
+              DecoratedBox(
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Color(0xCC000000), offset: Offset(0, 6), blurRadius: 11.3, spreadRadius: -4)],
+                ),
+                child: ObsidianTokenLogo(token: token, chain: widget.chain, size: 40),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(token.symbol,
+                        style: st.ui(fontSize: 15, fontWeight: FontWeight.w600, color: ObsidianColors.text)),
+                    Text(token.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: st.ui(fontSize: 12, color: ObsidianColors.textMuted)),
+                  ],
+                ),
+              ),
+              if (formattedBal != null)
+                Text(
+                  obsidianAmountText(formattedBal),
+                  style: st.number(fontSize: 14, fontWeight: FontWeight.w600, color: ObsidianColors.textSoft),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// โลโก้เหรียญของธีม Obsidian — เหรียญหลักของเชน + เหรียญดังในรายการของแอป (สัญญาตัวจริง)
+/// ใช้โลโก้ทางการที่ฝังในแอป (ไม่ต้องรอโหลด) · ที่เหลือใช้ [TokenLogo] เดิม
+class ObsidianTokenLogo extends StatelessWidget {
+  final TokenDef token;
+  final ChainConfig chain;
+  final double size;
+
+  const ObsidianTokenLogo({super.key, required this.token, required this.chain, this.size = 32});
+
+  @override
+  Widget build(BuildContext context) {
+    if (token.isNative) {
+      final art = ObsidianChainArt.all.where((a) => a.chainId == chain.chainId).firstOrNull;
+      if (art != null) return ObsidianChainLogo(art: art, size: size);
+      return TokenLogo(token: token, chain: chain, size: size);
+    }
+    // เฉพาะสัญญาที่อยู่ในรายการของเชน (ตัวจริง) — เหรียญอื่นชื่อซ้ำห้ามได้โลโก้ทางการ
+    final official = chain.knownTokens.any((k) => k.address.toLowerCase() == token.address.toLowerCase());
+    final bundled = official ? ObsidianLogos.forSymbol(token.symbol) : null;
+    if (bundled == null) return TokenLogo(token: token, chain: chain, size: size);
+    return ClipOval(
+      child: Image.asset(
+        bundled,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        cacheWidth: 128,
+        excludeFromSemantics: true,
+        errorBuilder: (_, _, _) => TokenLogo(token: token, chain: chain, size: size),
       ),
     );
   }

@@ -16,6 +16,8 @@ import '../services/bridge_rules.dart';
 import '../services/bridge_service.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
+import 'bridge_obsidian.dart';
+import 'obsidian/obsidian.dart' show showObsidianConfirmDialog;
 import 'tx_auth.dart';
 
 /// ส่วนที่หน้าสะพานทั้งสองใช้ร่วมกัน: กันกดซ้อน + ยืนยันตัวตน + เซ็น/ส่ง + ข้อความ error ที่อ่านรู้เรื่อง
@@ -772,6 +774,17 @@ Future<bool> showBridgeConfirmSheet(
   required String confirmLabel,
   bool danger = false,
 }) async {
+  // ธีม Obsidian: แถว/โน้ต/ปุ่มยืนยันชุดเดียวกัน แค่หน้าตาใหม่
+  if (bridgeIsObsidian(context)) {
+    return showBridgeObsConfirmSheet(
+      context,
+      title: title,
+      rows: rows,
+      notes: notes,
+      confirmLabel: confirmLabel,
+      danger: danger,
+    );
+  }
   final l = context.read<LocaleProvider>();
   final ok = await showModalBottomSheet<bool>(
     context: context,
@@ -882,6 +895,16 @@ Future<bool> showBridgeConfirmSheet(
 /// ถามก่อนลบรายการที่ติดตาม (ลบแค่ในเครื่อง แต่ผู้ใช้อาจต้องใช้ tx hash ติดต่อซัพพอร์ต)
 Future<bool> confirmRemoveTracked(BuildContext context) async {
   final l = context.read<LocaleProvider>();
+  if (bridgeIsObsidian(context)) {
+    return showObsidianConfirmDialog(
+      context,
+      title: l.t('bridge.removeTitle'),
+      body: l.t('bridge.removeBody'),
+      confirmLabel: l.t('bridge.remove'),
+      cancelLabel: l.t('send.cancel'),
+      danger: true,
+    );
+  }
   final c = AppColors.of(context);
   final ok = await showDialog<bool>(
     context: context,
@@ -913,6 +936,7 @@ class BridgeLoadFailed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (bridgeIsObsidian(context)) return BridgeObsLoadFailed(onRetry: onRetry);
     final l = context.watch<LocaleProvider>();
     final c = AppColors.of(context);
     return ListView(
