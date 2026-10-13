@@ -238,6 +238,16 @@ class LocaleProvider extends ChangeNotifier {
       'pin.locked': 'ล็อกชั่วคราว กรุณารอ {s} วินาที',
       'pin.biometricReason': 'สแกนลายนิ้วมือเพื่อเข้ากระเป๋า',
 
+      // obsidian: send/receive/scan
+      'obs.sr.back': 'ย้อนกลับ',
+      'obs.sr.close': 'ปิด',
+      'obs.rcv.title': 'รับเงิน',
+      'obs.rcv.waiting': 'รอรับเงินบน {name}',
+      'obs.rcv.received': 'ได้รับเงินแล้ว',
+      'obs.rcv.qrLabel': 'QR ที่อยู่กระเป๋าบน {name}',
+      'obs.rcv.warning': 'ส่งมาเฉพาะเหรียญบน {name} (Chain ID {id}) เท่านั้น',
+      // obsidian: end
+
       // Transaction History
       'tx.title': 'ประวัติธุรกรรม',
       'tx.subtitle': 'Transaction History',
@@ -965,6 +975,16 @@ class LocaleProvider extends ChangeNotifier {
       'pin.wrong': 'Incorrect PIN',
       'pin.locked': 'Temporarily locked. Please wait {s} seconds',
       'pin.biometricReason': 'Scan fingerprint to unlock wallet',
+
+      // obsidian: send/receive/scan
+      'obs.sr.back': 'Back',
+      'obs.sr.close': 'Close',
+      'obs.rcv.title': 'Receive',
+      'obs.rcv.waiting': 'Waiting for funds on {name}',
+      'obs.rcv.received': 'Payment received',
+      'obs.rcv.qrLabel': 'Wallet address QR on {name}',
+      'obs.rcv.warning': 'Only send assets on {name} (Chain ID {id}) to this address',
+      // obsidian: end
 
       // Transaction History
       'tx.title': 'Transaction History',
