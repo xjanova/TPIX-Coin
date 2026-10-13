@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../models/chain_config.dart';
 import '../services/fee_service.dart';
@@ -12,7 +14,11 @@ import '../services/swap_service.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_auth_service.dart';
 import '../providers/wallet_provider.dart';
+import '../widgets/obsidian/obsidian.dart';
 import '../widgets/token_selector.dart';
+
+// หน้าแลกธีม Obsidian (ใช้สถานะ/ตัวจัดการเดิมของหน้านี้ร่วมกัน)
+part 'swap_obsidian.dart';
 
 class SwapScreen extends StatefulWidget {
   const SwapScreen({super.key});
@@ -52,6 +58,26 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   // Animation
   late AnimationController _flipController;
 
+  // ── ธีม Obsidian (หน้าตาอย่างเดียว — กฎการแลกใช้ของเดิมทั้งหมด) ──
+  static const _obsRefreshSeconds = 15;
+
+  /// จำนวนครั้งที่สลับทิศ (ลูกแก้วหมุนทีละ 180°)
+  int _obsFlips = 0;
+
+  /// ตำแหน่งรอยต่อระหว่างการ์ดจ่าย/ได้รับ — ลูกแก้วลอยทับตรงนี้
+  final LayerLink _obsOrbLink = LayerLink();
+
+  /// นับถอยหลังขอราคาใหม่ (วินาทีที่เหลือ)
+  final ValueNotifier<int> _obsRefreshLeft = ValueNotifier(_obsRefreshSeconds);
+  Timer? _obsRefreshTimer;
+
+  /// กำลังขอราคารอบอัตโนมัติ (แยกจาก _isQuoting — ตัวเลขเดิมยังโชว์อยู่)
+  bool _obsRefreshing = false;
+
+  bool get _isObsidian => TpixThemeExtension.of(context).themeId == ThemeId.obsidian;
+
+  void _obsSet(VoidCallback fn) => setState(fn);
+
   @override
   void initState() {
     super.initState();
@@ -77,10 +103,24 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ธีม Obsidian นับถอยหลังแล้วขอราคาใหม่ทุก 15 วิ — ธีมอื่นทำงานเหมือนเดิม (ไม่มีตัวจับเวลา)
+    if (_isObsidian) {
+      _obsRefreshTimer ??= Timer.periodic(const Duration(seconds: 1), (_) => _obsRefreshTick());
+    } else {
+      _obsRefreshTimer?.cancel();
+      _obsRefreshTimer = null;
+    }
+  }
+
+  @override
   void dispose() {
     _amountController.dispose();
     _quoteDebounce?.cancel();
     _flipController.dispose();
+    _obsRefreshTimer?.cancel();
+    _obsRefreshLeft.dispose();
     super.dispose();
   }
 
@@ -405,6 +445,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Future<bool?> _showConfirmDialog(String amountStr, BigInt amountIn) {
+    if (_isObsidian) return _obsConfirm(amountStr, amountIn);
     final l = context.read<LocaleProvider>();
     final outFormatted = _quoteAmount != null
         ? SwapService.formatAmount(_quoteAmount!, _tokenOut!.decimals)
@@ -479,6 +520,10 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   void _showSuccessDialog(String txHash) {
+    if (_isObsidian) {
+      _obsSuccess(txHash);
+      return;
+    }
     final l = context.read<LocaleProvider>();
     final shortTx = txHash.length > 16
         ? '${txHash.substring(0, 10)}...${txHash.substring(txHash.length - 6)}'
@@ -545,6 +590,8 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    // ธีม Obsidian มีเลย์เอาต์ของตัวเอง (swap_obsidian.dart) — ธีมอื่นใช้ของเดิมด้านล่าง
+    if (_isObsidian) return _obsBuild(l);
 
     return Scaffold(
       body: TpixScreenBackground(
@@ -667,6 +714,19 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     );
   }
 
+  /// ยอดสูงสุดที่กรอกได้ — เหรียญหลักของเชนที่มีค่าแก๊สเผื่อไว้ ~0.005 สำหรับค่าแก๊ส
+  String _maxAmountText() {
+    final formattedBalance = SwapService.formatAmount(_balanceIn, _tokenIn?.decimals ?? 18);
+    // Reserve gas for native token swaps on non-gasless chains
+    double maxAmount = formattedBalance;
+    if (_tokenIn != null && _tokenIn!.isNative && !_chain.isGasless) {
+      // Reserve ~0.005 native token for gas (covers most swap gas costs)
+      const gasReserve = 0.005;
+      maxAmount = (formattedBalance - gasReserve).clamp(0.0, formattedBalance);
+    }
+    return maxAmount.toStringAsFixed(8);
+  }
+
   Widget _buildFromCard(LocaleProvider l) {
     final formattedBalance = SwapService.formatAmount(_balanceIn, _tokenIn?.decimals ?? 18);
 
@@ -698,14 +758,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                   const SizedBox(width: TpixGap.sm),
                   GestureDetector(
                     onTap: () {
-                      // Reserve gas for native token swaps on non-gasless chains
-                      double maxAmount = formattedBalance;
-                      if (_tokenIn != null && _tokenIn!.isNative && !_chain.isGasless) {
-                        // Reserve ~0.005 native token for gas (covers most swap gas costs)
-                        const gasReserve = 0.005;
-                        maxAmount = (formattedBalance - gasReserve).clamp(0.0, formattedBalance);
-                      }
-                      _amountController.text = maxAmount.toStringAsFixed(8);
+                      _amountController.text = _maxAmountText();
                       _onAmountChanged(_amountController.text);
                     },
                     child: Container(
@@ -1098,6 +1151,10 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   void _showSlippageDialog() {
+    if (_isObsidian) {
+      _obsShowSlippage();
+      return;
+    }
     final l = context.read<LocaleProvider>();
     final controller = TextEditingController(text: _slippagePercent.toString());
     showDialog(
