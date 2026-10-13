@@ -253,7 +253,7 @@ class _NotchedNavBarState extends State<NotchedNavBar> with TickerProviderStateM
                       widget.scanLabel,
                       textAlign: TextAlign.center,
                       maxLines: 1,
-                      style: st.ui.copyWith(fontSize: 10, fontWeight: FontWeight.w600, color: ObsidianColors.chrome),
+                      style: st.ui(fontSize: 10, fontWeight: FontWeight.w600, color: ObsidianColors.chrome),
                     ),
                   ),
                 ),
@@ -342,7 +342,7 @@ class _NavCell extends StatelessWidget {
               item.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: style.ui.copyWith(
+              style: style.ui(
                 fontSize: 11,
                 height: 1.3,
                 fontWeight: active ? FontWeight.w600 : FontWeight.w400,

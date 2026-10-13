@@ -104,44 +104,100 @@ class CssShadow {
       );
 }
 
+/// สร้าง TextStyle ของฟอนต์หนึ่งตระกูลตามน้ำหนัก
+typedef ObsidianFont = TextStyle Function(FontWeight weight);
+
 /// ตัวอักษร 3 ชุดของธีม — ผูกกับ ThemeData ผ่าน extension
 ///
 /// 🔴 วิดเจ็ตห้ามเรียก GoogleFonts เอง ให้อ่านจากตรงนี้แทน
 /// เพราะแค่ "สร้าง" TextStyle ของ GoogleFonts ในเทสต์ก็สั่งโหลดฟอนต์ผ่านเน็ตแล้ว
 /// (ดู test/support/test_theme.dart) — ในเทสต์ที่ไม่ได้แนบ extension นี้
 /// [ObsidianStyle.of] จะคืนสไตล์ธรรมดาให้แทน
+///
+/// 🔴 ห้าม `GoogleFonts.xxx().copyWith(fontWeight: ...)` — ชื่อฟอนต์ยังเป็นไฟล์น้ำหนักเดิม
+///    (เช่น IBMPlexSansThai_regular) เครื่องจะ "ทำตัวหนาปลอม" จากตัวปกติแทนไฟล์ SemiBold จริง
+///    → ใช้ [ui] / [number] / [mono] ที่เลือกไฟล์ตามน้ำหนักให้เอง
 @immutable
 class ObsidianStyle extends ThemeExtension<ObsidianStyle> {
   /// IBM Plex Sans Thai — ตัวหนังสือทั่วไป
-  final TextStyle ui;
+  final ObsidianFont uiFont;
 
   /// Space Grotesk — ตัวเลขยอดเงิน
-  final TextStyle number;
+  final ObsidianFont numberFont;
 
   /// IBM Plex Mono — ที่อยู่กระเป๋า / แฮช
-  final TextStyle mono;
+  final ObsidianFont monoFont;
 
   const ObsidianStyle({
-    required this.ui,
-    required this.number,
-    required this.mono,
+    required this.uiFont,
+    required this.numberFont,
+    required this.monoFont,
   });
 
-  static const fallback = ObsidianStyle(
-    ui: TextStyle(),
-    number: TextStyle(),
-    mono: TextStyle(fontFamily: 'monospace'),
-  );
+  static TextStyle _plain(FontWeight w) => TextStyle(fontWeight: w);
+  static TextStyle _plainMono(FontWeight w) => TextStyle(fontFamily: 'monospace', fontWeight: w);
+
+  static const fallback = ObsidianStyle(uiFont: _plain, numberFont: _plain, monoFont: _plainMono);
 
   static ObsidianStyle of(BuildContext context) =>
       Theme.of(context).extension<ObsidianStyle>() ?? fallback;
 
+  static TextStyle _make(
+    ObsidianFont font, {
+    double? fontSize,
+    FontWeight fontWeight = FontWeight.w400,
+    Color? color,
+    double? height,
+    double? letterSpacing,
+    List<Shadow>? shadows,
+  }) =>
+      font(fontWeight).copyWith(
+        fontSize: fontSize,
+        color: color,
+        height: height,
+        letterSpacing: letterSpacing,
+        shadows: shadows,
+      );
+
+  TextStyle ui({
+    double? fontSize,
+    FontWeight fontWeight = FontWeight.w400,
+    Color? color,
+    double? height,
+    double? letterSpacing,
+    List<Shadow>? shadows,
+  }) =>
+      _make(uiFont,
+          fontSize: fontSize, fontWeight: fontWeight, color: color, height: height, letterSpacing: letterSpacing, shadows: shadows);
+
+  TextStyle number({
+    double? fontSize,
+    FontWeight fontWeight = FontWeight.w600,
+    Color? color,
+    double? height,
+    double? letterSpacing,
+    List<Shadow>? shadows,
+  }) =>
+      _make(numberFont,
+          fontSize: fontSize, fontWeight: fontWeight, color: color, height: height, letterSpacing: letterSpacing, shadows: shadows);
+
+  TextStyle mono({
+    double? fontSize,
+    FontWeight fontWeight = FontWeight.w500,
+    Color? color,
+    double? height,
+    double? letterSpacing,
+    List<Shadow>? shadows,
+  }) =>
+      _make(monoFont,
+          fontSize: fontSize, fontWeight: fontWeight, color: color, height: height, letterSpacing: letterSpacing, shadows: shadows);
+
   @override
-  ObsidianStyle copyWith({TextStyle? ui, TextStyle? number, TextStyle? mono}) =>
+  ObsidianStyle copyWith({ObsidianFont? uiFont, ObsidianFont? numberFont, ObsidianFont? monoFont}) =>
       ObsidianStyle(
-        ui: ui ?? this.ui,
-        number: number ?? this.number,
-        mono: mono ?? this.mono,
+        uiFont: uiFont ?? this.uiFont,
+        numberFont: numberFont ?? this.numberFont,
+        monoFont: monoFont ?? this.monoFont,
       );
 
   @override

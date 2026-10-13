@@ -113,7 +113,10 @@ class _PriceChartWidgetState extends State<PriceChartWidget>
 
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
+      // ธีม Obsidian = แผงกระจกเดียวกับแผงอื่นในหน้าแรก (ไม่มีกรอบเรืองสีฟ้า)
+      decoration: t.themeId == ThemeId.obsidian
+          ? adaptiveGlassCard(context)
+          : BoxDecoration(
         borderRadius: BorderRadius.circular(t.cardRadius),
         gradient: LinearGradient(
           colors: isDark

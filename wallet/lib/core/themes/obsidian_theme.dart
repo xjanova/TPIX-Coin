@@ -96,10 +96,11 @@ class ObsidianTheme extends ThemeBundle {
       useGrid: false,
     );
 
+    // เลือกไฟล์ฟอนต์ตามน้ำหนักจริง (google_fonts โหลด/แคชให้ทีละน้ำหนัก)
     final style = ObsidianStyle(
-      ui: GoogleFonts.ibmPlexSansThai(color: c),
-      number: GoogleFonts.spaceGrotesk(color: c),
-      mono: GoogleFonts.ibmPlexMono(color: ObsidianColors.textSoft),
+      uiFont: (w) => GoogleFonts.ibmPlexSansThai(fontWeight: w, color: c),
+      numberFont: (w) => GoogleFonts.spaceGrotesk(fontWeight: w, color: c),
+      monoFont: (w) => GoogleFonts.ibmPlexMono(fontWeight: w, color: ObsidianColors.textSoft),
     );
 
     final textTheme = GoogleFonts.ibmPlexSansThaiTextTheme(

@@ -155,7 +155,7 @@ extension _ObsidianHome on _HomeScreenState {
                               wallet.activeWallet?.name ?? 'TPIX Wallet',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: st.ui.copyWith(
+                              style: st.ui(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                                 height: 1.3,
@@ -212,14 +212,8 @@ extension _ObsidianHome on _HomeScreenState {
           BoxShadow(color: Color(0xB38B5CF6), offset: Offset(0, 8), blurRadius: 18.2, spreadRadius: -6),
         ],
       ),
-      child: ClipOval(
-        child: Image.asset(
-          'assets/images/logowallet.png',
-          fit: BoxFit.cover,
-          cacheWidth: 132,
-          cacheHeight: 132,
-        ),
-      ),
+      // ตาม mock: อวาตาร์กระเป๋าเป็นเหรียญ TPIX (โลโก้ทางการ)
+      child: const TpixCoinLogo(size: 40),
     );
   }
 
@@ -247,7 +241,7 @@ extension _ObsidianHome on _HomeScreenState {
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: st.ui.copyWith(fontSize: 12, height: 1.4, color: color),
+              style: st.ui(fontSize: 12, height: 1.4, color: color),
             ),
           ),
         ],
@@ -319,11 +313,11 @@ extension _ObsidianHome on _HomeScreenState {
                 children: [
                   Text(
                     l.t('update.available'),
-                    style: st.ui.copyWith(fontSize: 14, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+                    style: st.ui(fontSize: 14, fontWeight: FontWeight.w600, color: ObsidianColors.text),
                   ),
                   Text(
                     'v${result.currentVersion} → v${result.latestVersion}',
-                    style: st.mono.copyWith(fontSize: 12, color: ObsidianColors.cyan),
+                    style: st.mono(fontSize: 12, color: ObsidianColors.cyan),
                   ),
                 ],
               ),
@@ -454,7 +448,7 @@ extension _ObsidianHome on _HomeScreenState {
                         actions[i].$2,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: st.ui.copyWith(
+                        style: st.ui(
                           fontSize: 12.5,
                           fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w500,
                           color: i == 0 ? ObsidianColors.text : ObsidianColors.textSoft,
@@ -491,7 +485,7 @@ extension _ObsidianHome on _HomeScreenState {
                 l.t('obs.assetsOn').replaceAll('{chain}', chain.name),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: st.ui.copyWith(fontSize: 17, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+                style: st.ui(fontSize: 17, fontWeight: FontWeight.w600, color: ObsidianColors.text),
               ),
             ),
             ObsidianPressable(
@@ -511,7 +505,7 @@ extension _ObsidianHome on _HomeScreenState {
                     const SizedBox(width: 4),
                     Text(
                       l.t('obs.addToken'),
-                      style: st.ui.copyWith(fontSize: 13, color: ObsidianColors.chrome),
+                      style: st.ui(fontSize: 13, color: ObsidianColors.chrome),
                     ),
                   ],
                 ),
@@ -652,7 +646,7 @@ extension _ObsidianHome on _HomeScreenState {
                         symbol,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: st.ui.copyWith(fontSize: 15, fontWeight: FontWeight.w500, color: ObsidianColors.text),
+                        style: st.ui(fontSize: 15, fontWeight: FontWeight.w500, color: ObsidianColors.text),
                       ),
                     ),
                     if (trust != null && trust != TokenTrust.unverified) ...[
@@ -665,7 +659,7 @@ extension _ObsidianHome on _HomeScreenState {
                   sub,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: st.ui.copyWith(fontSize: 12, color: ObsidianColors.textMuted),
+                  style: st.ui(fontSize: 12, color: ObsidianColors.textMuted),
                 ),
               ],
             ),
@@ -676,12 +670,12 @@ extension _ObsidianHome on _HomeScreenState {
             children: [
               Text(
                 amount,
-                style: st.number.copyWith(fontSize: 15, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+                style: st.number(fontSize: 15, fontWeight: FontWeight.w600, color: ObsidianColors.text),
               ),
               if (usd != null)
-                Text(usd, style: st.ui.copyWith(fontSize: 12, color: ObsidianColors.textMuted)),
+                Text(usd, style: st.ui(fontSize: 12, color: ObsidianColors.textMuted)),
               if (staleLabel != null)
-                Text(staleLabel, style: st.ui.copyWith(fontSize: 11, color: ObsidianColors.warning)),
+                Text(staleLabel, style: st.ui(fontSize: 11, color: ObsidianColors.warning)),
             ],
           ),
         ],
@@ -708,7 +702,7 @@ extension _ObsidianHome on _HomeScreenState {
               Expanded(
                 child: Text(
                   l.t('home.recentTx'),
-                  style: st.ui.copyWith(fontSize: 16, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+                  style: st.ui(fontSize: 16, fontWeight: FontWeight.w600, color: ObsidianColors.text),
                 ),
               ),
               ObsidianPressable(
@@ -717,7 +711,7 @@ extension _ObsidianHome on _HomeScreenState {
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Text(
                     l.t('home.viewAll'),
-                    style: st.ui.copyWith(fontSize: 13, color: ObsidianColors.cyan),
+                    style: st.ui(fontSize: 13, color: ObsidianColors.cyan),
                   ),
                 ),
               ),
@@ -783,12 +777,12 @@ extension _ObsidianHome on _HomeScreenState {
               sent ? tx.shortTo : tx.shortFrom,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: st.mono.copyWith(fontSize: 13, color: ObsidianColors.textSec),
+              style: st.mono(fontSize: 13, color: ObsidianColors.textSec),
             ),
           ),
           Text(
             '${sent ? '−' : '+'}${_obsAmount(tx.amount)} ${tx.symbol}',
-            style: st.number.copyWith(fontSize: 14, fontWeight: FontWeight.w600, color: color),
+            style: st.number(fontSize: 14, fontWeight: FontWeight.w600, color: color),
           ),
         ],
       ),
@@ -829,7 +823,7 @@ extension _ObsidianHome on _HomeScreenState {
           padding: const EdgeInsets.only(left: 4, bottom: 10),
           child: Text(
             l.t('obs.more'),
-            style: st.ui.copyWith(fontSize: 17, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+            style: st.ui(fontSize: 17, fontWeight: FontWeight.w600, color: ObsidianColors.text),
           ),
         ),
         ObsidianPanel(
@@ -862,14 +856,14 @@ extension _ObsidianHome on _HomeScreenState {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: st.ui.copyWith(fontSize: 15, fontWeight: FontWeight.w600, color: color),
+            style: st.ui(fontSize: 15, fontWeight: FontWeight.w600, color: color),
           ),
           const SizedBox(height: 2),
           Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: st.ui.copyWith(fontSize: 11.5, color: ObsidianColors.textMuted),
+            style: st.ui(fontSize: 11.5, color: ObsidianColors.textMuted),
           ),
         ],
       ),
@@ -896,14 +890,14 @@ extension _ObsidianHome on _HomeScreenState {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: st.ui.copyWith(fontSize: 14.5, fontWeight: FontWeight.w500, color: ObsidianColors.text),
+                    style: st.ui(fontSize: 14.5, fontWeight: FontWeight.w500, color: ObsidianColors.text),
                   ),
                   if (sub != null)
                     Text(
                       sub,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: st.ui.copyWith(fontSize: 12, color: ObsidianColors.textMuted),
+                      style: st.ui(fontSize: 12, color: ObsidianColors.textMuted),
                     ),
                 ],
               ),
@@ -990,7 +984,7 @@ extension _ObsidianHome on _HomeScreenState {
               const SizedBox(height: 16),
               Text(
                 l.t('obs.notifications'),
-                style: st.ui.copyWith(fontSize: 18, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+                style: st.ui(fontSize: 18, fontWeight: FontWeight.w600, color: ObsidianColors.text),
               ),
               const SizedBox(height: 12),
               if (items.isEmpty)
@@ -1002,7 +996,7 @@ extension _ObsidianHome on _HomeScreenState {
                       const SizedBox(height: 10),
                       Text(
                         l.t('obs.noNotifications'),
-                        style: st.ui.copyWith(fontSize: 14, color: ObsidianColors.textSec),
+                        style: st.ui(fontSize: 14, color: ObsidianColors.textSec),
                       ),
                     ],
                   ),
@@ -1034,8 +1028,8 @@ extension _ObsidianHome on _HomeScreenState {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: st.ui.copyWith(fontSize: 14.5, fontWeight: FontWeight.w500, color: ObsidianColors.text)),
-                  Text(sub, style: st.ui.copyWith(fontSize: 12, color: ObsidianColors.textMuted)),
+                  Text(title, style: st.ui(fontSize: 14.5, fontWeight: FontWeight.w500, color: ObsidianColors.text)),
+                  Text(sub, style: st.ui(fontSize: 12, color: ObsidianColors.textMuted)),
                 ],
               ),
             ),

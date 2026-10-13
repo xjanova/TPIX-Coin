@@ -52,7 +52,7 @@ class ObsidianButton extends StatelessWidget {
     final primary = kind == ObsidianButtonKind.primary;
     final enabled = onPressed != null && !loading;
     final fg = primary ? const Color(0xFF0A0B0F) : ObsidianColors.textSoft;
-    final text = ObsidianStyle.of(context).ui.copyWith(
+    final text = ObsidianStyle.of(context).ui(
           fontSize: primary ? 16.5 : 15,
           fontWeight: FontWeight.w600,
           color: fg,

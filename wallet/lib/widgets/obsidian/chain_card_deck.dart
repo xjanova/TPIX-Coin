@@ -488,7 +488,7 @@ class _ChainCard extends StatelessWidget {
               data.chainName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: st.ui.copyWith(fontSize: 12.5, fontWeight: FontWeight.w600, color: ObsidianColors.text, height: 1.2),
+              style: st.ui(fontSize: 12.5, fontWeight: FontWeight.w600, color: ObsidianColors.text, height: 1.2),
             ),
           ),
           const SizedBox(width: 5),
@@ -515,7 +515,7 @@ class _ChainCard extends StatelessWidget {
             data.balanceLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: st.ui.copyWith(fontSize: 12, color: ObsidianColors.chrome, height: 1.3),
+            style: st.ui(fontSize: 12, color: ObsidianColors.chrome, height: 1.3),
           ),
           const SizedBox(height: 4),
           // ยอดเยอะแค่ไหนก็ "ย่อ" ไม่ "ล้น" — ตัวเลขล้นบัตร = ดูเชื่อถือไม่ได้ทันที
@@ -528,7 +528,7 @@ class _ChainCard extends StatelessWidget {
                 TextSpan(children: [
                   TextSpan(
                     text: data.amount,
-                    style: st.number.copyWith(
+                    style: st.number(
                       fontSize: 38,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -1.2,
@@ -539,7 +539,7 @@ class _ChainCard extends StatelessWidget {
                   ),
                   TextSpan(
                     text: ' ${data.unit}',
-                    style: st.number.copyWith(
+                    style: st.number(
                       fontSize: 17,
                       fontWeight: FontWeight.w600,
                       height: 1,
@@ -551,15 +551,14 @@ class _ChainCard extends StatelessWidget {
               ),
             ),
           ),
-          if (data.subline != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              data.subline!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: st.ui.copyWith(fontSize: 12.5, color: data.sublineColor ?? ObsidianColors.chrome, height: 1.3),
-            ),
-          ],
+          const SizedBox(height: 4),
+          // จองบรรทัดไว้เสมอ — บัตรที่ไม่มีบรรทัดนี้ยอดจะได้อยู่ระดับเดียวกับใบอื่น (ไม่กระโดดตอนพลิก)
+          Text(
+            data.subline ?? ' ',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: st.ui(fontSize: 12.5, color: data.sublineColor ?? ObsidianColors.chrome, height: 1.3),
+          ),
         ],
       ),
     );
@@ -571,7 +570,7 @@ class _ChainCard extends StatelessWidget {
       children: [
         Text(
           data.address,
-          style: st.mono.copyWith(fontSize: 12.5, fontWeight: FontWeight.w500, color: ObsidianColors.textSoft),
+          style: st.mono(fontSize: 12.5, fontWeight: FontWeight.w500, color: ObsidianColors.textSoft),
         ),
         const SizedBox(width: 6),
         const Icon(Icons.copy_rounded, size: 14, color: ObsidianColors.chrome),
@@ -589,7 +588,7 @@ class _ChainCard extends StatelessWidget {
             textAlign: TextAlign.right,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: st.ui.copyWith(fontSize: 11.5, color: ObsidianColors.chrome),
+            style: st.ui(fontSize: 11.5, color: ObsidianColors.chrome),
           ),
         ),
       ],

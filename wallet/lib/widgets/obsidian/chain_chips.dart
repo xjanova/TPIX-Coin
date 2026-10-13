@@ -119,7 +119,7 @@ class _ChainChip extends StatelessWidget {
                       ExcludeSemantics(
                         child: Text(
                           art.shortLabel,
-                          style: st.ui.copyWith(
+                          style: st.ui(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                             color: Color.lerp(ObsidianColors.textSec, Colors.white, t),
