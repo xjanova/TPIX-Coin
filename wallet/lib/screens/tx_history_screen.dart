@@ -1,15 +1,32 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
+import '../models/chain_config.dart';
 import '../models/tx_record.dart';
 import '../providers/wallet_provider.dart';
-import '../services/wallet_service.dart';
+import '../services/bridge_rules.dart';
+import '../services/db_service.dart';
+import '../utils/activity_feed.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_filter_chip.dart';
+import '../widgets/obsidian/obsidian_list_group.dart';
+import '../widgets/obsidian/obsidian_progress_bar.dart';
+import '../widgets/obsidian/obsidian_screen_dim.dart';
+import '../widgets/obsidian/obsidian_sheet_frame.dart';
 import '../widgets/tpix_coin_logo.dart';
+import 'obsidian_tabs.dart';
+
+// หน้ากิจกรรมธีม Obsidian (A-Activity.dc.html) — ธีมอื่นใช้เลย์เอาต์เดิมด้านล่าง
+part 'tx_history_obsidian.dart';
 
 class TxHistoryScreen extends StatefulWidget {
   const TxHistoryScreen({super.key});
@@ -19,6 +36,18 @@ class TxHistoryScreen extends StatefulWidget {
 }
 
 class _TxHistoryScreenState extends State<TxHistoryScreen> {
+  /// ข้อมูลประกอบการอนุมานชนิด/เชน/ชื่อ (โหลดเพิ่มเติมแบบไม่บล็อกจอ)
+  ActivityContext _ctx = ActivityContext.build();
+
+  /// กระเป๋าที่ [_ctx] เป็นของมัน — สลับกระเป๋า = โหลดใหม่ (ชื่อ/รายการบริดจ์ของใบอื่นห้ามค้าง)
+  String? _ctxOwner;
+  int _ctxSeq = 0;
+
+  // ── ธีม Obsidian ──
+  ActivityFilter _filter = ActivityFilter.all;
+  int? _chainFilter;
+  final _scroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -26,11 +55,67 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
     final wallet = context.read<WalletProvider>();
     wallet.loadTxHistory();
     wallet.scanTransactions(blockCount: 50);
+    _loadContext();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _setFilter(ActivityFilter f) {
+    if (mounted && f != _filter) setState(() => _filter = f);
+  }
+
+  void _setChainFilter(int? chainId) {
+    if (mounted && chainId != _chainFilter) setState(() => _chainFilter = chainId);
+  }
+
+  /// ชื่อกระเป๋าตัวเอง + รายชื่อผู้ติดต่อ + รายการที่หน้าบริดจ์จดไว้
+  /// อ่านไม่ได้ส่วนไหน = ข้ามส่วนนั้น (หน้ายังใช้ได้ แค่ไม่มีชื่อ/ไม่รู้ว่าเป็นบริดจ์)
+  Future<void> _loadContext() async {
+    final seq = ++_ctxSeq;
+    final wallet = context.read<WalletProvider>();
+    final owner = wallet.address;
+    _ctxOwner = owner;
+    final names = <String, String>{for (final w in wallet.wallets) w.address.toLowerCase(): w.name};
+    var bridges = <String, ActivityBridgeHint>{};
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      bridges = bridgeHintsFrom([
+        ...decodeTracked(prefs.getString(activityUsdtBridgeKey), usdtTrackKinds),
+        ...decodeTracked(prefs.getString(activityWtpixBridgeKey), wtpixTrackKinds),
+      ], owner);
+    } catch (e) {
+      debugPrint('activity bridges: ${e.runtimeType}');
+    }
+    try {
+      for (final c in await DbService.getContacts()) {
+        names.putIfAbsent(c.address.toLowerCase(), () => c.name);
+      }
+    } catch (e) {
+      debugPrint('activity contacts: ${e.runtimeType}');
+    }
+    if (!mounted || seq != _ctxSeq) return;
+    setState(() {
+      _ctx = ActivityContext.build(tokens: wallet.tokens, bridges: bridges, names: names);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    final owner = context.select<WalletProvider, String?>((w) => w.address);
+    if (owner != _ctxOwner) {
+      _ctxOwner = owner;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadContext();
+      });
+    }
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return _buildObsidian(l);
+    }
     return Scaffold(
       body: TpixScreenBackground(
         child: SafeArea(
@@ -351,7 +436,8 @@ class _TxHistoryScreenState extends State<TxHistoryScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
-                  final url = Uri.parse('${TpixChain.explorerUrl}/tx/${tx.txHash}');
+                  // explorer ของเชนที่ธุรกรรมอยู่ (เดิมเปิด explorer ของ TPIX เสมอ — ธุรกรรม BSC หาไม่เจอ)
+                  final url = Uri.parse(activityExplorerUrl(describeActivity(tx, _ctx)));
                   launchUrl(url, mode: LaunchMode.externalApplication);
                   Navigator.pop(context);
                 },
