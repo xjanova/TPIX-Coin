@@ -100,3 +100,13 @@ class ObsidianTopBar extends StatelessWidget {
     );
   }
 }
+
+/// ปิดหน้า "ของตัวเอง" เท่านั้น
+///
+/// แตะซ้ำระหว่างหน้ากำลังเลื่อนปิด หน้านั้นยัง mounted แต่ไม่ใช่หน้าบนสุดแล้ว —
+/// Navigator.pop ครั้งที่สองจะไปปิดหน้าข้างใต้ทิ้ง (เช่น หน้าแรก) → ตัวนี้ไม่ทำอะไรแทน
+void obsidianPopIfCurrent<T extends Object?>(BuildContext context, [T? result]) {
+  final route = ModalRoute.of(context);
+  if (route != null && !route.isCurrent) return;
+  Navigator.of(context).maybePop<T>(result);
+}

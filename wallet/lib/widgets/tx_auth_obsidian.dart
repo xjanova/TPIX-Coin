@@ -102,6 +102,8 @@ class _ObsidianPinVerifyPageState extends State<ObsidianPinVerifyPage> with Sing
 
     final ok = await wallet.unlock(_pin);
     if (!mounted) return;
+    // ผู้ใช้กดปิดไประหว่างตรวจ → หน้านี้ไม่ใช่หน้าบนสุดแล้ว ห้าม pop (จะไปปิดหน้าส่งทิ้ง)
+    if (ModalRoute.of(context)?.isCurrent == false) return;
     if (ok) {
       Navigator.of(context).pop(true);
       return;
@@ -127,7 +129,7 @@ class _ObsidianPinVerifyPageState extends State<ObsidianPinVerifyPage> with Sing
       _error = null;
     });
     final ok = await BiometricService().authenticate(widget.reason);
-    if (!mounted) return;
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
     if (ok) {
       Navigator.of(context).pop(true);
       return;
@@ -179,7 +181,7 @@ class _ObsidianPinVerifyPageState extends State<ObsidianPinVerifyPage> with Sing
                         ObsidianTopBar(
                           leading: ObsidianTopButton(
                             blur: 0,
-                            onTap: () => Navigator.of(context).maybePop(false),
+                            onTap: () => obsidianPopIfCurrent(context, false),
                             semanticLabel: l.t('send.cancel'),
                             child: const ObsidianGlyphIcon(ObsidianGlyph.close, strokeWidth: 2.2),
                           ),

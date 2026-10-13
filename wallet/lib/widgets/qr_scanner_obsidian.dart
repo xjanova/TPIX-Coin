@@ -54,7 +54,7 @@ extension _ObsidianScanner on _QRScannerScreenState {
               child: ObsidianTopBar(
                 leading: ObsidianTopButton(
                   tint: const Color(0x1AFFFFFF),
-                  onTap: () => Navigator.maybePop(context),
+                  onTap: () => obsidianPopIfCurrent(context),
                   semanticLabel: l.t('obs.sr.close'),
                   child: const ObsidianGlyphIcon(ObsidianGlyph.close, strokeWidth: 2.2),
                 ),

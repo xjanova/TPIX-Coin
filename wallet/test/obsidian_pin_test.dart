@@ -147,6 +147,25 @@ void main() {
       expect(find.byType(ObsidianPinVerifyPage), findsNothing);
     });
 
+    testWidgets('กดปิดระหว่างตรวจ แล้ว PIN ถูกทีหลัง → ไม่ปิดหน้าข้างใต้ทิ้ง', (tester) async {
+      final w = _Wallet()..gate = Completer<bool>();
+      bool? result;
+      await tester.pumpWidget(_host(w, onOpen: (ctx) async {
+        result = await authorizeTransaction(ctx, reason: 'r');
+      }));
+      await tester.tap(find.text('open'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await _type(tester, '123456');
+      await tester.tap(find.bySemanticsLabel(_l.t('send.cancel')));
+      await tester.pump();
+      w.gate!.complete(true); // ตรวจเสร็จตอนหน้ากำลังเลื่อนปิด
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(result, isFalse);
+      expect(find.text('open'), findsOneWidget, reason: 'หน้าเดิมข้างใต้ต้องยังอยู่');
+    });
+
     testWidgets('ธีมอื่นยังเป็นกล่อง PIN เดิม', (tester) async {
       final w = _Wallet();
       await tester.pumpWidget(_host(w, theme: ThemeId.liquid, onOpen: (ctx) => authorizeTransaction(ctx, reason: 'r')));

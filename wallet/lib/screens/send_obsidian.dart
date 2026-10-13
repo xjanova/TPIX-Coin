@@ -48,7 +48,7 @@ extension _ObsidianSend on _SendScreenState {
                     children: [
                       ObsidianTopBar(
                         leading: ObsidianTopButton(
-                          onTap: () => Navigator.maybePop(context),
+                          onTap: () => obsidianPopIfCurrent(context),
                           semanticLabel: l.t('obs.sr.back'),
                           child: const ObsidianGlyphIcon(ObsidianGlyph.back, strokeWidth: 2.2),
                         ),
@@ -216,7 +216,7 @@ extension _ObsidianSend on _SendScreenState {
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: ObsidianPanel(
-              onTap: () => Navigator.pop(sheetCtx, key),
+              onTap: () => obsidianPopIfCurrent(sheetCtx, key),
               semanticLabel: _symbolOf(t),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               surface: ObsidianSurface.panel.copyWith(
@@ -932,7 +932,7 @@ extension _ObsidianSend on _SendScreenState {
                       child: ObsidianButton.secondary(
                         label: l.t('send.cancel'),
                         height: 56,
-                        onPressed: () => Navigator.pop(sheetCtx, false),
+                        onPressed: () => obsidianPopIfCurrent(sheetCtx, false),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -943,7 +943,7 @@ extension _ObsidianSend on _SendScreenState {
                             ? l.t('send.confirmButton')
                             : l.t('send.confirmButtonToken').replaceAll('{symbol}', symbol),
                         height: 56,
-                        onPressed: () => Navigator.pop(sheetCtx, true),
+                        onPressed: () => obsidianPopIfCurrent(sheetCtx, true),
                       ),
                     ),
                   ],
@@ -1033,10 +1033,14 @@ extension _ObsidianSend on _SendScreenState {
                             child: ObsidianButton.secondary(
                               label: l.t('obs.send.viewTx'),
                               height: 54,
-                              onPressed: () => Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(builder: (_) => const TxHistoryScreen()),
-                              ),
+                              onPressed: () {
+                                // แตะซ้ำระหว่างเปลี่ยนหน้า → ไม่เปิดซ้อน
+                                if (ModalRoute.of(context)?.isCurrent == false) return;
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const TxHistoryScreen()),
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -1044,7 +1048,7 @@ extension _ObsidianSend on _SendScreenState {
                             child: ObsidianButton(
                               label: l.t('send.goBack'),
                               height: 54,
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () => obsidianPopIfCurrent(context),
                             ),
                           ),
                         ],

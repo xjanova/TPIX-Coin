@@ -193,7 +193,7 @@ class _ObsidianReceiveViewState extends State<ObsidianReceiveView> {
                   leading: ObsidianTopButton(
                     // mock หน้านี้ไม่มี backdrop-filter (เบลอแล้วปุ่มติดสีม่วงของคลิปพื้นหลัง)
                     blur: 0,
-                    onTap: () => Navigator.maybePop(context),
+                    onTap: () => obsidianPopIfCurrent(context),
                     semanticLabel: l.t('obs.sr.back'),
                     child: const ObsidianGlyphIcon(ObsidianGlyph.back, strokeWidth: 2.2),
                   ),
@@ -248,7 +248,9 @@ class _ObsidianReceiveViewState extends State<ObsidianReceiveView> {
 
   /// การ์ด QR + เรืองแสงสีเชนด้านหลัง (เปลี่ยนสีนุ่ม ๆ .6 วิ ตอนสลับชิป)
   Widget _qr(String address, ChainConfig chain, ObsidianChainArt art, ReceivePalette palette, LocaleProvider l) {
-    return Center(
+    // จอแคบกว่า 330px → ย่อการ์ดลงแทนการล้นจอ (QR ยังสแกนได้ ขนาดโมดูลเล็กลงนิดเดียว)
+    return FittedBox(
+      fit: BoxFit.scaleDown,
       child: SizedBox.square(
         dimension: ReceiveQrCard.size,
         child: Stack(
