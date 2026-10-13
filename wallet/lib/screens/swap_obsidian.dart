@@ -9,13 +9,15 @@
 //     หรือมีหน้าต่างอื่นทับ (กล่องยืนยันเปิดอยู่ ราคาที่ผู้ใช้เห็นต้องไม่เปลี่ยนใต้มือ)
 //   - (แก้จำนวน/เหรียญ/เชน = ล้างราคาเดิมทันที + ทิ้งผลที่มาช้า — ทำใน swap_screen.dart ใช้ร่วมทุกธีม)
 //   - ระหว่างอนุมัติ/แลก: สลับเชน/เหรียญ/ทิศ/จำนวนไม่ได้ (ธุรกรรมที่กำลังรอผลอ้างอิงเชนเดิม)
+//   - แท็บ TPIX Chain (TPIX DEX): หน้าตาชุดเดียวกัน แต่ตัวเลข/สถานะ/ธุรกรรมมาจาก TpixSwapController
+//     ทั้งหมด (กฎเดียวกับธีมอื่น) — ทะเบียนไม่พร้อม = ไม่มีฟอร์ม ไม่มีปุ่มส่ง
 //
 // Developed by Xman Studio
 
 part of 'swap_screen.dart';
 
 /// ชื่อ DEX ตาม router ใน ChainConfig (ใช้แสดงเส้นทางเท่านั้น)
-const Map<int, String> _obsDexNames = {56: 'PancakeSwap', 137: 'QuickSwap', 1: 'Uniswap'};
+const Map<int, String> _obsDexNames = {4289: 'TPIX DEX', 56: 'PancakeSwap', 137: 'QuickSwap', 1: 'Uniswap'};
 
 extension _SwapObsidian on _SwapScreenState {
   // ════════════════════════════════════════════════════════════
@@ -25,9 +27,14 @@ extension _SwapObsidian on _SwapScreenState {
   Widget _obsBuild(LocaleProvider l) {
     final st = ObsidianStyle.of(context);
     final pad = MediaQuery.paddingOf(context);
-    final busy = _isSwapping || _isApproving;
-    final swapChains = ChainConfig.all.where((c) => c.hasSwap).toList();
+    // ระหว่างอนุมัติ/แลก (ทุกเครือข่าย) ห้ามแก้อินพุต — ธุรกรรมที่รอผลอ้างอิงชุดเดิม
+    final busy = _networkLocked;
+    // TPIX Chain ไม่มี router ใน ChainConfig (ที่อยู่ DEX มาจากทะเบียนบนเซิร์ฟเวอร์เท่านั้น)
+    final swapChains = [ChainConfig.tpix, ...ChainConfig.all.where((c) => c.hasSwap)];
     final chainIndex = swapChains.indexWhere((c) => c.chainId == _chain.chainId);
+    final tpix = _isTpix;
+    // TPIX DEX ยังไม่พร้อม/ติดต่อไม่ได้ = ไม่มีฟอร์ม ไม่มีปุ่มส่ง (fail-closed) + บอกเหตุผล
+    final tpixClosed = tpix && _tpix.phase != TpixSwapPhase.ready;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -65,16 +72,24 @@ extension _SwapObsidian on _SwapScreenState {
                         semanticLabel: l.t('obs.swap.network'),
                       ),
                       const SizedBox(height: 14),
-                      _obsCards(l, st, busy),
-                      const SizedBox(height: 14),
-                      _obsRateRow(l, st),
-                      const SizedBox(height: 14),
-                      _obsDetails(l, st),
+                      if (tpixClosed)
+                        _obsTpixStatus(l, st)
+                      else ...[
+                        _obsCards(l, st, busy),
+                        const SizedBox(height: 14),
+                        _obsRateRow(l, st),
+                        const SizedBox(height: 14),
+                        if (tpix) _obsTpixDetails(l, st) else _obsDetails(l, st),
+                      ],
                     ],
                   ),
                 ),
               ),
-              Padding(padding: EdgeInsets.fromLTRB(24, 8, 24, math.max(26.0, pad.bottom + 12)), child: _obsCta(l)),
+              if (!tpixClosed)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(24, 8, 24, math.max(26.0, pad.bottom + 12)),
+                  child: tpix ? _obsTpixCta(l, st) : _obsCta(l),
+                ),
             ],
           ),
         ],
@@ -88,22 +103,59 @@ extension _SwapObsidian on _SwapScreenState {
 
   /// จำนวนที่กรอก (หน่วยของเหรียญ) — ว่าง/ศูนย์ = null
   BigInt? get _obsAmountIn {
+    if (_isTpix) {
+      // ตัวควบคุมแปลงด้วยทศนิยมของเหรียญจริงแล้ว (ผิดรูป/ทศนิยมเกิน = null)
+      final v = _tpix.amountIn;
+      return v != null && v > BigInt.zero ? v : null;
+    }
     final text = _amountController.text.trim();
     if (text.isEmpty || _tokenIn == null) return null;
     final v = SwapService.parseAmount(text, _tokenIn!.decimals);
     return v > BigInt.zero ? v : null;
   }
 
+  /// เหรียญฝั่งจ่าย/ได้รับของเครือข่ายที่เลือก — แท็บ TPIX Chain อ่านจาก TpixSwapController
+  TokenDef? get _obsTokenIn => _isTpix ? _tpix.from : _tokenIn;
+  TokenDef? get _obsTokenOut => _isTpix ? _tpix.to : _tokenOut;
+
+  /// ยอดฝั่งจ่าย — null = อ่านไม่ได้ (แท็บ TPIX ไม่เดาเป็น 0)
+  BigInt? get _obsBalanceIn => _isTpix ? _tpix.balanceIn : _balanceIn;
+
+  /// จำนวนที่จะได้รับตามราคาล่าสุด — แท็บ TPIX: ตัวควบคุมล้าง quote ทุกครั้งที่อินพุตเปลี่ยน
+  /// (ตัวเลขที่เห็นจึงเป็นของจำนวน/เหรียญปัจจุบันเสมอ)
+  BigInt? get _obsQuoteOut => _isTpix ? _tpix.quote?.amountOut : _quoteAmount;
+
   Widget _obsCards(LocaleProvider l, ObsidianStyle st, bool busy) {
+    final tpix = _isTpix;
+    final tokenIn = _obsTokenIn;
+    final tokenOut = _obsTokenOut;
     final amountIn = _obsAmountIn;
-    final inValue = amountIn == null ? null : SwapService.formatAmount(amountIn, _tokenIn!.decimals);
-    final outValue = _quoteAmount == null || _tokenOut == null
+    final balance = _obsBalanceIn;
+    final quoteOut = _obsQuoteOut;
+    final inValue = amountIn == null || tokenIn == null ? null : SwapService.formatAmount(amountIn, tokenIn.decimals);
+    final outValue = quoteOut == null || tokenOut == null
         ? null
-        : SwapService.formatAmount(_quoteAmount!, _tokenOut!.decimals);
+        : SwapService.formatAmount(quoteOut, tokenOut.decimals);
+    // แท็บ TPIX: ตัวเลขจาก BigInt ตรงตัวแบบปัดลง (ปัดขึ้นแล้วผู้ใช้กรอกตามจะเกินยอด)
+    final String? outText = quoteOut == null || tokenOut == null
+        ? null
+        : tpix
+        ? TpixDexMath.display(quoteOut, tokenOut.decimals)
+        : obsidianAmountText(outValue!);
+    final String? balanceText = tokenIn == null
+        ? null
+        : balance == null
+        ? '—'
+        : tpix
+        ? TpixDexMath.display(balance, tokenIn.decimals, maxFraction: 4)
+        : obsidianAmountText(SwapService.formatAmount(balance, tokenIn.decimals));
+    final loadingBalance = tpix ? _tpix.loadingBalance : _loadingBalance;
+    final quoting = tpix ? _tpix.quoting && quoteOut == null : _isQuoting;
+    final canFill = !busy && tokenIn != null && balance != null && balance > BigInt.zero;
     final usd = obsidianSwapUsd(
-      paySymbol: _tokenIn?.symbol ?? '',
+      paySymbol: tokenIn?.symbol ?? '',
       payAmount: inValue,
-      receiveSymbol: _tokenOut?.symbol ?? '',
+      receiveSymbol: tokenOut?.symbol ?? '',
       receiveAmount: outValue,
     );
     final label = st.ui(fontSize: 12.5, color: ObsidianColors.textSec, height: 1.4);
@@ -126,21 +178,16 @@ extension _SwapObsidian on _SwapScreenState {
             children: [
               Text(l.t('obs.swap.pay'), style: label),
               const Spacer(),
-              if (_loadingBalance)
+              if (loadingBalance)
                 const SizedBox(
                   width: 12,
                   height: 12,
                   child: CircularProgressIndicator(strokeWidth: 1.6, color: ObsidianColors.textMuted),
                 )
-              else if (_tokenIn != null)
+              else if (balanceText != null)
                 Flexible(
                   child: Text(
-                    l
-                        .t('obs.swap.balance')
-                        .replaceAll(
-                          '{amount}',
-                          obsidianAmountText(SwapService.formatAmount(_balanceIn, _tokenIn!.decimals)),
-                        ),
+                    l.t('obs.swap.balance').replaceAll('{amount}', balanceText),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: label,
@@ -172,15 +219,16 @@ extension _SwapObsidian on _SwapScreenState {
                       isDense: true,
                       contentPadding: EdgeInsets.zero,
                     ),
-                    onChanged: _obsAmountEdited,
+                    onChanged: tpix ? _obsTpixAmountEdited : _obsAmountEdited,
                   ),
                 ),
                 const SizedBox(width: 10),
                 ObsidianTokenPill(
-                  logo: _tokenIn == null ? null : ObsidianTokenLogo(token: _tokenIn!, chain: _chain, size: 32),
-                  label: _tokenIn?.symbol ?? l.t('obs.swap.selectToken'),
+                  key: const ValueKey('obs-swap-token-in'),
+                  logo: tokenIn == null ? null : ObsidianTokenLogo(token: tokenIn, chain: _chain, size: 32),
+                  label: tokenIn?.symbol ?? l.t('obs.swap.selectToken'),
                   semanticLabel: l.t('obs.swap.selectPay'),
-                  onTap: busy ? null : _selectTokenIn,
+                  onTap: busy ? null : (tpix ? () => _selectTpixToken(isFrom: true) : _selectTokenIn),
                 ),
               ],
             ),
@@ -196,19 +244,14 @@ extension _SwapObsidian on _SwapScreenState {
                   style: st.ui(fontSize: 13, color: ObsidianColors.textSec),
                 ),
               ),
-              ObsidianChipButton(
-                label: '25%',
-                onTap: busy || _tokenIn == null || _balanceIn <= BigInt.zero ? null : () => _obsFillPercent(25),
-              ),
+              ObsidianChipButton(label: '25%', onTap: canFill ? () => _obsFillPercent(25) : null),
+              const SizedBox(width: 6),
+              ObsidianChipButton(label: '50%', onTap: canFill ? () => _obsFillPercent(50) : null),
               const SizedBox(width: 6),
               ObsidianChipButton(
-                label: '50%',
-                onTap: busy || _tokenIn == null || _balanceIn <= BigInt.zero ? null : () => _obsFillPercent(50),
-              ),
-              const SizedBox(width: 6),
-              ObsidianChipButton(
+                key: const ValueKey('obs-swap-max'),
                 label: l.t('obs.swap.max'),
-                onTap: busy || _tokenIn == null ? null : () => _obsApplyAmount(_maxAmountText()),
+                onTap: busy || tokenIn == null ? null : _obsMax,
               ),
             ],
           ),
@@ -231,7 +274,7 @@ extension _SwapObsidian on _SwapScreenState {
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: _isQuoting
+                    child: quoting
                         ? const SizedBox(
                             width: 22,
                             height: 22,
@@ -241,10 +284,11 @@ extension _SwapObsidian on _SwapScreenState {
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              outValue == null ? '0' : obsidianAmountText(outValue),
+                              outText ?? '0',
+                              key: const ValueKey('obs-swap-amount-out'),
                               maxLines: 1,
                               style: big.copyWith(
-                                color: outValue == null ? const Color(0x40FFFFFF) : const Color(0xFFE9EAEE),
+                                color: outText == null ? const Color(0x40FFFFFF) : const Color(0xFFE9EAEE),
                               ),
                             ),
                           ),
@@ -252,10 +296,11 @@ extension _SwapObsidian on _SwapScreenState {
                 ),
                 const SizedBox(width: 10),
                 ObsidianTokenPill(
-                  logo: _tokenOut == null ? null : ObsidianTokenLogo(token: _tokenOut!, chain: _chain, size: 32),
-                  label: _tokenOut?.symbol ?? l.t('obs.swap.selectToken'),
+                  key: const ValueKey('obs-swap-token-out'),
+                  logo: tokenOut == null ? null : ObsidianTokenLogo(token: tokenOut, chain: _chain, size: 32),
+                  label: tokenOut?.symbol ?? l.t('obs.swap.selectToken'),
                   semanticLabel: l.t('obs.swap.selectReceive'),
-                  onTap: busy ? null : _selectTokenOut,
+                  onTap: busy ? null : (tpix ? () => _selectTpixToken(isFrom: false) : _selectTokenOut),
                 ),
               ],
             ),
@@ -293,7 +338,7 @@ extension _SwapObsidian on _SwapScreenState {
               key: const ValueKey('obs-swap-flip'),
               flips: _obsFlips,
               semanticLabel: l.t('obs.swap.flip'),
-              onTap: busy || _tokenIn == null || _tokenOut == null ? null : _obsFlip,
+              onTap: busy || tokenIn == null || tokenOut == null ? null : _obsFlip,
             ),
           ),
         ),
@@ -307,24 +352,38 @@ extension _SwapObsidian on _SwapScreenState {
     _onAmountChanged(value);
   }
 
+  /// แท็บ TPIX: จำนวนไปที่ตัวควบคุม (ตัวควบคุมล้างราคาเก่า + ขอราคาใหม่เอง)
+  void _obsTpixAmountEdited(String value) {
+    _obsRefreshLeft.value = _SwapScreenState._obsRefreshSeconds;
+    _tpix.setAmount(value);
+  }
+
   void _obsApplyAmount(String text) {
     _amountController.text = text;
-    _obsAmountEdited(text);
+    _isTpix ? _obsTpixAmountEdited(text) : _obsAmountEdited(text);
   }
 
   /// 25% / 50% ของยอด — คิดด้วย BigInt ปัดลง (ไม่มีทางเกินยอดจริง)
   void _obsFillPercent(int percent) {
-    final token = _tokenIn;
-    if (token == null) return;
+    final token = _obsTokenIn;
+    final balance = _obsBalanceIn;
+    if (token == null || balance == null) return;
     SynthService.playTap();
-    _obsApplyAmount(obsidianFractionText(_balanceIn, percent, token.decimals));
+    _obsApplyAmount(obsidianFractionText(balance, percent, token.decimals));
+  }
+
+  /// เต็มยอด — เชนที่มีค่าแก๊สกันไว้ส่วนหนึ่ง · เชน TPIX ไม่มีค่าแก๊ส ใช้ได้ทั้งยอดแบบตรงตัว
+  void _obsMax() {
+    if (!_isTpix) return _obsApplyAmount(_maxAmountText());
+    final text = _tpix.maxAmountText;
+    if (text != null) _obsApplyAmount(text);
   }
 
   void _obsFlip() {
-    if (_tokenIn == null || _tokenOut == null) return;
+    if (_obsTokenIn == null || _obsTokenOut == null) return;
     _obsSet(() => _obsFlips++);
     _obsRefreshLeft.value = _SwapScreenState._obsRefreshSeconds;
-    _flipTokens();
+    _isTpix ? _flipTpix() : _flipTokens();
   }
 
   /// หน้านี้อยู่บนสุด (ไม่มีกล่องยืนยัน/แผ่นเลือกเหรียญทับ)
@@ -337,6 +396,20 @@ extension _SwapObsidian on _SwapScreenState {
     final life = WidgetsBinding.instance.lifecycleState;
     if (life != null && life != AppLifecycleState.resumed) return;
     // รอจังหวะพิมพ์ (debounce) / กำลังขอราคา = ยังไม่เริ่มนับ — 15 วิเริ่มนับจากตอนที่ราคามาถึง
+    if (_isTpix) {
+      // แท็บ TPIX: นับเฉพาะตอนมีราคาของอินพุตปัจจุบันแล้ว · ราคาเก่าระหว่างรอยังโชว์อยู่ (ไม่กะพริบ)
+      final tpixPaused =
+          _tpix.phase != TpixSwapPhase.ready || _tpix.quote == null || _tpix.quoting || _networkLocked || !_obsOnTop;
+      if (tpixPaused) return;
+      final left = _obsRefreshLeft.value - 1;
+      if (left > 0) {
+        _obsRefreshLeft.value = left;
+        return;
+      }
+      _obsRefreshLeft.value = _SwapScreenState._obsRefreshSeconds;
+      _tpix.refreshQuote();
+      return;
+    }
     final paused =
         _obsAmountIn == null ||
         _tokenOut == null ||
@@ -401,14 +474,17 @@ extension _SwapObsidian on _SwapScreenState {
 
   Widget _obsRateRow(LocaleProvider l, ObsidianStyle st) {
     final amountIn = _obsAmountIn;
-    final tokenIn = _tokenIn;
-    final tokenOut = _tokenOut;
+    final tokenIn = _obsTokenIn;
+    final tokenOut = _obsTokenOut;
+    final quoteOut = _obsQuoteOut;
     if (amountIn == null || tokenIn == null || tokenOut == null) return const SizedBox(height: 20);
+    final refreshing = _isTpix ? _tpix.quoting : _isQuoting || _obsRefreshing;
 
     String rate = '';
-    if (_quoteAmount != null) {
+    if (quoteOut != null) {
+      // แสดงผลเท่านั้น (ไม่ใช้คิดยอดที่ส่ง)
       final inV = SwapService.formatAmount(amountIn, tokenIn.decimals);
-      final outV = SwapService.formatAmount(_quoteAmount!, tokenOut.decimals);
+      final outV = SwapService.formatAmount(quoteOut, tokenOut.decimals);
       if (inV > 0) rate = '1 ${tokenIn.symbol} = ${obsidianAmountText(outV / inV)} ${tokenOut.symbol}';
     }
 
@@ -441,9 +517,7 @@ extension _SwapObsidian on _SwapScreenState {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      _isQuoting || _obsRefreshing
-                          ? l.t('obs.swap.refreshing')
-                          : l.t('obs.swap.refreshIn').replaceAll('{s}', '$left'),
+                      refreshing ? l.t('obs.swap.refreshing') : l.t('obs.swap.refreshIn').replaceAll('{s}', '$left'),
                       style: st.ui(fontSize: 12, color: ObsidianColors.textMuted),
                     ),
                   ],
@@ -472,7 +546,7 @@ extension _SwapObsidian on _SwapScreenState {
           '${obsidianAmountText(SwapService.formatAmount(SwapService.applySlippage(quote, _slippagePercent), tokenOut.decimals))} ${tokenOut.symbol}',
         ),
       ObsidianPressable(
-        onTap: _isSwapping || _isApproving ? null : _showSlippageDialog,
+        onTap: _networkLocked ? null : _showSlippageDialog,
         semanticLabel: l.t('obs.swap.settings'),
         pressedScale: 0.985,
         child: ObsidianKv(
@@ -499,7 +573,14 @@ extension _SwapObsidian on _SwapScreenState {
     );
   }
 
-  Widget _obsRouteRow(LocaleProvider l, ObsidianStyle st, TokenDef tokenIn, TokenDef tokenOut) {
+  /// [viaWtpix] = เส้นทางของ TPIX DEX ผ่าน WTPIX (เหรียญ ↔ เหรียญ ไม่มีพูลตรง)
+  Widget _obsRouteRow(
+    LocaleProvider l,
+    ObsidianStyle st,
+    TokenDef tokenIn,
+    TokenDef tokenOut, {
+    bool viaWtpix = false,
+  }) {
     final text = st.ui(fontSize: 13, color: ObsidianColors.text, height: 1.35);
     final dex = _obsDexNames[_chain.chainId];
     return ConstrainedBox(
@@ -519,7 +600,7 @@ extension _SwapObsidian on _SwapScreenState {
                   children: [
                     ObsidianTokenLogo(token: tokenIn, chain: _chain, size: 16),
                     const SizedBox(width: 4),
-                    Text('${tokenIn.symbol} → ', style: text),
+                    Text(viaWtpix ? '${tokenIn.symbol} → WTPIX → ' : '${tokenIn.symbol} → ', style: text),
                     ObsidianTokenLogo(token: tokenOut, chain: _chain, size: 16),
                     const SizedBox(width: 4),
                     Text(dex == null ? tokenOut.symbol : '${tokenOut.symbol} · $dex', style: text),
@@ -545,8 +626,7 @@ extension _SwapObsidian on _SwapScreenState {
     final hasQuote = _quoteAmount != null && _quoteAmount! > BigInt.zero;
     final hasSufficientBalance = amountIn <= _balanceIn && hasAmount;
     // ยอด/allowance ของเหรียญที่เพิ่งเลือกยังโหลดไม่เสร็จ = ยังเชื่อค่าไม่ได้ (กันแลกเกินยอด/อนุมัติซ้ำเสียค่าแก๊ส)
-    final canSwap =
-        hasAmount && hasQuote && hasSufficientBalance && !_busy && !_isQuoting && !_loadingBalance;
+    final canSwap = hasAmount && hasQuote && hasSufficientBalance && !_busy && !_isQuoting && !_loadingBalance;
 
     String label;
     VoidCallback? onPressed;
@@ -572,6 +652,215 @@ extension _SwapObsidian on _SwapScreenState {
   }
 
   // ════════════════════════════════════════════════════════════
+  //  แท็บ TPIX Chain (TPIX DEX) — ตัวเลข/สถานะ/ธุรกรรมทั้งหมดมาจาก TpixSwapController
+  // ════════════════════════════════════════════════════════════
+
+  /// TPIX DEX ยังใช้ไม่ได้ — กำลังโหลด / ทะเบียนไม่พร้อม / ติดต่อไม่ได้ (ไม่มีฟอร์ม ไม่มีปุ่มส่ง)
+  Widget _obsTpixStatus(LocaleProvider l, ObsidianStyle st) {
+    if (_tpix.phase == TpixSwapPhase.loading) {
+      return Padding(
+        key: const ValueKey('tpix-swap-loading'),
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        child: Column(
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.4, color: ObsidianColors.cyan),
+            ),
+            const SizedBox(height: 12),
+            Text(l.t('swap.tpix.loading'), style: st.ui(fontSize: 13, color: ObsidianColors.textMuted)),
+          ],
+        ),
+      );
+    }
+
+    final unreachable = _tpix.phase == TpixSwapPhase.unreachable;
+    return ObsidianPanel(
+      key: const ValueKey('tpix-swap-closed'),
+      surface: ObsidianCards.details,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                unreachable ? Icons.cloud_off_rounded : Icons.lock_clock_rounded,
+                size: 20,
+                color: ObsidianColors.warning,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l.t(unreachable ? 'swap.tpix.unreachable' : 'swap.tpix.unavailable'),
+                  style: st.ui(fontSize: 15, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            l.t(unreachable ? 'swap.tpix.unreachableBody' : 'swap.tpix.unavailableBody'),
+            style: st.ui(fontSize: 13, height: 1.5, color: ObsidianColors.textSec),
+          ),
+          const SizedBox(height: 16),
+          ObsidianButton.secondary(
+            key: const ValueKey('tpix-retry'),
+            label: l.t('swap.tpix.retry'),
+            onPressed: () => _tpix.load(force: true),
+          ),
+          const SizedBox(height: 10),
+          ObsidianButton.secondary(
+            key: const ValueKey('tpix-use-bsc'),
+            label: l.t('swap.tpix.useBsc'),
+            onPressed: () => _onChainChanged(ChainConfig.bsc),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ขั้นต่ำที่จะได้รับ / ผลกระทบต่อราคา / ค่าธรรมเนียมในพูล / เส้นทาง ของแท็บ TPIX
+  Widget _obsTpixDetails(LocaleProvider l, ObsidianStyle st) {
+    final q = _tpix.quote;
+    final err = _tpix.quoteError;
+    final from = _tpix.from;
+    final to = _tpix.to;
+    String? minText;
+    if (q != null) {
+      try {
+        minText = '${TpixDexMath.display(q.minOut(_slippagePercent), q.to.decimals)} ${q.to.symbol}';
+      } on TpixDexException {
+        minText = '—';
+      }
+    }
+    final bps = q?.impactBps;
+    final Color? impactColor = q == null
+        ? null
+        : bps == null || q.exceedsImpactLimit
+        ? ObsidianColors.danger
+        : (bps >= 300 ? ObsidianColors.warning : null);
+    final maxIn = q != null && q.exceedsImpactLimit ? q.maxAmountInUnderLimit : null;
+    final warn = st.ui(fontSize: 12.5, height: 1.45, color: ObsidianColors.danger);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ObsidianPanel(
+          surface: ObsidianCards.details,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (minText != null) ObsidianKv(l.t('obs.swap.minReceived'), minText),
+              if (q != null)
+                ObsidianKv(
+                  l.t('swap.tpix.priceImpact'),
+                  _impactText(q, l),
+                  key: const ValueKey('tpix-impact'),
+                  valueColor: impactColor,
+                ),
+              ObsidianPressable(
+                onTap: _networkLocked ? null : _showSlippageDialog,
+                semanticLabel: l.t('obs.swap.settings'),
+                pressedScale: 0.985,
+                child: ObsidianKv(
+                  l.t('obs.swap.slippage'),
+                  _obsSlippageText,
+                  trailing: const Icon(Icons.tune_rounded, size: 14, color: ObsidianColors.textMuted),
+                ),
+              ),
+              ObsidianKv(l.t('swap.tpix.poolFee'), l.t('swap.tpix.poolFeeValue')),
+              ObsidianKv(l.t('swap.tpix.gasFee'), l.t('swap.tpix.gasFeeValue')),
+              if (from != null && to != null) _obsRouteRow(l, st, from, to, viaWtpix: q?.viaWtpix ?? false),
+              ObsidianKv(l.t('swap.network'), ChainConfig.tpix.name),
+            ],
+          ),
+        ),
+        if (q == null && err != null && !_tpix.quoting) ...[
+          const SizedBox(height: 10),
+          Text(l.t(err.localeKey), key: const ValueKey('tpix-quote-error'), textAlign: TextAlign.center, style: warn),
+        ],
+        if (maxIn != null && maxIn > BigInt.zero) ...[
+          const SizedBox(height: 10),
+          Text(
+            l
+                .t('swap.tpix.maxHint')
+                .replaceAll('{amount}', TpixDexMath.display(maxIn, q!.from.decimals, maxFraction: 4))
+                .replaceAll('{symbol}', q.from.symbol),
+            key: const ValueKey('tpix-max-hint'),
+            textAlign: TextAlign.center,
+            style: warn,
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// ปุ่มหลักของแท็บ TPIX — สถานะตาม TpixSwapController.block ชุดเดียวกับธีมอื่น
+  Widget _obsTpixCta(LocaleProvider l, ObsidianStyle st) {
+    final block = _tpix.block;
+    final from = _tpix.from;
+    final to = _tpix.to;
+    final busy = _tpix.busy || _tpixTapBusy;
+    String label;
+    VoidCallback? onPressed;
+    var loading = false;
+    switch (block) {
+      case TpixSwapBlock.enterAmount:
+        label = from == null || to == null ? l.t('obs.swap.selectToken') : l.t('swap.enterAmount');
+      case TpixSwapBlock.invalidAmount:
+        label = l.t('swap.tpix.invalidAmount');
+      case TpixSwapBlock.tooManyDecimals:
+        label = l.t('swap.tpix.tooManyDecimals');
+      case TpixSwapBlock.loading:
+        label = l.t('swap.tpix.loadingShort');
+      case TpixSwapBlock.balanceUnknown:
+        label = l.t('swap.tpix.balanceUnknown');
+        onPressed = _tpix.refreshBalance;
+      case TpixSwapBlock.insufficient:
+        label = l.t('swap.insufficient');
+      case TpixSwapBlock.quoting:
+        label = l.t('swap.tpix.quoting');
+      case TpixSwapBlock.quoteFailed:
+        label = l.t('swap.tpix.retryQuote');
+        onPressed = _tpix.refreshQuote;
+      case TpixSwapBlock.impactUnknown:
+        label = l.t('swap.tpix.impactUnknownButton');
+      case TpixSwapBlock.impactTooHigh:
+        label = l.t('swap.tpix.impactTooHighButton');
+      case TpixSwapBlock.needsApproval:
+        label = _tpix.approving
+            ? l.t('swap.approving')
+            : l.t('obs.swap.approveCta').replaceAll('{symbol}', from?.symbol ?? '');
+        onPressed = busy ? null : _approveTpix;
+        loading = _tpix.approving;
+      case TpixSwapBlock.none:
+        label = _tpix.swapping
+            ? l.t('swap.swapping')
+            : l.t('obs.swap.cta').replaceAll('{from}', from?.symbol ?? '').replaceAll('{to}', to?.symbol ?? '');
+        onPressed = busy ? null : _executeTpixSwap;
+        loading = _tpix.swapping;
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ObsidianButton(key: const ValueKey('obs-swap-cta'), label: label, onPressed: onPressed, loading: loading),
+        if (block == TpixSwapBlock.needsApproval) ...[
+          const SizedBox(height: 8),
+          Text(
+            l.t('swap.tpix.approveNote'),
+            textAlign: TextAlign.center,
+            style: st.ui(fontSize: 11.5, color: ObsidianColors.textMuted),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
   //  กล่องยืนยัน / สำเร็จ / ตั้งค่าราคาขยับ
   // ════════════════════════════════════════════════════════════
 
@@ -591,44 +880,14 @@ extension _SwapObsidian on _SwapScreenState {
       context,
       title: l.t('swap.confirmTitle'),
       builder: (ctx) {
-        final st = ObsidianStyle.of(ctx);
-        Widget side(TokenDef t, String amount, String caption) => Row(
-          children: [
-            ObsidianTokenLogo(token: t, chain: chain, size: 36),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(caption, style: st.ui(fontSize: 12, color: ObsidianColors.textMuted)),
-                  Text(
-                    '$amount ${t.symbol}',
-                    style: st.number(fontSize: 20, fontWeight: FontWeight.w700, color: ObsidianColors.text),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ObsidianPanel(
-              surface: ObsidianCards.details,
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  side(tokenIn, amountStr, l.t('obs.swap.pay')),
-                  const Padding(
-                    padding: EdgeInsets.only(left: 8, top: 6, bottom: 6),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Icon(Icons.arrow_downward_rounded, size: 18, color: ObsidianColors.textMuted),
-                    ),
-                  ),
-                  side(tokenOut, outFormatted.toStringAsFixed(6), l.t('obs.swap.receive')),
-                ],
-              ),
+            _obsConfirmSides(
+              ctx,
+              chain,
+              (tokenIn, amountStr, l.t('obs.swap.pay')),
+              (tokenOut, outFormatted.toStringAsFixed(6), l.t('obs.swap.receive')),
             ),
             const SizedBox(height: 8),
             ObsidianKv(l.t('swap.minReceived'), '${minOut.toStringAsFixed(6)} ${tokenOut.symbol}', strong: true),
@@ -666,6 +925,111 @@ extension _SwapObsidian on _SwapScreenState {
           ],
         );
       },
+    );
+  }
+
+  /// แผงจ่าย ↓ ได้รับ ในกล่องยืนยัน — (เหรียญ, จำนวนที่แสดง, หัวข้อ)
+  Widget _obsConfirmSides(
+    BuildContext ctx,
+    ChainConfig chain,
+    (TokenDef, String, String) pay,
+    (TokenDef, String, String) receive,
+  ) {
+    final st = ObsidianStyle.of(ctx);
+    Widget side((TokenDef, String, String) s) {
+      final (t, amount, caption) = s;
+      return Row(
+        children: [
+          ObsidianTokenLogo(token: t, chain: chain, size: 36),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(caption, style: st.ui(fontSize: 12, color: ObsidianColors.textMuted)),
+                Text(
+                  '$amount ${t.symbol}',
+                  style: st.number(fontSize: 20, fontWeight: FontWeight.w700, color: ObsidianColors.text),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ObsidianPanel(
+      surface: ObsidianCards.details,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          side(pay),
+          const Padding(
+            padding: EdgeInsets.only(left: 8, top: 6, bottom: 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Icon(Icons.arrow_downward_rounded, size: 18, color: ObsidianColors.textMuted),
+            ),
+          ),
+          side(receive),
+        ],
+      ),
+    );
+  }
+
+  /// กล่องยืนยันแท็บ TPIX — [minOut] คือตัวเดียวกับที่ _executeTpixSwap ส่งจริง (ผูกกับ [q] ที่เห็น)
+  Future<bool?> _obsTpixConfirm(TpixDexQuote q, BigInt minOut) {
+    final l = context.read<LocaleProvider>();
+    const chain = ChainConfig.tpix;
+    final bps = q.impactBps;
+    return showObsidianSheet<bool>(
+      context,
+      title: l.t('swap.confirmTitle'),
+      builder: (ctx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _obsConfirmSides(
+            ctx,
+            chain,
+            (q.from, TpixDexMath.display(q.amountIn, q.from.decimals), l.t('obs.swap.pay')),
+            (q.to, TpixDexMath.display(q.amountOut, q.to.decimals), l.t('obs.swap.receive')),
+          ),
+          const SizedBox(height: 8),
+          ObsidianKv(
+            l.t('swap.minReceived'),
+            '${TpixDexMath.display(minOut, q.to.decimals)} ${q.to.symbol}',
+            strong: true,
+          ),
+          ObsidianKv(
+            l.t('swap.tpix.priceImpact'),
+            _impactText(q, l),
+            valueColor: bps != null && bps >= 300 ? ObsidianColors.warning : null,
+          ),
+          ObsidianKv(l.t('swap.slippage'), _slippageText),
+          ObsidianKv(l.t('swap.tpix.poolFee'), l.t('swap.tpix.poolFeeValue')),
+          ObsidianKv(l.t('swap.tpix.gasFee'), l.t('swap.tpix.gasFeeValue')),
+          ObsidianKv(l.t('swap.tpix.route'), _routeText(q)),
+          ObsidianKv(l.t('swap.network'), chain.name),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ObsidianButton.secondary(label: l.t('send.cancel'), onPressed: () => Navigator.pop(ctx, false)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: ObsidianButton(
+                  key: const ValueKey('obs-swap-confirm'),
+                  label: l.t('swap.button'),
+                  height: 52,
+                  onPressed: () => Navigator.pop(ctx, true),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

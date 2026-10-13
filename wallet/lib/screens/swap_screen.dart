@@ -460,6 +460,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       _showTpixError('swap.failed', e);
       return Future.value(false);
     }
+    if (_isObsidian) return _obsTpixConfirm(q, minOut);
 
     return showDialog<bool>(
       context: context,
