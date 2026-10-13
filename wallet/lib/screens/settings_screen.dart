@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +23,19 @@ import '../widgets/bug_report_sheet.dart';
 import '../services/walletconnect_service.dart';
 import '../services/update_service.dart';
 import '../providers/update_provider.dart';
+import '../services/identity_service.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_list_group.dart';
+import '../widgets/obsidian/obsidian_screen_dim.dart';
+import '../widgets/obsidian/obsidian_sheet_frame.dart';
+import '../widgets/obsidian/obsidian_toggle.dart';
+import '../widgets/tpix_coin_logo.dart';
+import 'identity_screen.dart';
+import 'obsidian_tabs.dart';
+import 'receive_screen.dart';
+
+// หน้าตั้งค่าธีม Obsidian (A-Settings.dc.html) — ธีมอื่นใช้เลย์เอาต์เดิมด้านล่าง
+part 'settings_obsidian.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -33,21 +48,124 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _appVersion = '';
   bool _isBioToggling = false;
 
+  // ── ธีม Obsidian (โหลดครั้งเดียว ไม่ใช่ FutureBuilder ทุกเฟรม — กันสวิตช์กะพริบ) ──
+  String _versionName = '';
+
+  /// ระดับการปกป้องตัวตน 0..3 — null = ยังอ่านไม่เสร็จ/อ่านไม่ได้ (ไม่โชว์ค่าเดา)
+  int? _identityLevel;
+
+  /// เครื่องรองรับสแกนนิ้ว — null = ยังไม่รู้ (ซ่อนแถวไว้ก่อน)
+  bool? _bioSupported;
+  bool _bioEnabled = false;
+  bool _obsLoaded = false;
+  final _scroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _loadVersion();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // อ่านสถานะสำหรับหน้า Obsidian เมื่อเป็นธีมนี้จริง (สลับธีมมาระหว่างเปิดหน้าก็โหลดให้)
+    if (!_obsLoaded && TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      _obsLoaded = true;
+      _loadIdentityLevel();
+      _loadBiometric();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadVersion() async {
     final info = await PackageInfo.fromPlatform();
-    if (mounted) setState(() => _appVersion = '${info.version} (${info.buildNumber})');
+    if (mounted) {
+      setState(() {
+        _appVersion = '${info.version} (${info.buildNumber})';
+        _versionName = info.version;
+      });
+    }
+  }
+
+  Future<void> _loadIdentityLevel() async {
+    try {
+      final status = await IdentityService().getStatus();
+      if (!mounted) return;
+      setState(() => _identityLevel = (status['level'] as int?) ?? 0);
+    } catch (e) {
+      // อ่านไม่ได้ → ไม่โชว์ระดับเลย (ดีกว่าบอกผิดว่ายังไม่ได้ป้องกัน)
+      debugPrint('settings identity: ${e.runtimeType}');
+    }
+  }
+
+  Future<void> _loadBiometric() async {
+    final bio = BiometricService();
+    try {
+      final supported = await bio.isDeviceSupported();
+      final enabled = supported && await bio.isEnabled();
+      if (!mounted) return;
+      setState(() {
+        _bioSupported = supported;
+        _bioEnabled = enabled;
+      });
+    } catch (e) {
+      debugPrint('settings biometric: ${e.runtimeType}');
+      if (mounted) setState(() => _bioSupported = false);
+    }
+  }
+
+  /// เปิด/ปิดสแกนนิ้ว (ทุกธีมใช้ตัวนี้) — เปิดต้องใส่ PIN ถูก + สแกนผ่านก่อน
+  /// กดซ้ำระหว่างทำงานไม่ทำซ้ำ · ยกเลิก/PIN ผิด = ค่าเดิม
+  Future<void> _toggleBiometric(LocaleProvider l, bool enabled) async {
+    if (_isBioToggling) return; // double-tap guard
+    setState(() => _isBioToggling = true);
+    final bioService = BiometricService();
+
+    try {
+      final newVal = !enabled;
+      final wallet = context.read<WalletProvider>();
+      if (newVal) {
+        // Ask for PIN to save biometric token
+        final pin = await _askPinDialog(l);
+        if (pin == null || !mounted) return;
+
+        final pinValid = await WalletService.verifyPin(pin);
+        if (!pinValid) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l.t('pin.wrong')), backgroundColor: AppTheme.danger, duration: const Duration(seconds: 2)),
+          );
+          return;
+        }
+
+        final authed = await bioService.authenticate(l.t('home.biometricSetup'));
+        if (!authed || !mounted) return;
+
+        await bioService.setEnabled(true);
+        await wallet.saveBiometricToken(pin);
+      } else {
+        await bioService.setEnabled(false);
+        await wallet.clearBiometricToken();
+      }
+    } finally {
+      if (mounted) setState(() => _isBioToggling = false);
+      // อ่านค่าจริงหลังทำงาน (สำเร็จ/ยกเลิก) — สวิตช์ต้องตรงกับที่บันทึกไว้
+      if (mounted && _obsLoaded) await _loadBiometric();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
-    final c = AppColors.of(context);
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return _buildObsidian(l);
+    }
     return Scaffold(
       body: TpixScreenBackground(
         settings: true,
@@ -314,11 +432,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showThemePicker(LocaleProvider l) {
     final themeProv = context.read<ThemeProvider>();
+    final obsidian = TpixThemeExtension.of(context).themeId == ThemeId.obsidian;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (sheetCtx) => _ThemePickerSheet(locale: l, themeProv: themeProv),
+      builder: (sheetCtx) => obsidian
+          ? _ObsThemePickerSheet(locale: l, themeProv: themeProv)
+          : _ThemePickerSheet(locale: l, themeProv: themeProv),
     );
   }
 
@@ -333,40 +454,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           builder: (context, enabledSnap) {
             final enabled = enabledSnap.data ?? false;
             return GestureDetector(
-              onTap: () async {
-                if (_isBioToggling) return; // double-tap guard
-                setState(() => _isBioToggling = true);
-
-                try {
-                  final newVal = !enabled;
-                  final wallet = context.read<WalletProvider>();
-                  if (newVal) {
-                    // Ask for PIN to save biometric token
-                    final pin = await _askPinDialog(l);
-                    if (pin == null || !mounted) return;
-
-                    final pinValid = await WalletService.verifyPin(pin);
-                    if (!pinValid) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(l.t('pin.wrong')), backgroundColor: AppTheme.danger, duration: const Duration(seconds: 2)),
-                      );
-                      return;
-                    }
-
-                    final authed = await bioService.authenticate(l.t('home.biometricSetup'));
-                    if (!authed || !mounted) return;
-
-                    await bioService.setEnabled(true);
-                    await wallet.saveBiometricToken(pin);
-                  } else {
-                    await bioService.setEnabled(false);
-                    await wallet.clearBiometricToken();
-                  }
-                } finally {
-                  if (mounted) setState(() => _isBioToggling = false);
-                }
-              },
+              onTap: () => _toggleBiometric(l, enabled),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: adaptiveGlassCard(context, borderRadius: 16),
