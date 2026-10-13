@@ -8,6 +8,8 @@
 /// Developed by Xman Studio
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import 'package:intl/intl.dart';
@@ -15,9 +17,13 @@ import 'package:provider/provider.dart';
 
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../services/db_service.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_screen_header.dart';
+import '../widgets/obsidian/obsidian_screen_dim.dart';
 
 class SignHistoryScreen extends StatefulWidget {
   const SignHistoryScreen({super.key});
@@ -38,7 +44,14 @@ class _SignHistoryScreenState extends State<SignHistoryScreen> {
 
   Future<void> _load() async {
     final slot = context.read<WalletProvider>().activeSlot;
-    final rows = await DbService.getSignHistory(slot);
+    List<Map<String, dynamic>> rows;
+    try {
+      rows = await DbService.getSignHistory(slot);
+    } catch (e) {
+      // อ่านฐานข้อมูลไม่ได้ = โชว์ว่าง ไม่ใช่วงหมุนค้างตลอดไป
+      debugPrint('sign history: ${e.runtimeType}');
+      rows = const [];
+    }
     if (!mounted) return;
     setState(() {
       _rows = rows;
@@ -78,6 +91,7 @@ class _SignHistoryScreenState extends State<SignHistoryScreen> {
 
     final slot = context.read<WalletProvider>().activeSlot;
     await DbService.clearSignHistory(slot);
+    if (!mounted) return;
     await _load();
   }
 
@@ -86,6 +100,9 @@ class _SignHistoryScreenState extends State<SignHistoryScreen> {
     final l = context.watch<LocaleProvider>();
     final c = AppColors.of(context);
     final isThai = l.isThai;
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return _buildObsidian(isThai);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -118,6 +135,151 @@ class _SignHistoryScreenState extends State<SignHistoryScreen> {
                       ),
                     ),
                   ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// ธีม Obsidian — ข้อมูล/การล้างเหมือนเดิม เปลี่ยนแค่หน้าตา
+// ──────────────────────────────────────────────────────────────────────────
+
+extension _ObsidianSignHistory on _SignHistoryScreenState {
+  Widget _buildObsidian(bool isThai) {
+    final st = ObsidianStyle.of(context);
+    final top = MediaQuery.paddingOf(context).top;
+    final children = <Widget>[
+      ObsidianScreenHeader(
+        title: isThai ? 'ประวัติการเซ็น' : 'Sign History',
+        backSemantics: MaterialLocalizations.of(context).backButtonTooltip,
+        trailing: _rows.isEmpty
+            ? null
+            : ObsidianScreenHeaderTile(
+                semanticLabel: isThai ? 'ล้างทั้งหมด' : 'Clear all',
+                // ล้างถาวร — มีกล่องยืนยันใน _clearAll
+                onTap: _clearAll,
+                child: const Icon3D(ObsidianIcons.trash, size: 26),
+              ),
+      ),
+      const SizedBox(height: 20),
+    ];
+    if (_loading) {
+      children.add(const Padding(
+        padding: EdgeInsets.only(top: 80),
+        child: Center(
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: CircularProgressIndicator(strokeWidth: 2.4, color: ObsidianColors.cyan),
+          ),
+        ),
+      ));
+    } else if (_rows.isEmpty) {
+      children.add(ObsidianPanel(
+        padding: const EdgeInsets.fromLTRB(24, 32, 24, 28),
+        child: Column(
+          children: [
+            const Icon3D(ObsidianIcons.signHistory, size: 72, shadows: [IconDropShadow.tile]),
+            const SizedBox(height: 16),
+            Text(
+              isThai ? 'ยังไม่มีประวัติการเซ็น' : 'No sign history yet',
+              textAlign: TextAlign.center,
+              style: st.ui(fontSize: 17, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              isThai ? 'เมื่อแอพอื่นขอลายเซ็น จะแสดงที่นี่' : 'When peer apps request a signature, they appear here',
+              textAlign: TextAlign.center,
+              style: st.ui(fontSize: 13, height: 1.5, color: ObsidianColors.textSec),
+            ),
+          ],
+        ),
+      ));
+    } else {
+      for (final row in _rows) {
+        children
+          ..add(_ObsSignRow(row: row, isThai: isThai))
+          ..add(const SizedBox(height: 10));
+      }
+    }
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: ObsidianScreenDim.node),
+          RefreshIndicator(
+            onRefresh: _load,
+            color: ObsidianColors.cyan,
+            backgroundColor: ObsidianColors.card,
+            edgeOffset: top,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(24, math.max(52.0, top + 8), 24, 40),
+              children: children,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ObsSignRow extends StatelessWidget {
+  final Map<String, dynamic> row;
+  final bool isThai;
+
+  const _ObsSignRow({required this.row, required this.isThai});
+
+  @override
+  Widget build(BuildContext context) {
+    final st = ObsidianStyle.of(context);
+    final dt = DateTime.fromMillisecondsSinceEpoch((row['timestamp'] as int) * 1000);
+    final (color, label, icon) = switch (row['status'] as String) {
+      'signed' => (ObsidianColors.successSoft, isThai ? 'เซ็นแล้ว' : 'Signed', Icons.check_circle_rounded),
+      'rejected' => (ObsidianColors.dangerSoft, isThai ? 'ปฏิเสธ' : 'Rejected', Icons.cancel_rounded),
+      'wallet_locked' => (ObsidianColors.warning, isThai ? 'กระเป๋าล็อก' : 'Locked', Icons.lock_rounded),
+      _ => (ObsidianColors.warning, isThai ? 'ผิดพลาด' : 'Failed', Icons.error_outline_rounded),
+    };
+    return ObsidianPanel(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  row['source_app'] as String,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: st.ui(fontSize: 14.5, fontWeight: FontWeight.w600, color: ObsidianColors.text),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(label, style: st.ui(fontSize: 11.5, fontWeight: FontWeight.w600, color: color)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            row['message'] as String,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: st.mono(fontSize: 12, color: ObsidianColors.textSoft, height: 1.45),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            DateFormat(isThai ? 'd MMM yyyy HH:mm:ss' : 'MMM d, yyyy HH:mm:ss').format(dt),
+            style: st.ui(fontSize: 11.5, color: ObsidianColors.textMuted),
+          ),
+        ],
       ),
     );
   }

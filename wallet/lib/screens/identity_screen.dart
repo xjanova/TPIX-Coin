@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import 'package:flutter/services.dart';
@@ -6,8 +7,15 @@ import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../core/themes/widgets/screen_background.dart';
+import '../core/themes/theme_bundle.dart';
 import '../services/identity_service.dart';
 import '../services/synth_service.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_screen_header.dart';
+import '../widgets/obsidian/obsidian_screen_dim.dart';
+
+// หน้าการปกป้องตัวตนธีม Obsidian — ธีมอื่นใช้เลย์เอาต์เดิมด้านล่าง
+part 'identity_obsidian.dart';
 
 class IdentityScreen extends StatefulWidget {
   const IdentityScreen({super.key});
@@ -59,6 +67,9 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return _buildObsidian(l);
+    }
     final c = AppColors.of(context);
     return Scaffold(
       body: TpixScreenBackground(
@@ -461,27 +472,7 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
               Text(loc['label'] ?? '', style: const TextStyle(fontSize: 12, color: AppTheme.accent, fontWeight: FontWeight.w600)),
               const SizedBox(width: TpixGap.sm),
               GestureDetector(
-                onTap: () async {
-                  final dc = AppColors.of(context);
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      backgroundColor: dc.card,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
-                      title: Text('Remove Location?', style: TextStyle(color: dc.text, fontSize: 16)),
-                      content: Text('Remove "${loc['label']}"?', style: TextStyle(color: dc.textSec, fontSize: 14)),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel', style: TextStyle(color: dc.textMuted))),
-                        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: AppTheme.danger))),
-                      ],
-                    ),
-                  );
-                  if (confirm == true) {
-                    await _identityService.removeLocation(idx);
-                    await _loadStatus();
-                    SynthService.playTap();
-                  }
-                },
+                onTap: () => _confirmRemoveLocation(idx, loc['label'] ?? ''),
                 child: Icon(Icons.close_rounded, size: 14, color: AppTheme.accent.withValues(alpha: 0.5)),
               ),
             ],
@@ -489,6 +480,30 @@ class _IdentityScreenState extends State<IdentityScreen> with TickerProviderStat
         );
       }).toList(),
     );
+  }
+
+  /// ลบพิกัดที่ลงทะเบียนไว้ — ต้องยืนยันก่อนเสมอ (ทุกธีมใช้ตัวนี้)
+  Future<void> _confirmRemoveLocation(int idx, String label) async {
+    final dc = AppColors.of(context);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: dc.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.md)),
+        title: Text('Remove Location?', style: TextStyle(color: dc.text, fontSize: 16)),
+        content: Text('Remove "$label"?', style: TextStyle(color: dc.textSec, fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel', style: TextStyle(color: dc.textMuted))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: AppTheme.danger))),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _identityService.removeLocation(idx);
+      if (!mounted) return;
+      await _loadStatus();
+      SynthService.playTap();
+    }
   }
 
   // ================================================================

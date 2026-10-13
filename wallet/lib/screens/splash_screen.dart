@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_brand_orb.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
 import 'onboarding_screen.dart';
@@ -125,8 +128,83 @@ class _SplashScreenState extends State<SplashScreen>
     super.dispose();
   }
 
+  /// ธีม Obsidian: โลโก้ในจานแก้ว + ชื่อแอป บนคลิปพื้นหลังของธีม (เวลา/การไปหน้าถัดไปเหมือนเดิม)
+  Widget _buildObsidian() {
+    final st = ObsidianStyle.of(context);
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedBuilder(
+                  animation: Listenable.merge([_logoController, _ringController]),
+                  builder: (_, _) => Opacity(
+                    opacity: _logoOpacity.value,
+                    child: Transform.scale(
+                      // elasticOut พุ่งเกิน 1 เล็กน้อย — จำกัดไม่ให้จานล้นกรอบ
+                      scale: _logoScale.value.clamp(0.0, 1.06),
+                      child: ObsidianBrandOrb(size: 150, spin: _ringController.value),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 44),
+                AnimatedBuilder(
+                  animation: _fadeController,
+                  builder: (_, _) => Opacity(
+                    opacity: _titleOpacity.value,
+                    child: Transform.translate(
+                      offset: Offset(0, 20 * (1 - _titleOpacity.value)),
+                      child: ShaderMask(
+                        shaderCallback: (b) => ObsidianColors.accentGradient.createShader(b),
+                        child: Text(
+                          'TPIX WALLET',
+                          style: st.number(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: 4),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                AnimatedBuilder(
+                  animation: _fadeController,
+                  builder: (_, _) => Opacity(
+                    opacity: _subtitleOpacity.value,
+                    child: Text(
+                      'Secure. Fast. Beautiful.',
+                      style: st.ui(fontSize: 15, color: ObsidianColors.textSec, letterSpacing: 2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: AnimatedBuilder(
+              animation: _fadeController,
+              builder: (_, _) => Opacity(
+                opacity: _subtitleOpacity.value,
+                child: Text(
+                  'by Xman Studio',
+                  textAlign: TextAlign.center,
+                  style: st.ui(fontSize: 11, color: ObsidianColors.textMuted),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) return _buildObsidian();
     return Scaffold(
       body: TpixScreenBackground(
         showTexture: false,

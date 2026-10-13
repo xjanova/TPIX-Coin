@@ -1,9 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_screen_header.dart';
 import '../providers/wallet_provider.dart';
 import '../widgets/qr_scanner_screen.dart';
 import 'pin_screen.dart';
@@ -80,9 +85,128 @@ class _ImportScreenState extends State<ImportScreen> {
     }
   }
 
+
+  /// ช่องกรอกแบบยุบลงของ Obsidian
+  InputDecoration _obsField(String hint, {IconData? prefix}) {
+    final st = ObsidianStyle.of(context);
+    OutlineInputBorder b(Color c, [double w = 1]) =>
+        OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide(color: c, width: w));
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: st.ui(fontSize: 14, color: ObsidianColors.textMuted),
+      prefixIcon: prefix == null ? null : Icon(prefix, color: ObsidianColors.textMuted, size: 20),
+      counterStyle: st.ui(fontSize: 10.5, color: ObsidianColors.textMuted),
+      filled: true,
+      fillColor: const Color(0xFF0B0C11),
+      border: b(const Color(0x14FFFFFF)),
+      enabledBorder: b(const Color(0x14FFFFFF)),
+      focusedBorder: b(ObsidianColors.cyan, 1.5),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
+
+  /// ธีม Obsidian — ช่อง/ปุ่ม/การนำเข้า เหมือนเดิมทุกอย่าง เปลี่ยนแค่หน้าตา
+  Widget _buildObsidian(LocaleProvider l) {
+    final st = ObsidianStyle.of(context);
+    final top = MediaQuery.paddingOf(context).top;
+    Widget tab(String label, bool active, VoidCallback onTap) => ObsidianPressable(
+          onTap: active ? null : onTap,
+          semanticLabel: label,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: active
+                  ? const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [ObsidianColors.darkTop, ObsidianColors.darkBottom],
+                    )
+                  : null,
+              boxShadow: active ? const [BoxShadow(color: Color(0xB3000000), offset: Offset(0, 4), blurRadius: 8)] : null,
+            ),
+            child: Text(
+              label,
+              style: st.ui(
+                fontSize: 14,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                color: active ? ObsidianColors.text : ObsidianColors.textMuted,
+              ),
+            ),
+          ),
+        );
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(24, math.max(52.0, top + 8), 24, math.max(24.0, MediaQuery.paddingOf(context).bottom + 12)),
+            sliver: SliverFillRemaining(
+              hasScrollBody: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ObsidianScreenHeader(
+                    title: l.t('import.title'),
+                    backSemantics: MaterialLocalizations.of(context).backButtonTooltip,
+                  ),
+                  const SizedBox(height: 24),
+                  ObsidianPanel(
+                    surface: ObsidianSurface.field,
+                    padding: const EdgeInsets.all(4),
+                    child: Row(
+                      children: [
+                        Expanded(child: tab(l.t('import.tabSeed'), _isMnemonic, () => setState(() => _isMnemonic = true))),
+                        Expanded(child: tab(l.t('import.tabKey'), !_isMnemonic, () => setState(() => _isMnemonic = false))),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: _nameController,
+                    maxLength: 24,
+                    style: st.ui(fontSize: 15, color: ObsidianColors.text),
+                    decoration: _obsField(l.t('wallets.namePlaceholder'), prefix: Icons.label_outline_rounded),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _controller,
+                    maxLines: 4,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    style: st.mono(fontSize: 14, color: ObsidianColors.text, height: 1.5),
+                    decoration: _obsField(_isMnemonic ? l.t('import.hintMnemonic') : l.t('import.hintKey')),
+                  ),
+                  const SizedBox(height: 14),
+                  ObsidianButton.secondary(
+                    label: l.t('import.scanQR'),
+                    trailingIcon: Icons.qr_code_scanner_rounded,
+                    onPressed: _scanQR,
+                  ),
+                  const Spacer(),
+                  const SizedBox(height: 20),
+                  Consumer<WalletProvider>(
+                    builder: (_, provider, _) => ObsidianButton(
+                      label: l.t('import.button'),
+                      loading: provider.isLoading,
+                      onPressed: provider.isLoading ? null : _import,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) return _buildObsidian(l);
     final c = AppColors.of(context);
     return Scaffold(
       body: TpixScreenBackground(

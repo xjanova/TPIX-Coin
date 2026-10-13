@@ -3,9 +3,13 @@ import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../models/wallet_info.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_list_group.dart';
+import '../widgets/obsidian/obsidian_sheet_frame.dart';
 
 /// Bottom sheet for managing multiple wallets
 class WalletListSheet extends StatelessWidget {
@@ -23,6 +27,9 @@ class WalletListSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return Consumer<WalletProvider>(builder: (context, wallet, _) => _buildObsidian(context, wallet, l));
+    }
     final c = AppColors.of(context);
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return Consumer<WalletProvider>(
@@ -103,6 +110,130 @@ class WalletListSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  //  ธีม Obsidian — ตัวจัดการ (สลับ/เปลี่ยนชื่อ/ลบพร้อมยืนยัน/เพิ่ม) ใช้ของเดิมทั้งหมด
+  // ════════════════════════════════════════════════════════════
+
+  Widget _buildObsidian(BuildContext context, WalletProvider wallet, LocaleProvider l) {
+    final st = ObsidianStyle.of(context);
+    final full = wallet.walletCount >= 128;
+    return ObsidianModalSheet(
+      title: l.t('wallets.title'),
+      maxHeightFactor: 0.75,
+      titleTrailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${wallet.walletCount}/128', style: st.number(fontSize: 12.5, color: ObsidianColors.textMuted)),
+          const SizedBox(width: 10),
+          ObsidianPanel(
+            surface: ObsidianSurface.raised.copyWith(radius: 17),
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            onTap: full ? null : () => _addWallet(context, l),
+            semanticLabel: l.t('wallets.addSub'),
+            child: Opacity(
+              opacity: full ? 0.45 : 1,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.add_rounded, size: 16, color: ObsidianColors.cyan),
+                  const SizedBox(width: 4),
+                  Text(l.t('wallets.addSub'), style: st.ui(fontSize: 12.5, fontWeight: FontWeight.w600, color: ObsidianColors.text)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      children: [
+        ObsidianListGroup(
+          dividerIndent: 70,
+          children: [for (final w in wallet.wallets) _obsWalletRow(context, w, wallet, l)],
+        ),
+      ],
+    );
+  }
+
+  Widget _obsWalletRow(BuildContext context, WalletInfo info, WalletProvider wallet, LocaleProvider l) {
+    final st = ObsidianStyle.of(context);
+    final isActive = info.slot == wallet.activeSlot;
+    final shortAddr = info.address.length < 12
+        ? info.address
+        : '${info.address.substring(0, 6)}…${info.address.substring(info.address.length - 4)}';
+    final avatar = Container(
+      width: 44,
+      height: 44,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: isActive
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [ObsidianColors.cyan, ObsidianColors.violet, ObsidianColors.orange],
+                stops: [0, 0.55, 1],
+              )
+            : null,
+        color: isActive ? null : const Color(0x14FFFFFF),
+      ),
+      child: Container(
+        decoration: const BoxDecoration(shape: BoxShape.circle, color: ObsidianColors.surface),
+        alignment: Alignment.center,
+        child: Text(
+          '${info.slot}',
+          style: st.number(fontSize: 15, fontWeight: FontWeight.w600, color: isActive ? Colors.white : ObsidianColors.textSec),
+        ),
+      ),
+    );
+    return ObsidianListRow(
+      leading: avatar,
+      title: info.name,
+      titleColor: isActive ? ObsidianColors.text : ObsidianColors.textSoft,
+      subtitle: shortAddr,
+      chevron: false,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isActive) ObsidianBadge(l.t('wallets.active')),
+          if (!info.isHD) ...[
+            const SizedBox(width: 6),
+            const ObsidianBadge('Imported', color: ObsidianColors.warning),
+          ],
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded, color: ObsidianColors.textMuted, size: 20),
+            color: ObsidianColors.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            onSelected: (action) => _handleAction(context, action, info, wallet, l),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'rename',
+                child: Text(l.t('wallets.rename'), style: st.ui(fontSize: 14, color: ObsidianColors.text)),
+              ),
+              if (!isActive)
+                PopupMenuItem(
+                  value: 'switch',
+                  child: Text(l.t('wallets.switch'), style: st.ui(fontSize: 14, color: ObsidianColors.text)),
+                ),
+              // ลบต้องยืนยันก่อน (กล่องเดิม) · เหลือใบเดียวลบไม่ได้
+              if (wallet.walletCount > 1)
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Text(l.t('wallets.delete'), style: st.ui(fontSize: 14, color: ObsidianColors.dangerSoft)),
+                ),
+            ],
+          ),
+        ],
+      ),
+      onTap: isActive
+          ? null
+          : () async {
+              SynthService.playTap();
+              await wallet.switchWallet(info.slot);
+              if (context.mounted) Navigator.pop(context);
+            },
     );
   }
 

@@ -31,6 +31,7 @@ import 'masternode_screen.dart';
 import 'swap_screen.dart';
 import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
+import 'obsidian_tabs.dart';
 import '../services/walletconnect_service.dart';
 import '../services/bug_reporter.dart';
 import '../services/peer_link_service.dart';
@@ -212,13 +213,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   /// เปิดหน้าใหม่ทีละหน้า — แตะซ้ำระหว่างหน้ากำลังเปิด/ยังเปิดอยู่ ไม่ push ซ้อน
-  Future<void> _obsOpen(Widget page) async {
+  ///
+  /// หน้าแท็บ (กิจกรรม/ตั้งค่า) มีแถบเมนูล่างของตัวเอง กดแท็บอื่น = ปิดตัวเองพร้อมคืน
+  /// [ObsidianTab] มา → หน้าแรกพาไปต่อ ([fade] = สลับแท็บแบบจางเข้า ไม่เลื่อนทั้งหน้า)
+  Future<void> _obsOpen(Widget page, {bool fade = false}) async {
     if (_routeBusy) return;
     _routeBusy = true;
+    Object? result;
     try {
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+      result = await Navigator.push<Object?>(
+        context,
+        fade
+            ? PageRouteBuilder<Object?>(
+                transitionDuration: const Duration(milliseconds: 220),
+                reverseTransitionDuration: const Duration(milliseconds: 180),
+                pageBuilder: (_, _, _) => page,
+                transitionsBuilder: (_, anim, _, child) => FadeTransition(opacity: anim, child: child),
+              )
+            : MaterialPageRoute<Object?>(builder: (_) => page),
+      );
     } finally {
       _routeBusy = false;
+    }
+    if (result is ObsidianTab && mounted) _obsGoTab(result);
+  }
+
+  /// ผู้ใช้กดแท็บบนแถบเมนูของหน้าแท็บ → เปิดปลายทางจากหน้าแรก
+  void _obsGoTab(ObsidianTab tab) {
+    switch (tab) {
+      case ObsidianTab.home:
+        break; // ปิดหน้าแท็บแล้ว = อยู่หน้าแรกแล้ว
+      case ObsidianTab.activity:
+        _obsOpen(const TxHistoryScreen(), fade: true);
+      case ObsidianTab.settings:
+        _obsOpen(const SettingsScreen(), fade: true);
+      case ObsidianTab.wallet:
+        WalletListSheet.show(context);
+      case ObsidianTab.scan:
+        _onScanTap(); // แผ่นเลือก "สแกนจ่าย / รับเงิน" เดิม
     }
   }
 
