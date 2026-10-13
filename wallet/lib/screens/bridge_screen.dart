@@ -10,6 +10,8 @@
 /// Developed by Xman Studio
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -18,7 +20,9 @@ import '../core/theme.dart';
 import '../core/themes/tokens.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../services/bridge_service.dart';
+import '../widgets/bridge_obsidian.dart';
 import '../widgets/bridge_widgets.dart';
+import '../widgets/obsidian/obsidian.dart';
 import 'bridge_usdt_panel.dart';
 import 'bridge_wtpix_panel.dart';
 
@@ -39,6 +43,8 @@ class _BridgeScreenState extends State<BridgeScreen> {
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    // ธีม Obsidian: หัวหน้า + แท็บสินทรัพย์แบบ mock — แผงสะพานทั้งสองตัวเดิม (แต่ละตัวมีหน้าตา Obsidian ของตัวเอง)
+    if (bridgeIsObsidian(context)) return _buildObsidian(l);
     final c = AppColors.of(context);
     final tpix = _asset == BridgeAsset.tpix;
 
@@ -106,6 +112,58 @@ class _BridgeScreenState extends State<BridgeScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildObsidian(LocaleProvider l) {
+    final tpix = _asset == BridgeAsset.tpix;
+    final top = MediaQuery.paddingOf(context).top;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: ObsidianPageScrim()),
+          Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(24, math.max(52.0, top + 8), 24, 14),
+                child: Column(
+                  children: [
+                    ObsidianPageHeader(
+                      title: l.t('obs.bridge.title'),
+                      backLabel: l.t('obs.back'),
+                      // ปุ่มขวา = ตรวจเงินหนุน (Proof of Reserves) เหมือนปุ่มเดิม
+                      trailing: ObsidianHeaderTile(
+                        asset: ObsidianIcons.shield,
+                        label: l.t('bridge.reservesLink'),
+                        onTap: () => openBridgeUrl(
+                          context,
+                          tpix ? '${BridgeService.reservesUrl}?asset=tpix' : BridgeService.reservesUrl,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    ObsidianSegmented<BridgeAsset>(
+                      options: [
+                        ObsidianSegmentOption(BridgeAsset.usdt, l.t('bridge.wtpix.assetUsdt'), leading: bridgeUsdtLogo(22)),
+                        ObsidianSegmentOption(BridgeAsset.tpix, l.t('bridge.wtpix.assetTpix'), leading: bridgeTpixLogo(22)),
+                      ],
+                      value: _asset,
+                      onChanged: (a) => setState(() => _asset = a),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                // แต่ละสะพานมีสถานะ/ตัวติดตามของตัวเอง — สลับแล้วเริ่มใหม่ (รายการที่ติดตามอยู่ในเครื่อง)
+                child: tpix
+                    ? const WtpixBridgePanel(key: ValueKey('wtpix-panel'))
+                    : const UsdtBridgePanel(key: ValueKey('usdt-panel')),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
