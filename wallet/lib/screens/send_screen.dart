@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart' show NumberFormat;
 import '../core/themes/tokens.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../models/contact.dart';
 import '../models/token_info.dart';
@@ -16,10 +19,20 @@ import '../services/rpc_client.dart';
 import '../services/synth_service.dart';
 import '../services/db_service.dart';
 import '../services/wallet_service.dart';
+import '../utils/balance_watch.dart';
 import '../utils/units.dart';
 import '../widgets/contact_picker.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_glyph.dart';
+import '../widgets/obsidian/obsidian_scrim.dart';
+import '../widgets/obsidian/obsidian_top_bar.dart';
+import '../widgets/obsidian/pin_pad.dart';
 import '../widgets/qr_scanner_screen.dart';
 import '../widgets/tpix_coin_logo.dart';
+import 'tx_history_screen.dart';
+
+// หน้าส่งธีม Obsidian (ใช้ตรรกะการส่งเดิมของหน้านี้ร่วมกัน)
+part 'send_obsidian.dart';
 
 class SendScreen extends StatefulWidget {
   /// ที่อยู่ปลายทางที่เติมมาให้ล่วงหน้า (เช่น มาจากการสแกน QR ที่หน้าหลัก)
@@ -56,6 +69,12 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
   /// ที่อยู่ผู้รับของธุรกรรมที่ส่งสำเร็จ (ไว้เสนอให้บันทึกชื่อในหน้าสำเร็จ)
   String? _sentTo;
+
+  /// จำนวน + สัญลักษณ์ของธุรกรรมที่ส่งสำเร็จ (หน้าสำเร็จธีม Obsidian โชว์ตัวเลขจริงที่ส่ง)
+  String? _sentAmountText;
+  String? _sentSymbol;
+
+  bool get _isObsidian => TpixThemeExtension.of(context).themeId == ThemeId.obsidian;
 
   late AnimationController _successController;
 
@@ -291,18 +310,21 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     if (fromAddress == null) return;
 
     // Authentication required before send — สแกนนิ้วไม่ผ่าน/ไม่ได้เปิดไว้ → ใส่ PIN
+    final amountText = Units.format(amount, decimals);
     final authenticated = await authorizeTransaction(
       context,
       reason: token == null
           ? l.t('send.authRequired')
           : l.t('send.authRequiredToken').replaceAll('{symbol}', symbol),
+      // ป้ายสรุปบนหน้า PIN ธีม Obsidian (ธีมอื่นไม่ใช้)
+      summary: _authSummary(address, amountText, symbol, token, l),
     );
     if (!authenticated || !mounted) return;
 
     // Show confirmation dialog
     final confirmed = await _showConfirmation(
       address: address,
-      amountText: Units.format(amount, decimals),
+      amountText: amountText,
       symbol: symbol,
       fromAddress: fromAddress,
       fromName: fromName,
@@ -327,6 +349,8 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       unawaited(DbService.markContactUsed(address).catchError((_) {}));
       if (!mounted) return;
       _sentTo = address;
+      _sentAmountText = amountText;
+      _sentSymbol = symbol;
       setState(() {
         _isSent = true;
         _txHash = txHash;
@@ -350,6 +374,16 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
     required String? fromName,
     required LocaleProvider l,
   }) {
+    if (_isObsidian) {
+      return _obsConfirm(
+        address: address,
+        amountText: amountText,
+        symbol: symbol,
+        fromAddress: fromAddress,
+        fromName: fromName,
+        l: l,
+      );
+    }
     final c = AppColors.of(context);
     String short(String a) => '${a.substring(0, 8)}...${a.substring(a.length - 6)}';
     return showModalBottomSheet<bool>(
@@ -523,6 +557,11 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    // ธีม Obsidian มีเลย์เอาต์ของตัวเอง (send_obsidian.dart) — ธีมอื่นใช้ของเดิมด้านล่าง
+    if (_isObsidian) {
+      final l = context.watch<LocaleProvider>();
+      return _isSent ? _buildObsidianSuccess(l) : _buildObsidianForm(l);
+    }
     return Scaffold(
       body: TpixScreenBackground(
         child: SafeArea(
