@@ -14,6 +14,8 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,6 +25,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/tokens.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../models/chain_config.dart';
@@ -31,7 +34,16 @@ import '../services/masternode_service.dart';
 import '../services/rpc_client.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_cta.dart';
+import '../widgets/obsidian/obsidian_page_header.dart';
+import '../widgets/obsidian/obsidian_progress_bar.dart';
+import '../widgets/obsidian/obsidian_screen_dim.dart';
+import '../widgets/obsidian/obsidian_sheet_frame.dart';
 import '../widgets/tx_auth.dart';
+
+// หน้ามาสเตอร์โหนดธีม Obsidian (A-Node.dc.html) — แค่หน้าตา ตรรกะ/ด่านความปลอดภัยใช้ของไฟล์นี้ทั้งหมด
+part 'masternode_obsidian.dart';
 
 enum _Phase { loading, error, notDeployed, unverified, unknownCode, ready }
 
@@ -67,6 +79,17 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
   bool _busy = false;
   _Action? _sending;
   MnTier? _sendingTier;
+
+  // ── ธีม Obsidian (แสดงผลเท่านั้น) ──
+  /// ระดับที่เลือกดูบนแท็บ — null = ค่าเริ่มต้น (ระดับของโหนดตัวเอง หรือระดับแรกในรายการ)
+  MnTier? _obsTier;
+
+  /// รีเฟรชล่าสุดล้ม แต่ยังโชว์ข้อมูลเดิม → แถบสถานะเป็นสีเหลือง (ไม่บอกว่า "ทำงานปกติ")
+  bool _obsStale = false;
+
+  void _obsSelectTier(MnTier t) {
+    if (mounted && t != _obsTier) setState(() => _obsTier = t);
+  }
 
   @override
   void initState() {
@@ -129,6 +152,7 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
       setState(() {
         _snapshot = snap;
         _refreshing = false;
+        _obsStale = false;
         _phase = _Phase.ready;
       });
     } on MnUnavailableException {
@@ -151,7 +175,10 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
     if (!mounted || seq != _loadSeq) return;
     if (_phase == _Phase.ready && _snapshot != null) {
       // มีข้อมูลเดิมอยู่ — คงไว้ บอกแค่ว่ารีเฟรชไม่สำเร็จ
-      setState(() => _refreshing = false);
+      setState(() {
+        _refreshing = false;
+        _obsStale = true;
+      });
       _snack(context.read<LocaleProvider>().t('mn.stale'), error: true);
       return;
     }
@@ -526,6 +553,9 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
       });
     }
 
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return _buildObsidian(l, wallet);
+    }
     return Scaffold(
       body: TpixScreenBackground(
         child: SafeArea(
@@ -1097,12 +1127,16 @@ class _StakeSheetState extends State<_StakeSheet> {
           maxLength: MasterNodeService.maxEndpointLength,
           // ASCII เท่านั้น — สัญญานับความยาวเป็นไบต์
           inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9.\-:\[\]]'))],
-          style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'monospace'),
+          style: _isObsidian(context)
+              ? ObsidianStyle.of(context).mono(fontSize: 14, color: ObsidianColors.text)
+              : TextStyle(color: c.text, fontSize: 14, fontFamily: 'monospace'),
           onChanged: (_) {
             if (_error != null) setState(() => _error = null);
           },
           onSubmitted: (_) => _submit(),
-          decoration: InputDecoration(
+          decoration: _isObsidian(context)
+              ? _obsEndpointDecoration(context, l, _error)
+              : InputDecoration(
             hintText: '203.0.113.10:8545',
             hintStyle: TextStyle(color: c.textMuted),
             errorText: _error == null ? null : l.t('mn.endpointErr.${_error!.name}'),
@@ -1176,6 +1210,7 @@ class _SheetFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_isObsidian(context)) return ObsidianSheetFrame(title: title, children: children);
     final c = AppColors.of(context);
     return Padding(
       // ดันขึ้นพ้นคีย์บอร์ด (ช่อง endpoint)
@@ -1227,6 +1262,16 @@ class _ConfirmRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_isObsidian(context)) {
+      // ค่าเต็มทุกตัวอักษร เลือกคัดลอกได้ (ที่อยู่สัญญา/จำนวนเต็มทุกหลัก)
+      return ObsidianDetailRow(
+        label: label,
+        value: value,
+        mono: true,
+        selectable: true,
+        valueColor: _obsValueColor(valueColor),
+      );
+    }
     final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -1261,7 +1306,9 @@ class _Note extends StatelessWidget {
   const _Note({required this.text, required this.color});
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) => _isObsidian(context)
+      ? ObsidianNote(text: text, color: ObsidianColors.warning, icon: Icons.warning_amber_rounded)
+      : Padding(
         padding: const EdgeInsets.only(top: TpixGap.sm),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1291,6 +1338,20 @@ class _SheetButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_isObsidian(context)) {
+      return Row(
+        children: [
+          Expanded(child: ObsidianButton.secondary(label: cancelLabel, onPressed: onCancel)),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 2,
+            child: danger
+                ? _ObsDangerButton(label: confirmLabel, onPressed: onConfirm)
+                : ObsidianButton(label: confirmLabel, height: 52, onPressed: onConfirm),
+          ),
+        ],
+      );
+    }
     final c = AppColors.of(context);
     final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(TpixRadius.sm));
     return Row(
