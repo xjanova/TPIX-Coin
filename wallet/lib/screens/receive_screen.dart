@@ -18,9 +18,11 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../services/synth_service.dart';
+import 'receive_obsidian.dart';
 
 class ReceiveScreen extends StatelessWidget {
   const ReceiveScreen({super.key});
@@ -38,6 +40,10 @@ class ReceiveScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ธีม Obsidian มีหน้าของตัวเอง (receive_obsidian.dart) — ธีมอื่นใช้ของเดิมด้านล่าง
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return const ObsidianReceiveView();
+    }
     final wallet = context.watch<WalletProvider>();
     final l = context.watch<LocaleProvider>();
     final c = AppColors.of(context);

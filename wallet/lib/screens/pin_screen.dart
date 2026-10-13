@@ -4,13 +4,20 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/tokens.dart';
 import '../core/themes/widgets/screen_background.dart';
 import '../providers/wallet_provider.dart';
 import '../services/biometric_service.dart';
 import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
+import '../widgets/obsidian/obsidian.dart';
+import '../widgets/obsidian/obsidian_scrim.dart';
+import '../widgets/obsidian/pin_pad.dart';
 import 'home_screen.dart';
+
+// หน้า PIN ธีม Obsidian (ใช้ตัวจัดการเดิมของหน้านี้ร่วมกัน)
+part 'pin_obsidian.dart';
 
 class PinScreen extends StatefulWidget {
   final bool isSetup;
@@ -27,6 +34,9 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
   bool _isError = false;
   bool _biometricAvailable = false;
   bool _biometricInProgress = false;
+
+  /// กำลังตรวจ/บันทึก PIN (ธีม Obsidian: จุดเขียวเป็นคลื่น + ล็อกแป้น)
+  bool _verifying = false;
   final _biometricService = BiometricService();
   late AnimationController _shakeController;
 
@@ -56,12 +66,14 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
   Future<void> _authenticateWithBiometric() async {
     if (_biometricInProgress) return;
     _biometricInProgress = true;
+    if (mounted) setState(() {}); // ธีม Obsidian: ไอคอนเปลี่ยนเป็นลายนิ้วมือระหว่างสแกน
 
     final l = context.read<LocaleProvider>();
     final success = await _biometricService.authenticate(l.t('pin.biometricReason'));
 
     _biometricInProgress = false;
     if (!mounted) return;
+    setState(() {});
 
     if (success) {
       // Biometric passed — unlock wallet with stored credential
@@ -97,7 +109,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
   }
 
   void _onDelete() {
-    if (_pin.isEmpty) return;
+    if (_pin.isEmpty || _verifying) return;
     HapticFeedback.lightImpact();
     setState(() {
       _pin = _pin.substring(0, _pin.length - 1);
@@ -116,6 +128,7 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
       } else {
         if (_pin == _confirmPin) {
           final provider = context.read<WalletProvider>();
+          setState(() => _verifying = true);
           await provider.saveWallet(_pin);
           if (!mounted) return;
           Navigator.pushAndRemoveUntil(
@@ -144,16 +157,19 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
         setState(() { _pin = ''; });
         return;
       }
+      if (!mounted) return;
 
       final provider = context.read<WalletProvider>();
+      setState(() => _verifying = true);
       final success = await provider.unlock(_pin);
+      if (!mounted) return;
       if (success) {
-        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const HomeScreen()),
         );
       } else {
+        _verifying = false;
         _showError();
       }
     }
@@ -178,6 +194,11 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
     final subtitle = widget.isSetup
         ? (_isConfirmMode ? l.t('pin.confirmSub') : l.t('pin.setupSub'))
         : l.t('pin.unlockSub');
+
+    // ธีม Obsidian มีเลย์เอาต์ของตัวเอง (pin_obsidian.dart) — ธีมอื่นใช้ของเดิมด้านล่าง
+    if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+      return _buildObsidianPin(l, title, subtitle);
+    }
 
     return Scaffold(
       body: TpixScreenBackground(

@@ -10,7 +10,13 @@
 /// 2. errorBuilder ค่าเริ่มต้นของแพ็กเกจคือ "กล่องดำ + ไอคอน error ขาวเล็กๆ"
 ///    ผู้ใช้ไม่รู้เลยว่าเพราะไม่ได้ให้สิทธิ์กล้อง → ต้องบอกเป็นภาษาคนเอง
 ///
+/// ธีม Obsidian (qr_scanner_obsidian.dart): ม่านมืด + กรอบเล็งเรืองแสง + เลเซอร์
+/// สแกนเจอแล้วกรอบดีดไปครอบโค้ด ~1 วิ ก่อนส่งค่าให้ [onScanned] — ค่า/การตีความเหมือนเดิมทุกอย่าง
+///
 /// Developed by Xman Studio
+
+import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
@@ -18,6 +24,13 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../core/locale_provider.dart';
 import '../core/themes/theme_bundle.dart';
+import 'obsidian/obsidian.dart';
+import 'obsidian/obsidian_glyph.dart';
+import 'obsidian/obsidian_loop.dart';
+import 'obsidian/obsidian_top_bar.dart';
+import 'obsidian/scan_viewfinder.dart';
+
+part 'qr_scanner_obsidian.dart';
 
 class QRScannerScreen extends StatefulWidget {
   final ValueChanged<String> onScanned;
@@ -25,7 +38,19 @@ class QRScannerScreen extends StatefulWidget {
   /// คีย์ i18n ของหัวข้อ (ไม่ใส่ = 'send.scanQR')
   final String? titleKey;
 
-  const QRScannerScreen({super.key, required this.onScanned, this.titleKey});
+  /// สแกนเพื่อ "จ่าย" จากปุ่มสแกนหน้าแรก → ธีม Obsidian โชว์แท็บสลับไป "QR รับเงิน"
+  /// (null = ใช้สแกนอย่างอื่น เช่น นำเข้ากระเป๋า / เชื่อม dApp — ไม่มีแท็บ)
+  final VoidCallback? onShowMyQr;
+
+  const QRScannerScreen({super.key, required this.onScanned, this.titleKey, this.onShowMyQr});
+
+  /// ธีม Obsidian: เวลาที่กรอบดีดครอบโค้ดก่อนส่งค่าต่อ (mock 950ms)
+  static const lockHold = Duration(milliseconds: 950);
+
+  /// เทสต์/เครื่องมือเรนเดอร์แทนภาพกล้องได้ (ไม่มีปลั๊กอินกล้องใน flutter test)
+  /// ได้ฟังก์ชัน onDetect ไว้จำลองการสแกนเจอ
+  @visibleForTesting
+  static Widget Function(BuildContext context, void Function(BarcodeCapture) onDetect)? debugPreviewBuilder;
 
   @override
   State<QRScannerScreen> createState() => _QRScannerScreenState();
@@ -42,6 +67,17 @@ class _QRScannerScreenState extends State<QRScannerScreen>
 
   bool _hasScanned = false;
 
+  /// ธีม Obsidian: ตำแหน่งที่กรอบดีดไปครอบโค้ด (null = ยังสแกนอยู่)
+  ScanSnap? _lock;
+
+  /// นับถอยหลังส่งค่าหลังกรอบดีด — ยกเลิกเมื่อปิดหน้าก่อนครบ
+  Timer? _lockTimer;
+
+  /// ขนาดจอสแกน (ไว้แปลงพิกัดมุมโค้ดจากภาพกล้อง)
+  Size _viewSize = Size.zero;
+
+  bool get _isObsidian => TpixThemeExtension.of(context).themeId == ThemeId.obsidian;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +86,7 @@ class _QRScannerScreenState extends State<QRScannerScreen>
 
   @override
   void dispose() {
+    _lockTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
@@ -81,12 +118,41 @@ class _QRScannerScreenState extends State<QRScannerScreen>
     if (raw == null) return;
 
     _hasScanned = true;
+
+    // ธีม Obsidian: เล่นกรอบดีดก่อน แล้วค่อยส่งค่าเดิมต่อ (ปิดหน้าระหว่างนี้ = ไม่ส่ง)
+    // เครื่องที่ปิดภาพเคลื่อนไหว → ส่งทันทีเหมือนธีมอื่น
+    if (mounted && _isObsidian && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+      _startLock(capture, raw);
+      return;
+    }
     widget.onScanned(raw);
+  }
+
+  void _startLock(BarcodeCapture capture, String raw) {
+    final code = capture.barcodes.firstWhere(
+      (b) => b.rawValue == raw,
+      orElse: () => capture.barcodes.first,
+    );
+    final snap = ScanGeometry.snapFor(
+      corners: code.corners,
+      imageSize: capture.size,
+      view: _viewSize,
+      landscape: MediaQuery.orientationOf(context) == Orientation.landscape,
+    );
+    setState(() => _lock = snap);
+    _lockTimer = Timer(QRScannerScreen.lockHold, () {
+      if (!mounted) return;
+      // ผู้ใช้กดปิดระหว่างกรอบดีด → หน้ายัง mounted อยู่ช่วงแอนิเมชันปิด แต่ไม่ใช่หน้าบนสุดแล้ว
+      // ห้ามส่งค่า (ผู้เรียกจะ pop อีกรอบ = ปิดหน้าที่ไม่ใช่สแกนเนอร์ทิ้ง)
+      if (ModalRoute.of(context)?.isCurrent == false) return;
+      widget.onScanned(raw);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final l = context.watch<LocaleProvider>();
+    if (_isObsidian) return _buildObsidian(l);
 
     return Scaffold(
       backgroundColor: Colors.black,
