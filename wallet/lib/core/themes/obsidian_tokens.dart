@@ -83,6 +83,18 @@ class CssShadow {
 
   CssShadow withColor(Color c) => CssShadow(x, y, blur, spread, c);
 
+  @override
+  bool operator ==(Object other) =>
+      other is CssShadow &&
+      other.x == x &&
+      other.y == y &&
+      other.blur == blur &&
+      other.spread == spread &&
+      other.color == color;
+
+  @override
+  int get hashCode => Object.hash(x, y, blur, spread, color);
+
   static CssShadow lerp(CssShadow a, CssShadow b, double t) => CssShadow(
         a.x + (b.x - a.x) * t,
         a.y + (b.y - a.y) * t,
