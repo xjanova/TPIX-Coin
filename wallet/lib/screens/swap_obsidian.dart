@@ -7,7 +7,7 @@
 // สิ่งที่หน้านี้เพิ่ม (เฉพาะ Obsidian):
 //   - ขอราคาใหม่ทุก 15 วิ พร้อมวงนับถอยหลัง — หยุดนับเมื่อกำลังขอราคา/อนุมัติ/แลก
 //     หรือมีหน้าต่างอื่นทับ (กล่องยืนยันเปิดอยู่ ราคาที่ผู้ใช้เห็นต้องไม่เปลี่ยนใต้มือ)
-//   - แก้จำนวน = ล้างราคาเดิมทันที ปุ่มแลกปิดจนกว่าราคาของจำนวนใหม่มาถึง
+//   - (แก้จำนวน/เหรียญ/เชน = ล้างราคาเดิมทันที + ทิ้งผลที่มาช้า — ทำใน swap_screen.dart ใช้ร่วมทุกธีม)
 //   - ระหว่างอนุมัติ/แลก: สลับเชน/เหรียญ/ทิศ/จำนวนไม่ได้ (ธุรกรรมที่กำลังรอผลอ้างอิงเชนเดิม)
 //
 // Developed by Xman Studio
@@ -301,9 +301,8 @@ extension _SwapObsidian on _SwapScreenState {
     );
   }
 
-  /// ผู้ใช้แก้จำนวน — ราคาเดิมเป็นของจำนวนเก่า: ล้างทิ้งทันที (ปุ่มแลกปิดจนกว่าราคาใหม่มา)
+  /// ผู้ใช้แก้จำนวน — เริ่มนับรอบใหม่ (การล้างราคาเก่าทำใน _onAmountChanged)
   void _obsAmountEdited(String value) {
-    _obsSet(() => _quoteAmount = null);
     _obsRefreshLeft.value = _SwapScreenState._obsRefreshSeconds;
     _onAmountChanged(value);
   }
@@ -369,6 +368,8 @@ extension _SwapObsidian on _SwapScreenState {
     final text = _amountController.text.trim();
     final amountIn = _obsAmountIn;
     if (tokenIn == null || tokenOut == null || amountIn == null) return;
+    // ไม่เพิ่มเลขรอบเอง (ไม่ไปทับรอบที่ผู้ใช้สั่ง) — แค่จำไว้ว่าออกตัวตอนรอบไหน
+    final requestId = _quoteRequestId;
     _obsSet(() => _obsRefreshing = true);
     final quote = await SwapService.getQuote(
       chain: chain,
@@ -378,6 +379,7 @@ extension _SwapObsidian on _SwapScreenState {
     );
     if (!mounted) return;
     final same =
+        requestId == _quoteRequestId &&
         identical(tokenIn, _tokenIn) &&
         identical(tokenOut, _tokenOut) &&
         identical(chain, _chain) &&
@@ -542,7 +544,9 @@ extension _SwapObsidian on _SwapScreenState {
     final hasAmount = amountIn > BigInt.zero;
     final hasQuote = _quoteAmount != null && _quoteAmount! > BigInt.zero;
     final hasSufficientBalance = amountIn <= _balanceIn && hasAmount;
-    final canSwap = hasAmount && hasQuote && hasSufficientBalance && !_isSwapping && !_isApproving && !_isQuoting;
+    // ยอด/allowance ของเหรียญที่เพิ่งเลือกยังโหลดไม่เสร็จ = ยังเชื่อค่าไม่ได้ (กันแลกเกินยอด/อนุมัติซ้ำเสียค่าแก๊ส)
+    final canSwap =
+        hasAmount && hasQuote && hasSufficientBalance && !_busy && !_isQuoting && !_loadingBalance;
 
     String label;
     VoidCallback? onPressed;
@@ -555,7 +559,7 @@ extension _SwapObsidian on _SwapScreenState {
       label = l.t('swap.insufficient');
     } else if (_needsApproval) {
       label = _isApproving ? l.t('swap.approving') : l.t('obs.swap.approveCta').replaceAll('{symbol}', tokenIn.symbol);
-      onPressed = _isApproving || _isSwapping ? null : _approve;
+      onPressed = _busy || _loadingBalance ? null : _approve;
       loading = _isApproving;
     } else {
       label = _isSwapping
@@ -571,15 +575,15 @@ extension _SwapObsidian on _SwapScreenState {
   //  กล่องยืนยัน / สำเร็จ / ตั้งค่าราคาขยับ
   // ════════════════════════════════════════════════════════════
 
-  Future<bool?> _obsConfirm(String amountStr, BigInt amountIn) {
+  /// [quote]/[slippage] = ชุดที่ _executeSwap ถ่ายไว้และจะใช้คิด amountOutMin จริง
+  Future<bool?> _obsConfirm(String amountStr, BigInt amountIn, BigInt quote, double slippage) {
     final l = context.read<LocaleProvider>();
     final tokenIn = _tokenIn!;
     final tokenOut = _tokenOut!;
     // ตัวเลขชุดเดียวกับกล่องยืนยันเดิมทุกตัว (6 ตำแหน่ง)
-    final outFormatted = _quoteAmount != null ? SwapService.formatAmount(_quoteAmount!, tokenOut.decimals) : 0.0;
-    final minOut = _quoteAmount != null
-        ? SwapService.formatAmount(SwapService.applySlippage(_quoteAmount!, _slippagePercent), tokenOut.decimals)
-        : 0.0;
+    final outFormatted = SwapService.formatAmount(quote, tokenOut.decimals);
+    final minOut = SwapService.formatAmount(SwapService.applySlippage(quote, slippage), tokenOut.decimals);
+    final slippageText = '${slippage % 1 == 0 ? slippage.toInt() : slippage}%';
     final feeFormatted = SwapService.formatAmount(_swapFee.calculateFee(amountIn), tokenIn.decimals);
     final chain = _chain;
 
@@ -628,7 +632,7 @@ extension _SwapObsidian on _SwapScreenState {
             ),
             const SizedBox(height: 8),
             ObsidianKv(l.t('swap.minReceived'), '${minOut.toStringAsFixed(6)} ${tokenOut.symbol}', strong: true),
-            ObsidianKv(l.t('swap.slippage'), _obsSlippageText),
+            ObsidianKv(l.t('swap.slippage'), slippageText),
             if (_swapFee.feePercent > 0) ...[
               ObsidianKv(
                 l.t('swap.platformFee'),

@@ -39,6 +39,10 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   bool _isQuoting = false;
   Timer? _quoteDebounce;
 
+  /// เลขรอบของการขอราคา — เพิ่มทุกครั้งที่อินพุตเปลี่ยนหรือเริ่มขอรอบใหม่
+  /// ผลที่กลับมาพร้อมเลขเก่า = ราคาของจำนวน/เหรียญ/เชนชุดเดิม → ทิ้ง (เน็ตช้าตอบสลับลำดับได้)
+  int _quoteRequestId = 0;
+
   // Slippage
   double _slippagePercent = 1.0;
 
@@ -46,10 +50,16 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   BigInt _balanceIn = BigInt.zero;
   bool _loadingBalance = false;
 
+  /// เลขรอบของการโหลดยอด + allowance — สลับเชน/เหรียญระหว่างรอ ผลของเหรียญเก่าห้ามทับของใหม่
+  int _balanceRequestId = 0;
+
   // Swap state
   bool _isSwapping = false;
   bool _isApproving = false;
   BigInt _allowance = BigInt.zero;
+
+  /// กำลังอนุมัติ/แลก — ธุรกรรมที่รอผลอ้างอิงเชน/เหรียญ/จำนวนชุดนี้ ห้ามแก้อินพุตกลางทาง
+  bool get _busy => _isSwapping || _isApproving;
 
   // Platform fee from tpix.online
   SwapFeeConfig _swapFee = SwapFeeConfig.fallback();
@@ -124,12 +134,23 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  /// อินพุตเปลี่ยน (จำนวน/เหรียญ/เชน/ทิศ) → ราคาที่มีอยู่เป็นของอินพุตเก่า: ล้างทิ้งทันที
+  /// พร้อมยกเลิก debounce และทิ้งผลที่ยังค้างกลางทาง — ปุ่มแลกปิดจนกว่าราคาของอินพุตใหม่มาถึง
+  /// (ไม่งั้นกดแลกได้ทั้งที่กล่องยืนยัน/amountOutMin คิดจากราคาของจำนวนเก่า) · เรียกภายใน setState
+  void _invalidateQuote() {
+    _quoteDebounce?.cancel();
+    _quoteRequestId++;
+    _quoteAmount = null;
+    _isQuoting = false;
+  }
+
   void _onChainChanged(ChainConfig chain) {
+    if (_busy) return; // ธุรกรรมที่รอผลอยู่อ้างอิงเชนเดิม — ห้ามสลับกลางทาง
     setState(() {
       _chain = chain;
       _tokenIn = chain.nativeToken;
       _tokenOut = chain.knownTokens.isNotEmpty ? chain.knownTokens.first : null;
-      _quoteAmount = null;
+      _invalidateQuote();
       _allowance = BigInt.zero;
       _amountController.clear();
     });
@@ -138,38 +159,43 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _loadBalance() async {
-    final wallet = context.read<WalletProvider>();
-    if (wallet.address == null || _tokenIn == null) return;
+    final address = context.read<WalletProvider>().address;
+    final tokenIn = _tokenIn;
+    final chain = _chain;
+    if (address == null || tokenIn == null) return;
 
+    // รอบล่าสุดเท่านั้นที่เขียนผลได้ — สลับเชน/เหรียญระหว่างรอ ผลของเหรียญเก่าถูกทิ้ง
+    final requestId = ++_balanceRequestId;
     setState(() => _loadingBalance = true);
+    BigInt? balance;
+    BigInt? allowance;
     try {
-      if (_tokenIn!.isNative) {
-        _balanceIn = await SwapService.getNativeBalance(_chain, wallet.address!);
-      } else {
-        _balanceIn = await SwapService.getTokenBalance(
-          _chain,
-          _tokenIn!.address,
-          wallet.address!,
-        );
-      }
+      balance = tokenIn.isNative
+          ? await SwapService.getNativeBalance(chain, address)
+          : await SwapService.getTokenBalance(chain, tokenIn.address, address);
       // Check allowance for ERC-20 tokens
-      if (!_tokenIn!.isNative && _chain.dexRouterAddress != null) {
-        _allowance = await SwapService.checkAllowance(
-          chain: _chain,
-          tokenAddress: _tokenIn!.address,
-          ownerAddress: wallet.address!,
+      if (!tokenIn.isNative && chain.dexRouterAddress != null) {
+        allowance = await SwapService.checkAllowance(
+          chain: chain,
+          tokenAddress: tokenIn.address,
+          ownerAddress: address,
         );
       }
     } catch (_) {}
-    if (mounted) setState(() => _loadingBalance = false);
+    if (!mounted) return;
+    if (requestId != _balanceRequestId) return; // รอบใหม่กว่าจะปิดสถานะโหลดเอง
+    setState(() {
+      // ดึงไม่ได้ → คงค่าเดิม (ห้ามทับด้วย 0)
+      if (balance != null) _balanceIn = balance;
+      if (allowance != null) _allowance = allowance;
+      _loadingBalance = false;
+    });
   }
 
   void _onAmountChanged(String value) {
-    _quoteDebounce?.cancel();
-    if (value.isEmpty || _tokenIn == null || _tokenOut == null) {
-      setState(() => _quoteAmount = null);
-      return;
-    }
+    // ราคาเดิมเป็นของจำนวนเก่า — ล้างทันที ไม่ต้องรอ debounce
+    setState(_invalidateQuote);
+    if (value.isEmpty || _tokenIn == null || _tokenOut == null) return;
 
     _quoteDebounce = Timer(const Duration(milliseconds: 500), () {
       _fetchQuote();
@@ -177,42 +203,48 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _fetchQuote() async {
-    if (_tokenIn == null || _tokenOut == null) return;
+    final tokenIn = _tokenIn;
+    final tokenOut = _tokenOut;
+    if (tokenIn == null || tokenOut == null) return;
     final amountStr = _amountController.text.trim();
     if (amountStr.isEmpty) return;
 
-    final amountIn = SwapService.parseAmount(amountStr, _tokenIn!.decimals);
+    final amountIn = SwapService.parseAmount(amountStr, tokenIn.decimals);
     if (amountIn <= BigInt.zero) return;
 
-    setState(() => _isQuoting = true);
-
-    final tokenInAddr = _tokenIn!.isNative ? TokenDef.nativeAddress : _tokenIn!.address;
-    final tokenOutAddr = _tokenOut!.isNative ? TokenDef.nativeAddress : _tokenOut!.address;
+    // รอบนี้คือรอบล่าสุด — ราคาเดิม (ถ้ามี) ไม่ใช่ของรอบนี้ ล้างไว้ระหว่างรอ
+    final requestId = ++_quoteRequestId;
+    final chain = _chain;
+    setState(() {
+      _quoteAmount = null;
+      _isQuoting = true;
+    });
 
     final quote = await SwapService.getQuote(
-      chain: _chain,
-      tokenIn: tokenInAddr,
-      tokenOut: tokenOutAddr,
+      chain: chain,
+      tokenIn: tokenIn.isNative ? TokenDef.nativeAddress : tokenIn.address,
+      tokenOut: tokenOut.isNative ? TokenDef.nativeAddress : tokenOut.address,
       amountIn: amountIn,
     );
 
-    if (mounted) {
-      setState(() {
-        _quoteAmount = quote;
-        _isQuoting = false;
-      });
-    }
+    if (!mounted) return;
+    // ระหว่างรอมีการแก้จำนวน/เหรียญ/เชน หรือเริ่มขอรอบใหม่ = ผลนี้เป็นของอินพุตเก่า ทิ้ง
+    if (requestId != _quoteRequestId) return;
+    setState(() {
+      _quoteAmount = quote;
+      _isQuoting = false;
+    });
   }
 
   void _flipTokens() {
-    if (_tokenIn == null || _tokenOut == null) return;
+    if (_busy || _tokenIn == null || _tokenOut == null) return;
     _flipController.forward().then((_) => _flipController.reset());
     SynthService.playTap();
     setState(() {
       final temp = _tokenIn;
       _tokenIn = _tokenOut;
       _tokenOut = temp;
-      _quoteAmount = null;
+      _invalidateQuote();
       _amountController.clear();
       _allowance = BigInt.zero;
     });
@@ -220,37 +252,37 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _selectTokenIn() async {
+    if (_busy) return;
     final token = await TokenSelectorSheet.show(
       context,
       chain: _chain,
       walletAddress: context.read<WalletProvider>().address,
       excludeAddress: _tokenOut?.address,
     );
-    if (token != null && mounted) {
-      setState(() {
-        _tokenIn = token;
-        _quoteAmount = null;
-        _allowance = BigInt.zero;
-      });
-      _loadBalance();
-      if (_amountController.text.isNotEmpty) _fetchQuote();
-    }
+    if (token == null || !mounted || _busy) return;
+    setState(() {
+      _tokenIn = token;
+      _invalidateQuote();
+      _allowance = BigInt.zero;
+    });
+    _loadBalance();
+    if (_amountController.text.isNotEmpty) _fetchQuote();
   }
 
   Future<void> _selectTokenOut() async {
+    if (_busy) return;
     final token = await TokenSelectorSheet.show(
       context,
       chain: _chain,
       walletAddress: context.read<WalletProvider>().address,
       excludeAddress: _tokenIn?.address,
     );
-    if (token != null && mounted) {
-      setState(() {
-        _tokenOut = token;
-        _quoteAmount = null;
-      });
-      if (_amountController.text.isNotEmpty) _fetchQuote();
-    }
+    if (token == null || !mounted || _busy) return;
+    setState(() {
+      _tokenOut = token;
+      _invalidateQuote();
+    });
+    if (_amountController.text.isNotEmpty) _fetchQuote();
   }
 
   bool get _needsApproval {
@@ -262,7 +294,11 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _approve() async {
-    if (_isApproving || _tokenIn == null || _chain.dexRouterAddress == null) return;
+    // ถ่ายเชน/เหรียญไว้ตั้งแต่ต้น — ทุกขั้นหลัง await อ้างอิงชุดนี้ (ไม่อ่าน _chain/_tokenIn ซ้ำ)
+    final tokenIn = _tokenIn;
+    final chain = _chain;
+    final router = chain.dexRouterAddress;
+    if (_busy || tokenIn == null || router == null) return;
     setState(() => _isApproving = true);
     SynthService.playTap();
 
@@ -275,19 +311,16 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       );
 
       // Build ERC-20 approve calldata
-      final approveData = SwapService.buildApproveData(
-        _chain.dexRouterAddress!,
-        maxApproval,
-      );
+      final approveData = SwapService.buildApproveData(router, maxApproval);
 
       // Get gas price for this chain
-      final gasPrice = await SwapService.getGasPrice(_chain);
+      final gasPrice = await SwapService.getGasPrice(chain);
 
       // Sign and broadcast approval tx to the token contract
       final txHash = await wallet.sendEvmTransaction(
-        rpcUrl: _chain.rpcUrl,
-        chainId: _chain.chainId,
-        toAddress: _tokenIn!.address,
+        rpcUrl: chain.rpcUrl,
+        chainId: chain.chainId,
+        toAddress: tokenIn.address,
         data: approveData,
         gasPrice: gasPrice,
         maxGas: 60000, // ERC-20 approve typically costs ~46K gas
@@ -299,19 +332,22 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         for (int i = 0; i < 15; i++) {
           await Future.delayed(const Duration(seconds: 2));
           if (!mounted) return;
-          status = await wallet.checkEvmTxStatus(_chain.rpcUrl, txHash);
+          status = await wallet.checkEvmTxStatus(chain.rpcUrl, txHash);
           if (status != null) break;
         }
 
         if (status == 'confirmed') {
           // Reload actual allowance from chain
-          _allowance = await SwapService.checkAllowance(
-            chain: _chain,
-            tokenAddress: _tokenIn!.address,
+          final allowance = await SwapService.checkAllowance(
+            chain: chain,
+            tokenAddress: tokenIn.address,
             ownerAddress: wallet.address!,
           );
           if (mounted) {
-            setState(() => _isApproving = false);
+            setState(() {
+              _allowance = allowance;
+              _isApproving = false;
+            });
             SynthService.playSendSuccess();
           }
         } else {
@@ -335,16 +371,23 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _executeSwap() async {
-    if (_isSwapping || _tokenIn == null || _tokenOut == null || _quoteAmount == null) return;
-    if (_chain.dexRouterAddress == null) return;
+    // ถ่ายทุกอย่างที่ธุรกรรมอ้างอิงไว้ก่อนเปิดกล่องยืนยัน — กล่องยืนยัน, amountOutMin,
+    // เชนที่ส่ง/ถามสถานะ และบันทึกหลังบ้าน ใช้ชุดเดียวกันทั้งหมด (ไม่อ่าน _quoteAmount/_chain ซ้ำ)
+    final tokenIn = _tokenIn;
+    final tokenOut = _tokenOut;
+    final quote = _quoteAmount;
+    final chain = _chain;
+    final router = chain.dexRouterAddress;
+    final slippage = _slippagePercent;
+    if (_busy || _isQuoting || tokenIn == null || tokenOut == null || quote == null || router == null) return;
 
     final amountStr = _amountController.text.trim();
     if (amountStr.isEmpty) return;
-    final amountIn = SwapService.parseAmount(amountStr, _tokenIn!.decimals);
+    final amountIn = SwapService.parseAmount(amountStr, tokenIn.decimals);
     if (amountIn <= BigInt.zero || amountIn > _balanceIn) return;
 
-    // Confirm dialog
-    final confirmed = await _showConfirmDialog(amountStr, amountIn);
+    // Confirm dialog — "รับขั้นต่ำ" ที่ผู้ใช้เห็น = amountOutMin ที่ส่งจริง
+    final confirmed = await _showConfirmDialog(amountStr, amountIn, quote, slippage);
     if (confirmed != true || !mounted) return;
 
     setState(() => _isSwapping = true);
@@ -352,15 +395,15 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
 
     try {
       final wallet = context.read<WalletProvider>();
-      final amountOutMin = SwapService.applySlippage(_quoteAmount!, _slippagePercent);
+      final amountOutMin = SwapService.applySlippage(quote, slippage);
 
-      final tokenInAddr = _tokenIn!.isNative ? TokenDef.nativeAddress : _tokenIn!.address;
-      final tokenOutAddr = _tokenOut!.isNative ? TokenDef.nativeAddress : _tokenOut!.address;
-      final isFromNative = _tokenIn!.isNative;
+      final tokenInAddr = tokenIn.isNative ? TokenDef.nativeAddress : tokenIn.address;
+      final tokenOutAddr = tokenOut.isNative ? TokenDef.nativeAddress : tokenOut.address;
+      final isFromNative = tokenIn.isNative;
 
       // Build swap calldata for the DEX router
       final swapData = SwapService.buildSwapData(
-        chain: _chain,
+        chain: chain,
         tokenIn: tokenInAddr,
         tokenOut: tokenOutAddr,
         amountIn: amountIn,
@@ -369,13 +412,13 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       );
 
       // Get gas price
-      final gasPrice = await SwapService.getGasPrice(_chain);
+      final gasPrice = await SwapService.getGasPrice(chain);
 
       // Sign and broadcast swap tx to the DEX router
       final txHash = await wallet.sendEvmTransaction(
-        rpcUrl: _chain.rpcUrl,
-        chainId: _chain.chainId,
-        toAddress: _chain.dexRouterAddress!,
+        rpcUrl: chain.rpcUrl,
+        chainId: chain.chainId,
+        toAddress: router,
         data: swapData,
         // For native→token swaps, send the native value with the tx
         value: isFromNative ? amountIn : null,
@@ -388,7 +431,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       for (int i = 0; i < 20; i++) {
         await Future.delayed(const Duration(seconds: 3));
         if (!mounted) return;
-        status = await wallet.checkEvmTxStatus(_chain.rpcUrl, txHash);
+        status = await wallet.checkEvmTxStatus(chain.rpcUrl, txHash);
         if (status != null) break;
       }
 
@@ -399,22 +442,20 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         _showSuccessDialog(txHash);
 
         // Record swap on backend (best-effort, non-blocking)
-        final outAmount = _quoteAmount != null
-            ? SwapService.formatAmount(_quoteAmount!, _tokenOut!.decimals)
-            : 0.0;
+        final outAmount = SwapService.formatAmount(quote, tokenOut.decimals);
         final feeAmt = SwapService.formatAmount(
           _swapFee.calculateFee(amountIn),
-          _tokenIn!.decimals,
+          tokenIn.decimals,
         );
         WalletAuthService.recordSwap(
           walletAddress: wallet.address!,
-          fromToken: _tokenIn!.isNative ? '0x0000000000000000000000000000000000000000' : _tokenIn!.address,
-          toToken: _tokenOut!.isNative ? '0x0000000000000000000000000000000000000000' : _tokenOut!.address,
+          fromToken: tokenIn.isNative ? '0x0000000000000000000000000000000000000000' : tokenIn.address,
+          toToken: tokenOut.isNative ? '0x0000000000000000000000000000000000000000' : tokenOut.address,
           fromAmount: double.tryParse(amountStr) ?? 0,
           toAmount: outAmount,
           feeAmount: feeAmt,
           txHash: txHash,
-          chainId: _chain.chainId,
+          chainId: chain.chainId,
           signFn: wallet.signPersonalMessage,
         );
       } else if (status == 'failed') {
@@ -444,18 +485,15 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     }
   }
 
-  Future<bool?> _showConfirmDialog(String amountStr, BigInt amountIn) {
-    if (_isObsidian) return _obsConfirm(amountStr, amountIn);
+  /// [quote]/[slippage] = ชุดที่ _executeSwap ถ่ายไว้และจะใช้คิด amountOutMin จริง
+  Future<bool?> _showConfirmDialog(String amountStr, BigInt amountIn, BigInt quote, double slippage) {
+    if (_isObsidian) return _obsConfirm(amountStr, amountIn, quote, slippage);
     final l = context.read<LocaleProvider>();
-    final outFormatted = _quoteAmount != null
-        ? SwapService.formatAmount(_quoteAmount!, _tokenOut!.decimals)
-        : 0.0;
-    final minOut = _quoteAmount != null
-        ? SwapService.formatAmount(
-            SwapService.applySlippage(_quoteAmount!, _slippagePercent),
-            _tokenOut!.decimals,
-          )
-        : 0.0;
+    final outFormatted = SwapService.formatAmount(quote, _tokenOut!.decimals);
+    final minOut = SwapService.formatAmount(
+      SwapService.applySlippage(quote, slippage),
+      _tokenOut!.decimals,
+    );
 
     // Platform fee calculation
     final feeAmount = _swapFee.calculateFee(amountIn);
@@ -476,7 +514,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
             _confirmRow(l.t('swap.from'), '$amountStr ${_tokenIn!.symbol}'),
             _confirmRow(l.t('swap.toEstimated'), '${outFormatted.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
             _confirmRow(l.t('swap.minReceived'), '${minOut.toStringAsFixed(6)} ${_tokenOut!.symbol}'),
-            _confirmRow(l.t('swap.slippage'), '${_slippagePercent % 1 == 0 ? _slippagePercent.toInt() : _slippagePercent}%'),
+            _confirmRow(l.t('swap.slippage'), '${slippage % 1 == 0 ? slippage.toInt() : slippage}%'),
             if (_swapFee.feePercent > 0) ...[
               const Divider(color: AppTheme.textMuted, height: 16),
               _confirmRow(l.t('swap.platformFee'), '${feeFormatted.toStringAsFixed(6)} ${_tokenIn!.symbol} (${_swapFee.feePercent}%)'),
@@ -651,7 +689,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           const Spacer(),
           // Settings icon for slippage
           GestureDetector(
-            onTap: _showSlippageDialog,
+            onTap: _busy ? null : _showSlippageDialog,
             child: Container(
               width: 36,
               height: 36,
@@ -680,7 +718,8 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           final isActive = chain.chainId == _chain.chainId;
           return Expanded(
             child: GestureDetector(
-              onTap: () => _onChainChanged(chain),
+              // ระหว่างอนุมัติ/แลก ห้ามสลับเชน (ธุรกรรมที่รอผลอ้างอิงเชนเดิม)
+              onTap: _busy ? null : () => _onChainChanged(chain),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 10),
@@ -757,10 +796,12 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
                   ),
                   const SizedBox(width: TpixGap.sm),
                   GestureDetector(
-                    onTap: () {
-                      _amountController.text = _maxAmountText();
-                      _onAmountChanged(_amountController.text);
-                    },
+                    onTap: _busy
+                        ? null
+                        : () {
+                            _amountController.text = _maxAmountText();
+                            _onAmountChanged(_amountController.text);
+                          },
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -779,7 +820,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
             children: [
               // Token selector button
               GestureDetector(
-                onTap: _selectTokenIn,
+                onTap: _busy ? null : _selectTokenIn,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
@@ -809,6 +850,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
               Expanded(
                 child: TextField(
                   controller: _amountController,
+                  enabled: !_busy,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))],
                   style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: Colors.white),
@@ -834,7 +876,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Center(
         child: GestureDetector(
-          onTap: _flipTokens,
+          onTap: _busy ? null : _flipTokens,
           child: RotationTransition(
             turns: Tween(begin: 0.0, end: 0.5).animate(
               CurvedAnimation(parent: _flipController, curve: Curves.easeInOut),
@@ -878,7 +920,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           Row(
             children: [
               GestureDetector(
-                onTap: _selectTokenOut,
+                onTap: _busy ? null : _selectTokenOut,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
@@ -949,10 +991,12 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
           return Padding(
             padding: const EdgeInsets.only(right: 6),
             child: GestureDetector(
-              onTap: () {
-                setState(() => _slippagePercent = s);
-                SynthService.playTap();
-              },
+              onTap: _busy
+                  ? null
+                  : () {
+                      setState(() => _slippagePercent = s);
+                      SynthService.playTap();
+                    },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -976,7 +1020,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
         }),
         const Spacer(),
         GestureDetector(
-          onTap: _showSlippageDialog,
+          onTap: _busy ? null : _showSlippageDialog,
           child: Text(
             l.t('swap.custom'),
             style: TextStyle(
@@ -1081,7 +1125,8 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     final amountIn = hasAmount ? SwapService.parseAmount(amountStr, _tokenIn?.decimals ?? 18) : BigInt.zero;
     final hasQuote = _quoteAmount != null && _quoteAmount! > BigInt.zero;
     final hasSufficientBalance = amountIn <= _balanceIn && amountIn > BigInt.zero;
-    final canSwap = hasAmount && hasQuote && hasSufficientBalance && !_isSwapping && !_isApproving;
+    // ยอด/allowance ของเหรียญที่เพิ่งเลือกยังโหลดไม่เสร็จ = ยังเชื่อค่าไม่ได้ (กันแลกเกินยอด/อนุมัติซ้ำเสียค่าแก๊ส)
+    final canSwap = hasAmount && hasQuote && hasSufficientBalance && !_busy && !_isQuoting && !_loadingBalance;
 
     String buttonText;
     Color buttonColor;
@@ -1098,7 +1143,7 @@ class _SwapScreenState extends State<SwapScreen> with SingleTickerProviderStateM
     } else if (_needsApproval) {
       buttonText = _isApproving ? l.t('swap.approving') : '${l.t('swap.approve')} ${_tokenIn!.symbol}';
       buttonColor = AppTheme.accent;
-      onTap = _isApproving ? null : _approve;
+      onTap = _busy || _loadingBalance ? null : _approve;
     } else {
       buttonText = _isSwapping ? l.t('swap.swapping') : l.t('swap.button');
       buttonColor = AppTheme.primary;
