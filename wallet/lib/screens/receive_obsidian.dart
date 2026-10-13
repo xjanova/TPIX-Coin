@@ -30,6 +30,7 @@ import '../utils/balance_watch.dart';
 import '../utils/units.dart';
 import '../widgets/obsidian/obsidian.dart';
 import '../widgets/obsidian/obsidian_glyph.dart';
+import '../widgets/obsidian/obsidian_scrim.dart';
 import '../widgets/obsidian/obsidian_top_bar.dart';
 import '../widgets/obsidian/receive_art.dart';
 import '../widgets/tpix_coin_logo.dart';
@@ -182,6 +183,7 @@ class _ObsidianReceiveViewState extends State<ObsidianReceiveView> {
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
+          const ObsidianScrim.receive(),
           SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(24, math.max(52.0, topInset + 8), 24, 24 + MediaQuery.paddingOf(context).bottom),
             child: Column(

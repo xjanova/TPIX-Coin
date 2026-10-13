@@ -249,6 +249,15 @@ class LocaleProvider extends ChangeNotifier {
       'obs.scan.found': 'พบ QR แล้ว',
       'obs.scan.hint': 'วาง QR ให้อยู่ในกรอบ ระบบจะอ่านให้เอง',
       'obs.scan.myQr': 'QR รับเงิน',
+      'obs.pin.title': 'ใส่ PIN เพื่อยืนยัน',
+      'obs.pin.sub': 'ใช้ PIN 6 หลักของกระเป๋า',
+      'obs.pin.orBio': 'หรือแตะสแกนนิ้วที่มุมซ้ายล่าง',
+      'obs.pin.scanning': 'กำลังสแกนนิ้ว…',
+      'obs.pin.verifying': 'กำลังยืนยัน…',
+      'obs.pin.verifyingSub': 'อย่าปิดแอประหว่างนี้',
+      'obs.pin.bio': 'สแกนนิ้ว',
+      'obs.pin.delete': 'ลบ',
+      'obs.pin.progress': 'ใส่แล้ว {n} จาก 6 หลัก',
       // obsidian: end
 
       // Transaction History
@@ -990,6 +999,15 @@ class LocaleProvider extends ChangeNotifier {
       'obs.scan.found': 'QR found',
       'obs.scan.hint': 'Fit the QR inside the frame — it scans automatically',
       'obs.scan.myQr': 'My QR',
+      'obs.pin.title': 'Enter PIN to confirm',
+      'obs.pin.sub': 'Use your 6-digit wallet PIN',
+      'obs.pin.orBio': 'or tap the fingerprint key below',
+      'obs.pin.scanning': 'Scanning fingerprint…',
+      'obs.pin.verifying': 'Verifying…',
+      'obs.pin.verifyingSub': 'Please keep the app open',
+      'obs.pin.bio': 'Fingerprint',
+      'obs.pin.delete': 'Delete',
+      'obs.pin.progress': '{n} of 6 digits entered',
       // obsidian: end
 
       // Transaction History

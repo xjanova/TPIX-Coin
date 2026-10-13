@@ -3,27 +3,68 @@
 /// แยกออกมาจากหน้าโอนเงิน เพื่อให้ทุกหน้าที่ส่งธุรกรรม (โอน, สเตคมาสเตอร์โหนด)
 /// ใช้ด่านเดียวกัน — ไม่มีหน้าไหนเผลอส่งโดยไม่ถาม PIN
 ///
+/// ธีม Obsidian (tx_auth_obsidian.dart): ใส่ PIN เต็มจอ แป้นกระจก + ป้ายสรุปธุรกรรม
+/// แทนกล่องเล็ก — ด่านเดียวกันทุกอย่าง (สแกนนิ้วก่อน · ตรวจล็อก · นับครั้งผิดใน WalletService)
+///
 /// Developed by Xman Studio
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/locale_provider.dart';
 import '../core/theme.dart';
+import '../core/themes/theme_bundle.dart';
 import '../core/themes/tokens.dart';
 import '../providers/wallet_provider.dart';
 import '../services/biometric_service.dart';
+import '../services/synth_service.dart';
 import '../services/wallet_service.dart';
+import 'obsidian/obsidian.dart';
+import 'obsidian/obsidian_glyph.dart';
+import 'obsidian/obsidian_scrim.dart';
+import 'obsidian/obsidian_top_bar.dart';
+import 'obsidian/pin_pad.dart';
+
+part 'tx_auth_obsidian.dart';
+
+/// ป้ายสรุปธุรกรรมบนหน้า PIN ธีม Obsidian (เช่น "ส่ง 1,500 TPIX · ถึง บัญชีสำรอง")
+/// ธีมอื่นไม่ใช้ — กล่อง PIN เดิมไม่มีที่แสดง
+@immutable
+class TxAuthSummary {
+  final String title;
+  final String? subtitle;
+
+  /// โลโก้เหรียญ 30px
+  final Widget? leading;
+
+  const TxAuthSummary({required this.title, this.subtitle, this.leading});
+}
 
 /// true = ยืนยันผ่าน, false = ยกเลิก/PIN ผิด/ถูกล็อก → ผู้เรียกต้องไม่ส่งอะไรเลย
-Future<bool> authorizeTransaction(BuildContext context, {required String reason}) async {
+Future<bool> authorizeTransaction(
+  BuildContext context, {
+  required String reason,
+  TxAuthSummary? summary,
+}) async {
   final bio = BiometricService();
-  if (await bio.isEnabled() && await bio.isDeviceSupported()) {
+  final bioReady = await bio.isEnabled() && await bio.isDeviceSupported();
+  if (bioReady) {
     if (await bio.authenticate(reason)) return true;
   }
   // สแกนไม่ผ่าน/ยกเลิก/ไม่ได้เปิดไว้ → ใส่ PIN แทน
   if (!context.mounted) return false;
+  if (TpixThemeExtension.of(context).themeId == ThemeId.obsidian) {
+    final ok = await Navigator.of(context).push<bool>(ObsidianPinVerifyPage.route(
+      reason: reason,
+      summary: summary,
+      biometric: bioReady,
+    ));
+    return ok == true;
+  }
   final ok = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
