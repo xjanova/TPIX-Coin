@@ -10,6 +10,7 @@ import '../core/locale_provider.dart';
 import '../core/theme.dart';
 import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/screen_background.dart';
+import '../models/chain_config.dart';
 import '../models/contact.dart';
 import '../models/token_info.dart';
 import '../providers/wallet_provider.dart';
@@ -20,6 +21,7 @@ import '../services/synth_service.dart';
 import '../services/db_service.dart';
 import '../services/wallet_service.dart';
 import '../utils/balance_watch.dart';
+import '../utils/eip681.dart';
 import '../utils/units.dart';
 import '../widgets/contact_picker.dart';
 import '../widgets/obsidian/obsidian.dart';
@@ -41,11 +43,33 @@ class SendScreen extends StatefulWidget {
   /// โทเค็นที่เลือกไว้ล่วงหน้า (ที่อยู่สัญญา) — null = TPIX
   final String? initialTokenAddress;
 
-  const SendScreen({super.key, this.initialAddress, this.initialTokenAddress});
+  /// คำขอชำระเงิน EIP-681 (QR ร้าน / ลิงก์ ethereum: จากแอปอื่น) — เติมผู้รับ + ยอดเป๊ะให้
+  /// แล้วล็อกช่องยอดไว้ ผู้ใช้ยังต้องยืนยันตัวตน + กดยืนยันตามปกติทุกครั้ง (ไม่ส่งเอง)
+  final PaymentRequest? initialRequest;
+
+  const SendScreen({super.key, this.initialAddress, this.initialTokenAddress, this.initialRequest});
 
   @override
   State<SendScreen> createState() => _SendScreenState();
 }
+
+/// เครือข่ายของคำขอชำระเงินใช้กับหน้าส่งนี้ได้ไหม — หน้าส่งโอนได้เฉพาะบน TPIX Chain (4289)
+/// null = ใช้ได้ (ระบุ 4289 หรือไม่ระบุ chain) · ไม่ null = ข้อความเตือนพร้อมแสดง (ห้ามเติมอะไรลงฟอร์ม)
+String? paymentRequestChainError(PaymentRequest r, LocaleProvider l) {
+  final id = r.chainId;
+  if (id == null || id == ChainConfig.tpix.chainId) return null;
+  for (final c in ChainConfig.all) {
+    if (c.chainId == id) return l.t('pay.wrongChain').replaceAll('{chain}', '${c.name} ($id)');
+  }
+  return l.t('pay.unsupportedChain').replaceAll('{id}', '$id');
+}
+
+/// ข้อความเมื่ออ่านคำขอชำระเงินไม่ผ่าน (ไม่โชว์ชื่อ enum ดิบให้ผู้ใช้เห็น)
+String paymentRequestParseError(Eip681Error e, LocaleProvider l) => switch (e) {
+      Eip681Error.badAmount || Eip681Error.conflictingAmount => l.t('pay.badAmount'),
+      Eip681Error.badChainId => l.t('pay.badChain'),
+      _ => l.t('pay.invalidRequest'),
+    };
 
 class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateMixin {
   final _addressController = TextEditingController();
@@ -76,6 +100,25 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
   bool get _isObsidian => TpixThemeExtension.of(context).themeId == ThemeId.obsidian;
 
+  // ── คำขอชำระเงินจากร้าน (EIP-681) ──
+  // ร้านจับคู่การชำระด้วยยอดเป๊ะทุก wei → ช่องยอดล็อกไว้ ผู้ใช้กด "แก้ยอดเอง" ได้ถ้าตั้งใจจริง
+  /// ผู้รับตามคำขอ — ที่อยู่ในช่องเปลี่ยนไปจากนี้ = เลิกใช้คำขอนี้ (ล้างแถบ/ปลดล็อกเอง)
+  String? _reqRecipient;
+
+  /// ยอดหน่วยย่อยตามคำขอ (> 0)
+  BigInt? _reqAmount;
+
+  /// เหรียญตามคำขอ: null = TPIX, ไม่ null = สัญญาโทเค็น (ตัวเล็ก)
+  String? _reqToken;
+
+  /// ล็อกช่องยอดอยู่ไหม (false หลังผู้ใช้กด "แก้ยอดเอง")
+  bool _reqLocked = false;
+
+  bool get _hasRequest => _reqAmount != null;
+
+  /// ยอดของร้านล็อกอยู่ตอนนี้ (ช่องยอด/ปุ่ม % /MAX/เปลี่ยนเหรียญ ใช้ไม่ได้)
+  bool get _amountLocked => _hasRequest && _reqLocked;
+
   late AnimationController _successController;
 
   @override
@@ -94,6 +137,94 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
     _addressController.addListener(_onAddressChanged);
     _loadFavorites();
+
+    // คำขอชำระเงินจากหน้าหลัก/ลิงก์ — รอเฟรมแรกเพื่อให้อ่านรายการโทเค็นและโชว์คำเตือนได้
+    final request = widget.initialRequest;
+    if (request != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyPaymentRequest(request);
+      });
+    }
+  }
+
+  /// เติมฟอร์มจากคำขอชำระเงิน — ไม่ผ่านด่านใดด่านหนึ่ง = เตือนแล้ว "ไม่เติมอะไรเลย"
+  /// (เติมครึ่ง ๆ เช่นได้ผู้รับแต่ยอดผิดเหรียญ อันตรายกว่าฟอร์มว่าง)
+  void _applyPaymentRequest(PaymentRequest r) {
+    if (_isSending) return;
+    final l = context.read<LocaleProvider>();
+    final wallet = context.read<WalletProvider>();
+
+    final chainError = paymentRequestChainError(r, l);
+    if (chainError != null) {
+      _showError(chainError);
+      return;
+    }
+
+    // โทเค็น: ต้องเป็นโทเค็นบน TPIX Chain ที่กระเป๋ารู้จักอยู่แล้ว (รู้ทศนิยมแน่นอน)
+    TokenInfo? token;
+    final tokenAddress = r.tokenAddress?.toLowerCase();
+    if (tokenAddress != null) {
+      for (final t in _sendableTokens(wallet)) {
+        if (t.contractAddress.toLowerCase() == tokenAddress) token = t;
+      }
+      if (token == null) {
+        _showError(l.t('pay.unknownToken'));
+        return;
+      }
+    }
+    final decimals = _decimalsOf(token);
+    final amount = r.amountIn(decimals);
+    if (r.hasAmount && amount == null) {
+      _showError(l.t('pay.badAmount'));
+      return;
+    }
+
+    // URI บอก 4289 แต่กระเป๋ากำลังดูเชนอื่น → สลับให้ตรงกับที่ร้านขอ (หน้าส่งโอนบน 4289 อยู่แล้ว)
+    if (r.chainId == ChainConfig.tpix.chainId && wallet.activeChainId != ChainConfig.tpix.chainId) {
+      unawaited(wallet.switchChain(ChainConfig.tpix.chainId).catchError((_) {}));
+    }
+
+    final hasAmount = amount != null && amount > BigInt.zero;
+    // ตั้งค่าคำขอก่อนเปลี่ยนช่องผู้รับ — ตัวฟังช่องผู้รับจะได้ไม่ล้างคำขอที่เพิ่งตั้ง
+    _reqRecipient = hasAmount ? r.recipient : null;
+    _reqAmount = hasAmount ? amount : null;
+    _reqToken = hasAmount ? tokenAddress : null;
+    _reqLocked = hasAmount;
+    _selectedToken = tokenAddress;
+    _addressController.text = r.recipient;
+    // ยอดเต็มทุกหลัก (สูงสุด 18 ตำแหน่ง) — ห้ามปัด ร้านจับคู่ด้วยยอดเป๊ะ
+    if (hasAmount) {
+      _amountController.text = Units.format(amount, decimals);
+    } else {
+      _amountController.clear();
+    }
+    setState(() {});
+    SynthService.playTap();
+  }
+
+  /// ล้างคำขอชำระเงิน (ผู้ใช้เปลี่ยนผู้รับไปจากที่ร้านขอ)
+  void _clearPaymentRequest() {
+    _reqRecipient = null;
+    _reqAmount = null;
+    _reqToken = null;
+    _reqLocked = false;
+  }
+
+  /// "แก้ยอดเอง" ↔ "ใช้ยอดของร้าน"
+  void _toggleRequestLock() {
+    final amount = _reqAmount;
+    if (amount == null || _isSending) return;
+    if (_reqLocked) {
+      _reqLocked = false;
+    } else {
+      // คืนยอดและเหรียญตามคำขอ แล้วล็อกกลับ
+      _selectedToken = _reqToken;
+      final token = _selectedTokenInfo(context.read<WalletProvider>());
+      _amountController.text = Units.format(amount, _decimalsOf(token));
+      _reqLocked = true;
+    }
+    setState(() {});
+    SynthService.playTap();
   }
 
   /// โหลดรายการโปรดขึ้นมาแสดงเป็นทางลัด
@@ -110,6 +241,11 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
   /// ที่อยู่ในช่องเปลี่ยน → หาว่าตรงกับรายการโปรดไหน
   /// ค้นจากลิสต์ในหน่วยความจำ ไม่ยิง DB ทุกตัวอักษรที่พิมพ์
   void _onAddressChanged() {
+    // ผู้รับไม่ใช่คนเดียวกับในคำขอชำระเงินแล้ว → คำขอนั้นไม่เกี่ยวแล้ว ปลดล็อก/ซ่อนแถบ
+    final req = _reqRecipient;
+    if (req != null && _addressController.text.trim().toLowerCase() != req.toLowerCase()) {
+      if (mounted) setState(_clearPaymentRequest);
+    }
     final found = _lookupFavorite(_addressController.text);
     if (found?.id == _matched?.id) return;
     if (!mounted) return;
@@ -174,17 +310,33 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
         builder: (_) => QRScannerScreen(
           titleKey: 'send.scanQR',
           onScanned: (value) {
-            final parsed = WalletService.parseAddressFromQR(value);
-            if (parsed != null) {
-              _addressController.text = parsed;
-            } else {
-              _showError(context.read<LocaleProvider>().t('send.invalidAddress'));
-            }
             Navigator.pop(context);
+            _handleScanned(value);
           },
         ),
       ),
     );
+  }
+
+  /// QR ที่สแกน/วางได้ — คำขอชำระเงิน (ethereum:…?value=) เติมผู้รับ+ยอด, ที่อยู่ล้วนเติมผู้รับอย่างเดียว
+  void _handleScanned(String value) {
+    if (!mounted) return;
+    final l = context.read<LocaleProvider>();
+    final res = Eip681.parse(value);
+    if (res.request case final r?) {
+      _applyPaymentRequest(r);
+      return;
+    }
+    if (res.error != Eip681Error.notEip681) {
+      _showError(paymentRequestParseError(res.error!, l));
+      return;
+    }
+    final parsed = WalletService.parseAddressFromQR(value);
+    if (parsed != null) {
+      _addressController.text = parsed;
+    } else {
+      _showError(l.t('send.invalidAddress'));
+    }
   }
 
   // ================================================================
@@ -215,6 +367,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
 
   void _selectAsset(String? tokenAddress) {
     if (_selectedToken == tokenAddress) return;
+    if (_amountLocked) return; // ยอดของร้านล็อกอยู่ — เปลี่ยนเหรียญไม่ได้จนกว่าจะกด "แก้ยอดเอง"
     setState(() {
       _selectedToken = tokenAddress;
       // ทศนิยมคนละแบบ — จำนวนเดิมอาจผิดความหมาย ล้างทิ้งให้ใส่ใหม่
@@ -292,6 +445,15 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
       return;
     }
     final amount = parsed.value!;
+
+    // ยอดของร้านล็อกอยู่ → ต้องตรงคำขอทุกหลัก ทั้งผู้รับ เหรียญ และยอด (กันหลุดจากทางอื่นที่แก้ช่องได้)
+    if (_amountLocked &&
+        (address.toLowerCase() != _reqRecipient?.toLowerCase() ||
+            _selectedToken != _reqToken ||
+            amount != _reqAmount)) {
+      _showError(l.t('pay.mismatch'));
+      return;
+    }
 
     // เทียบยอดแบบ BigInt — ยังไม่รู้ยอดก็ไม่เดา
     final available = _rawBalanceOf(wallet, token);
@@ -530,6 +692,76 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// แถบบอกว่ายอดมาจากคำขอชำระเงินของร้าน — โชว์ยอดเต็มทุกหลัก + ปุ่ม "แก้ยอดเอง"/"ใช้ยอดของร้าน"
+  /// [obsidian] เลือกชุดสีตามธีม (ตรรกะเดียวกันทั้งสองธีม)
+  Widget _buildRequestNote(LocaleProvider l, WalletProvider wallet, {required bool obsidian}) {
+    final amount = _reqAmount;
+    if (amount == null) return const SizedBox.shrink();
+    TokenInfo? token;
+    for (final t in _sendableTokens(wallet)) {
+      if (t.contractAddress.toLowerCase() == _reqToken) token = t;
+    }
+    final locked = _reqLocked;
+    final c = obsidian ? null : AppColors.of(context);
+    final accent = locked
+        ? (obsidian ? ObsidianColors.cyan : AppTheme.primary)
+        : (obsidian ? ObsidianColors.warning : AppTheme.warm);
+    final textColor = obsidian ? ObsidianColors.text : c!.text;
+    final secColor = obsidian ? ObsidianColors.textSec : c!.textSec;
+    final amountText = '${groupDigits(Units.format(amount, _decimalsOf(token)))} ${_symbolOf(token)}';
+
+    return Semantics(
+      container: true,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(TpixRadius.md),
+          border: Border.all(color: accent.withValues(alpha: 0.45)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(locked ? Icons.lock_rounded : Icons.lock_open_rounded, size: 16, color: accent),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    l.t('pay.requestTitle'),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: accent),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // ยอดเต็มทุกหลัก ตัดบรรทัดได้ (ไม่ย่อด้วย … — ผู้ใช้ต้องเทียบกับหน้าร้านได้ครบ)
+            SelectableText(
+              amountText,
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: textColor, fontFamily: 'monospace'),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              l.t(locked ? 'pay.requestLocked' : 'pay.requestUnlocked'),
+              style: TextStyle(fontSize: 12, height: 1.4, color: secColor),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _isSending ? null : _toggleRequestLock,
+                icon: Icon(locked ? Icons.edit_rounded : Icons.undo_rounded, size: 16, color: accent),
+                label: Text(
+                  l.t(locked ? 'pay.unlock' : 'pay.restore'),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: accent),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -788,6 +1020,8 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
           const SizedBox(height: TpixGap.sm),
           TextField(
             controller: _amountController,
+            // ยอดจากคำขอชำระเงินของร้าน — ล็อกไว้จนกว่าผู้ใช้กด "แก้ยอดเอง"
+            readOnly: _amountLocked,
             // ทศนิยมต้องพิมพ์ได้ทุกเครื่อง (TextInputType.number บาง keyboard ไม่มีจุด)
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
@@ -828,7 +1062,7 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
                     ? wallet.formattedBalance
                     : Units.toDouble(raw, decimals).toStringAsFixed(4);
             return GestureDetector(
-              onTap: raw == null || raw == BigInt.zero
+              onTap: raw == null || raw == BigInt.zero || _amountLocked
                   ? null
                   : () => _amountController.text = Units.format(raw, decimals),
               child: Row(
@@ -860,6 +1094,11 @@ class _SendScreenState extends State<SendScreen> with SingleTickerProviderStateM
               ),
             );
           }),
+
+          if (_hasRequest) ...[
+            const SizedBox(height: TpixGap.md),
+            _buildRequestNote(l, wallet, obsidian: false),
+          ],
 
           const SizedBox(height: TpixGap.lg),
 

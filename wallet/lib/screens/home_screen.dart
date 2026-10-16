@@ -48,6 +48,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/tx_record.dart';
 import '../services/identity_service.dart';
 import '../widgets/obsidian/obsidian.dart';
+import '../utils/eip681.dart';
 
 // หน้าแรกธีม Obsidian (ใช้ตัวจัดการเดิมของหน้านี้ร่วมกัน)
 part 'home_obsidian.dart';
@@ -73,6 +74,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   /// กำลังเปิดหน้าใหม่อยู่ — กันแตะรัว ๆ แล้วหน้าเดิมซ้อนสองชั้น
   bool _routeBusy = false;
+
+  /// ลิงก์ ethereum: ล่าสุดที่เปิดหน้าส่งไปแล้ว + เวลา — app_links อาจส่งลิงก์เดียวกันมาสองทาง
+  /// (getInitialLink + uriLinkStream) ห้ามเปิดหน้าส่งซ้อนสองชั้น
+  String? _lastPayLink;
+  DateTime? _lastPayLinkAt;
+
+  /// ลิงก์ที่จัดการไปแล้วในโปรเซสนี้ (static — อยู่รอดตอนหน้าแรกถูกสร้างใหม่)
+  /// ใช้กันเฉพาะทาง getInitialLink ที่คืนลิงก์เดิมซ้ำ ส่วนลิงก์ใหม่ทาง stream รับเสมอ
+  static final Set<String> _handledLinks = {};
 
   @override
   void initState() {
@@ -144,12 +154,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     // Handle link that opened the app
     appLinks.getInitialLink().then((uri) {
-      if (uri != null && mounted) _handleDeepLink(uri);
+      if (uri == null || !mounted) return;
+      // getInitialLink คืนลิงก์ที่ "เปิดแอป" เดิมทุกครั้งที่หน้านี้ถูกสร้างใหม่ (เช่น ล็อกแล้วปลดล็อก)
+      // ห้ามทำซ้ำ — ไม่งั้นคำขอชำระเงินเก่าเด้งกลับมาเปิดหน้าส่งอีกรอบ
+      // (ปลั๊กอินจำลิงก์แรกที่เข้ามาไว้เป็น "initial" ด้วย แม้มาทาง stream ตอนแอปเปิดอยู่แล้ว)
+      if (!_handledLinks.add(uri.toString())) return;
+      _handleDeepLink(uri);
     });
 
     // Handle links while app is running — store subscription for cleanup
     _deepLinkSub = appLinks.uriLinkStream.listen((uri) {
-      if (mounted) _handleDeepLink(uri);
+      if (!mounted) return;
+      _handledLinks.add(uri.toString());
+      _handleDeepLink(uri);
     });
   }
 
@@ -163,6 +180,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       Navigator.push(context, MaterialPageRoute(
         builder: (_) => DAppConnectScreen(initialUri: uriStr),
       ));
+      return;
+    }
+
+    // ethereum:<0xที่อยู่>@4289?value=<wei> — คำขอชำระเงินจากร้าน (เช่นปุ่ม "เปิดกระเป๋า" ในแอป Thai Prompt)
+    // เปิดหน้าส่งพร้อมเติมผู้รับ+ยอดเป๊ะ เท่านั้น — ไม่ส่งเอง ผู้ใช้ยังต้องยืนยันตัวตน + กดยืนยันตามปกติ
+    // (มาถึงตรงนี้ได้ต้องผ่านหน้า PIN แล้ว เพราะหน้านี้เปิดหลังปลดล็อกเท่านั้น)
+    if (uri.scheme.toLowerCase() == 'ethereum') {
+      final now = DateTime.now();
+      final last = _lastPayLinkAt;
+      if (_lastPayLink == uriStr && last != null && now.difference(last) < const Duration(seconds: 5)) {
+        return;
+      }
+      _lastPayLink = uriStr;
+      _lastPayLinkAt = now;
+      _openPaymentUri(uriStr);
       return;
     }
 
@@ -461,7 +493,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       return;
     }
 
-    // ที่อยู่กระเป๋า / URI จ่ายเงิน → เปิดหน้าส่งพร้อมเติมที่อยู่ให้เลย
+    // URI จ่ายเงิน (ethereum:…) → เปิดหน้าส่งพร้อมผู้รับ + ยอดเป๊ะตามคำขอของร้าน
+    if (Eip681.parse(trimmed).error != Eip681Error.notEip681) {
+      _openPaymentUri(trimmed);
+      return;
+    }
+
+    // ที่อยู่กระเป๋าล้วน → เปิดหน้าส่งพร้อมเติมที่อยู่ให้เลย
     final address = WalletService.parseAddressFromQR(trimmed);
     if (address != null) {
       Navigator.push(
@@ -475,6 +513,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.read<LocaleProvider>().t('scan.invalid'))),
+    );
+  }
+
+  /// เปิดหน้าส่งจากคำขอชำระเงิน EIP-681 (สแกน QR ที่หน้าแรก หรือลิงก์ ethereum: จากแอปอื่น)
+  ///
+  /// อ่านไม่ผ่าน / เครือข่ายไม่ใช่ TPIX Chain → เตือนอย่างเดียว ไม่เปิดหน้าส่ง
+  void _openPaymentUri(String raw) {
+    if (!mounted) return;
+    final l = context.read<LocaleProvider>();
+    void warn(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: AppTheme.danger),
+        );
+    final res = Eip681.parse(raw);
+    final request = res.request;
+    if (request == null) {
+      warn(paymentRequestParseError(res.error!, l));
+      return;
+    }
+    final chainError = paymentRequestChainError(request, l);
+    if (chainError != null) {
+      warn(chainError);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => SendScreen(initialRequest: request)),
     );
   }
 

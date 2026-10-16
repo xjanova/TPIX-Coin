@@ -63,6 +63,11 @@ extension _ObsidianSend on _SendScreenState {
                       _obsAssetButton(wallet, tokens, token, l, st),
                       const SizedBox(height: 16),
                       _obsAmount(wallet, token, l, st),
+                      // ยอดจากคำขอชำระเงินของร้าน (สแกน QR / ลิงก์ ethereum:) — ล็อกไว้ ห้ามแก้
+                      if (_hasRequest) ...[
+                        const SizedBox(height: 12),
+                        _buildRequestNote(l, wallet, obsidian: true),
+                      ],
                       const SizedBox(height: 16),
                       _obsAddress(l, st),
                       if (_favorites.isNotEmpty) ...[
@@ -138,7 +143,7 @@ extension _ObsidianSend on _SendScreenState {
   /// ปุ่มเลือกเหรียญ (มีโทเค็นบน TPIX Chain = กดเปิดรายการได้)
   Widget _obsAssetButton(
       WalletProvider wallet, List<TokenInfo> tokens, TokenInfo? token, LocaleProvider l, ObsidianStyle st) {
-    final canPick = tokens.isNotEmpty && !_isSending;
+    final canPick = tokens.isNotEmpty && !_isSending && !_amountLocked;
     final raw = _rawBalanceOf(wallet, token);
     return ObsidianPanel(
       blur: 16,
@@ -293,7 +298,7 @@ extension _ObsidianSend on _SendScreenState {
             surface: ObsidianSurface.dark,
             semanticLabel: label,
             // ตรวจยอดแบบ BigInt — 100% = ยอดเต็มทุกหลัก (ไม่ปัดขึ้นจนเกินยอด)
-            onTap: raw == null || raw == BigInt.zero || _isSending
+            onTap: raw == null || raw == BigInt.zero || _isSending || _amountLocked
                 ? null
                 : () {
                     final v = percent == 100 ? raw : raw * BigInt.from(percent) ~/ BigInt.from(100);
@@ -345,6 +350,8 @@ extension _ObsidianSend on _SendScreenState {
                     child: TextField(
                       controller: _amountController,
                       enabled: !_isSending,
+                      // ยอดจากคำขอชำระเงินของร้าน — ล็อกไว้จนกว่าผู้ใช้กด "แก้ยอดเอง"
+                      readOnly: _amountLocked,
                       // ทศนิยมต้องพิมพ์ได้ทุกเครื่อง (TextInputType.number บาง keyboard ไม่มีจุด)
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
@@ -417,6 +424,11 @@ extension _ObsidianSend on _SendScreenState {
     final text = data?.text?.trim();
     if (text == null || text.isEmpty) return;
     // วางได้ทั้งที่อยู่ล้วนและ URI จ่ายเงิน (ethereum:0x…) — ตัวแยกเดียวกับการสแกน
+    // คำขอชำระเงินที่มียอด → เติมยอดเป๊ะ + ล็อกเหมือนสแกน QR ร้าน
+    if (Eip681.parse(text).error != Eip681Error.notEip681) {
+      _handleScanned(text);
+      return;
+    }
     _addressController.text = WalletService.parseAddressFromQR(text) ?? text;
     SynthService.playTap();
   }
