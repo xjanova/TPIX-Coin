@@ -78,6 +78,18 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="tpixwallet"/>
             </intent-filter>
+            <!--
+                คำขอชำระเงิน EIP-681: ethereum:<0xที่อยู่>@4289?value=<wei>
+                ร้าน (Thaiprompt / XMAN Studio) เปิดลิงก์นี้จากปุ่ม "เปิดกระเป๋า" → เข้าหน้าส่งพร้อมผู้รับ+ยอดเป๊ะ
+                ทางเข้าเดียวกับลิงก์อื่น (app_links → HomeScreen._handleDeepLink) ไม่ส่งเงินเอง
+                ผู้ใช้ต้องปลดล็อก ยืนยันตัวตน และกดยืนยันตามปกติทุกครั้ง
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="ethereum"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
