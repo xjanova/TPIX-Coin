@@ -81,9 +81,11 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icon/tpix_icon_1024.png"
-  # พื้นหลัง adaptive icon = สีพื้นของไทล์ ให้ต่อเนื่องกับตัวมาร์คพอดี
-  adaptive_icon_background: "#05080E"
-  # foreground แยกไฟล์: มาร์คอย่างเดียว พื้นโปร่ง กินพื้นที่ 60% ของกรอบ
+  # ไอคอน = ObsidianBrandOrb ในแอป (วงแหวนไล่สี + ตรา TPIX) ให้ตรงกับที่เห็นใน splash/onboarding
+  # เจนจาก scratch script make_wallet_icon.py (Edge headless วาด path ตราเดียวกับ TpixMonogram)
+  adaptive_icon_background: "assets/icon/tpix_icon_bg.png"
+  # foreground: orb อย่างเดียว พื้นโปร่ง — ปลั๊กอินหดชั้นนี้ inset 16% จึงวาด orb ไว้ 0.60/0.68 ของไฟล์
+  # (บนไอคอนจริง orb กว้าง 60% ของกรอบ อยู่ในวงปลอดภัย 66%)
   # แอนดรอยด์ครอปไอคอนเป็นวงกลม/สี่เหลี่ยมมนแล้วแต่เครื่อง ถ้ามาร์คเต็มกรอบจะโดนตัดมุม
   adaptive_icon_foreground: "assets/icon/tpix_icon_fg.png"
   remove_alpha_ios: true
