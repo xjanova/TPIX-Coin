@@ -26,6 +26,7 @@
 #
 # ตัวแปรสำหรับเทสต์/เครื่องอื่น:
 #   TPIX_VALIDATORS="tpix-validator-1 tpix-validator-2 …"  TPIX_GRPC=127.0.0.1:10000
+#   TPIX_PEER_HUBS="tpix-bootnode" (โหนดในเครื่องที่ไม่ใช่ validator แต่โหนดภายนอกต่อผ่านได้)
 #   TPIX_RPC_URL=http://127.0.0.1:8545  DOCKER_BIN=docker  CURL_BIN=curl
 #   TPIX_VOTE_WAIT=90 (วินาทีที่รอผลหลังโหวต)  TPIX_PROGRESS_WAIT=6
 #
@@ -37,6 +38,7 @@ set -uo pipefail
 read -r -a VALIDATORS <<< "${TPIX_VALIDATORS:-tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4}"
 GRPC="${TPIX_GRPC:-127.0.0.1:10000}"
 RPC="${TPIX_RPC_URL:-http://127.0.0.1:8545}"
+read -r -a PEER_HUBS <<< "${TPIX_PEER_HUBS-tpix-bootnode}"
 DOCKER="${DOCKER_BIN:-docker}"
 CURL="${CURL_BIN:-curl}"
 VOTE_WAIT="${TPIX_VOTE_WAIT:-90}"
@@ -107,10 +109,12 @@ require_progress() {
     log "เชนเดินอยู่: บล็อก $a → $b"
 }
 
-# โหนดใหม่ต้องเป็นเพียร์กับ validator ในเครื่องนี้ — ไม่งั้นโหวตเข้าแล้วมันเซ็นอะไรไม่ได้เลย
+# โหนดใหม่ต้องต่อกับเครือข่ายของ validator ในเครื่องนี้ — ไม่งั้นโหวตเข้าแล้วมันเซ็นอะไรไม่ได้เลย
+# peer_count_of <node_id> <container…>
 peer_count_of() {
     local node_id="$1" c n=0
-    for c in "${VALIDATORS[@]}"; do
+    shift
+    for c in "$@"; do
         running "$c" || continue
         if edge "$c" peers list --json 2>/dev/null | python3 -c 'import json,sys
 sys.exit(0 if sys.argv[1] in json.load(sys.stdin).get("peers", []) else 1)' "$node_id"; then
@@ -206,13 +210,18 @@ cmd_vote() {
 
     if [ "$vote" = "auth" ]; then
         if [ -n "$node_id" ]; then
-            local peers
-            peers="$(peer_count_of "$node_id")"
-            if [ "$peers" -eq 0 ]; then
-                [ "$skip_peer" -eq 1 ] || die "โหนด $node_id ไม่ได้เป็นเพียร์กับ validator ตัวไหนในเครื่องนี้ — โหวตเข้าแล้วจะเซ็นอะไรไม่ได้ (ตรวจ bootnode/ไฟร์วอลล์ของโหนดนั้น)"
-                warn "--skip-peer-check: ข้ามการตรวจเพียร์ตามที่สั่ง"
-            else
+            local peers hub_peers=0
+            peers="$(peer_count_of "$node_id" "${VALIDATORS[@]}")"
+            [ "${#PEER_HUBS[@]}" -gt 0 ] && hub_peers="$(peer_count_of "$node_id" "${PEER_HUBS[@]}")"
+            if [ "$peers" -gt 0 ]; then
                 log "โหนดใหม่เป็นเพียร์กับ validator ในเครื่องนี้ $peers ตัว"
+            elif [ "$hub_peers" -gt 0 ]; then
+                # validator หลักอยู่หลัง docker bridge — โหนดภายนอกอาจต่อได้แค่ผ่าน bootnode สาธารณะ
+                # ข้อความ IBFT เดินผ่าน gossip ได้ แต่ยืนยันไม่ได้จนกว่าจะเห็นมันเซ็นบล็อกจริง
+                warn "โหนดใหม่ต่ออยู่กับ ${PEER_HUBS[*]} แต่ยังไม่เป็นเพียร์ตรงกับ validator — หลังโหวตต้องเห็น 'เซ็น %' ขึ้นใน 5 นาที ไม่งั้นถอดออก"
+            else
+                [ "$skip_peer" -eq 1 ] || die "โหนด $node_id ไม่ได้ต่อกับ validator หรือ bootnode ในเครื่องนี้ — โหวตเข้าแล้วจะเซ็นอะไรไม่ได้ (ตรวจไฟร์วอลล์/genesis ของโหนดนั้น)"
+                warn "--skip-peer-check: ข้ามการตรวจเพียร์ตามที่สั่ง"
             fi
         else
             warn "ไม่ได้ใส่ --node-id — ตรวจไม่ได้ว่าโหนดใหม่ต่อกับเครือข่ายแล้ว ยืนยันกับผู้สมัครว่าซิงก์ถึงบล็อกล่าสุดก่อน"

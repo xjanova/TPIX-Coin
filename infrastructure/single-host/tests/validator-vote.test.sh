@@ -59,7 +59,7 @@ grep -qx "\$c" "\$T/running" || exit 1
 case "\$1 \$2" in
   "ibft snapshot") cat "\$T/snapshot.json" ;;
   "ibft candidates") echo '{"candidates":[]}' ;;
-  "peers list") cat "\$T/peers.json" ;;
+  "peers list") if [ -f "\$T/peers-\$c.json" ]; then cat "\$T/peers-\$c.json"; else cat "\$T/peers.json"; fi ;;
   "ibft propose")
     addr=""; vote=""; bls=""
     while [ \$# -gt 0 ]; do case "\$1" in --addr) addr="\$2"; shift 2;; --vote) vote="\$2"; shift 2;; --bls) bls="\$2"; shift 2;; *) shift;; esac; done
@@ -122,7 +122,7 @@ teardown
 setup
 run auth --addr "$NEW" --bls "$NEW_BLS" --node-id "$NEW_NODE" --yes
 check "refuses a node that is not a peer" code 1
-check "explains the peer refusal" has "ไม่ได้เป็นเพียร์"
+check "explains the peer refusal" has "ไม่ได้ต่อกับ validator หรือ bootnode"
 check "no vote sent without peering" [ "$(votes)" -eq 0 ]
 
 run auth --addr "$NEW" --yes
@@ -144,6 +144,17 @@ rm -f "$T/stuck"
 printf 'tpix-validator-1\ntpix-validator-2\n' > "$T/running"
 run auth --addr "$NEW" --bls "$NEW_BLS" --node-id "$NEW_NODE" --yes
 check "refuses when fewer local validators run than votes needed" has "ไม่ถึง 3 เสียง"
+teardown
+
+# ── ต่อได้แค่ผ่าน bootnode สาธารณะ: เตือนแต่ไปต่อ ──────────────────────────
+setup
+echo tpix-bootnode >> "$T/running"
+echo "{\"peers\":[\"$NEW_NODE\"]}" > "$T/peers-tpix-bootnode.json"
+run auth --addr "$NEW" --bls "$NEW_BLS" --node-id "$NEW_NODE"
+check "a node reachable only through the bootnode passes the dry-run" code 0
+check "and is warned to watch the seal monitor" has "แต่ยังไม่เป็นเพียร์ตรงกับ validator"
+TPIX_PEER_HUBS="" run auth --addr "$NEW" --bls "$NEW_BLS" --node-id "$NEW_NODE"
+check "without a hub the same node is refused" code 1
 teardown
 
 # ── โหวตไม่ครบ / ไม่เข้าชุด ───────────────────────────────────────────────
