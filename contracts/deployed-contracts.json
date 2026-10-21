@@ -1,7 +1,7 @@
 {
   "_doc": "Registry of deployed contracts on TPIX Chain (4289). Keep in sync after each deploy. Feeds scripts/verify-sources.js and external explorers/aggregators.",
   "_schema_version": 2,
-  "updated": "2026-10-20",
+  "updated": "2026-10-21",
   "chain": {
     "chainId": 4289,
     "name": "TPIX Chain",
@@ -93,38 +93,6 @@
       "verifyNote": "verified from runtime bytecode — Blockscout has no creator record for contract-created contracts (internal-tx fetcher off: polygon-edge 0.9.0 traces are malformed)"
     },
     {
-      "name": "NodeRegistryV2",
-      "category": "masternode",
-      "address": "0x9c3662972921705FeFa9E9bF0d91190d7B514A2B",
-      "sourceFile": "contracts/src/masternode/NodeRegistryV2.sol",
-      "compilerVersion": "0.8.24",
-      "optimizer": {
-        "enabled": true,
-        "runs": 200
-      },
-      "evmVersion": "london",
-      "verified": false,
-      "deployedAt": "2026-10-11",
-      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
-      "description": "Master node staking + reward distribution (APR-capped). Reward pool must be funded separately."
-    },
-    {
-      "name": "ValidatorKYC",
-      "category": "masternode",
-      "address": "0x443E487CA031fae41a285cf35BD89e90BE7340e7",
-      "sourceFile": "contracts/src/masternode/ValidatorKYC.sol",
-      "compilerVersion": "0.8.24",
-      "optimizer": {
-        "enabled": true,
-        "runs": 200
-      },
-      "evmVersion": "london",
-      "verified": false,
-      "deployedAt": "2026-10-11",
-      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
-      "description": "KYC gate for the Validator tier of NodeRegistryV2"
-    },
-    {
       "compilerVersion": "0.8.24",
       "optimizer": {
         "enabled": true,
@@ -138,6 +106,38 @@
       "address": "0x5c4Bc48F2b20bCBFAbbFD35c23c023F72Ab9D90a",
       "sourceFile": "contracts/src/bridge/TPIXBridgeMinter.sol",
       "description": "ด่านจำกัดอัตรา mint ของ USDT_TPIX (maxPerTx 1000.0 · dailyCap 5000.0 USDT) — relayer mint ได้, guardian pause ได้"
+    },
+    {
+      "name": "NodeRegistryV2",
+      "category": "masternode",
+      "address": "0x44c497C67B4F756a7769F11c8BEc26439C31F70E",
+      "sourceFile": "contracts/src/masternode/NodeRegistryV2.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": true,
+      "deployedAt": "2026-10-21",
+      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+      "description": "Master node staking + reward distribution (APR-capped). Reward pool must be funded separately."
+    },
+    {
+      "name": "ValidatorKYC",
+      "category": "masternode",
+      "address": "0x55E918D8D4D3EC9499f26981B49769Af7Fc094a3",
+      "sourceFile": "contracts/src/masternode/ValidatorKYC.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": true,
+      "deployedAt": "2026-10-21",
+      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+      "description": "KYC gate for the Validator tier of NodeRegistryV2"
     }
   ],
   "retired": [
@@ -170,6 +170,42 @@
       "retiredOn": "2026-08-06",
       "retiredReason": "Deployed on the pre-regenesis chain. eth_getCode = 0x on the current chain — the address holds no code and must be redeployed.",
       "description": "Coordinator for NFT deployment — single NFT + collection"
+    },
+    {
+      "name": "NodeRegistryV2",
+      "address": "0x9c3662972921705FeFa9E9bF0d91190d7B514A2B",
+      "sourceFile": "contracts/src/masternode/NodeRegistryV2.sol",
+      "category": "masternode",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": false,
+      "deployedAt": "2026-10-11",
+      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+      "retiredOn": "2026-10-21",
+      "retiredReason": "Superseded by the hardened build at 0x44c497C67B4F756a7769F11c8BEc26439C31F70E. This build let the owner, who runs the IBFT validators, put updateTierConfig ahead of a user's registerNode in the same block (slash up to 50%, lock up to 365 days). No node ever registered here. The website stopped pointing here on 2026-10-21; registration is still open on-chain (not paused).",
+      "description": "Master node staking + reward distribution (APR-capped) — first V2 deploy"
+    },
+    {
+      "name": "ValidatorKYC",
+      "address": "0x443E487CA031fae41a285cf35BD89e90BE7340e7",
+      "sourceFile": "contracts/src/masternode/ValidatorKYC.sol",
+      "category": "masternode",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": false,
+      "deployedAt": "2026-10-11",
+      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+      "retiredOn": "2026-10-21",
+      "retiredReason": "Replaced together with NodeRegistryV2 by 0x55E918D8D4D3EC9499f26981B49769Af7Fc094a3 (same source). Zero applicants ever.",
+      "description": "KYC gate for the Validator tier of the retired NodeRegistryV2"
     }
   ],
   "notes": {
