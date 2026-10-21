@@ -650,6 +650,19 @@ void main() {
           isTrue);
     });
 
+    test('build ที่จะ redeploy อยู่ในรายการ · build ที่ยังโดนแทรก slash 50% ก่อนสมัครถูกตัดออก', () {
+      // ฝั่งสัญญา (contracts/test/NodeRegistryV2.test.js) เทียบ hash นี้กับที่ compile ได้จริงทุกรอบ
+      expect(MasterNodeService.knownRegistryCodeHashes,
+          contains('0x1c49f5e7661539977d5abfef5a268b66bcaf812735b67b20328af002a70816fb'));
+      for (final superseded in [
+        '0x8e14ff731f16f502264211c48cc47595f02a4016724f69b67d679c42758765a0',
+        '0x7a03e6425a6779dfa0f60ba80ee569635f0618a22906a631dda2abdf28e696bf',
+        '0x35a1f6779f2e6941581c4d84c8def53cd42544cdf49fc0a2b9cffb60471329f6',
+      ]) {
+        expect(MasterNodeService.knownRegistryCodeHashes, isNot(contains(superseded)));
+      }
+    });
+
     test('แก้แค่ไบต์เดียว / ไม่มีโค้ด / ไม่ใช่ hex → ไม่รู้จัก', () {
       final last = _liveCode.substring(_liveCode.length - 2);
       final tampered =

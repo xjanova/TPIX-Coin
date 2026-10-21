@@ -70,6 +70,7 @@ class Model {
         this.boundLast = t0;
         this.start = t0;
         this.year = 0n;
+        this.oracle = "0x0000000000000000000000000000000000000000";
         this.rps = EMISSION[0] / YEAR;
         this.pool = 1_400_000_000n * E18;
         this.distributed = 0n;
@@ -286,7 +287,9 @@ async function runSeed(seed) {
         if (!res.ok) return;
         m.advance(res.ts);
         m.sync(t, res.ts);
-        Object.assign(n, { status: S.ACTIVE, tier: t, staked: value, unlockAt: res.ts + tc.lockDays * DAY, uptime: BPS, debt: tc.acc, pending: 0n, slashCap: tc.slash, capStart: tc.capN });
+        // มี uptime oracle = เริ่ม 0% จนกว่าจะพิสูจน์ว่ารันจริง · ไม่มี = 100%
+        const uptime = m.oracle === ethers.ZeroAddress ? BPS : 0n;
+        Object.assign(n, { status: S.ACTIVE, tier: t, staked: value, unlockAt: res.ts + tc.lockDays * DAY, uptime, debt: tc.acc, pending: 0n, slashCap: tc.slash, capStart: tc.capN });
         tc.active++;
         m.totalStaked += value;
         m.balance += value;
@@ -371,17 +374,46 @@ async function runSeed(seed) {
         expect(events(res.receipt, "NodeSlashed")[0].args[1], ctx()).to.equal(amt);
     }
 
+    // ผู้เรียก: owner · oracle (ตามที่อยู่ที่ตั้งไว้ล่าสุด — อาจถูกถอดแล้ว) · คนนอก
+    function uptimeCaller(a) {
+        const r = rnd();
+        if (r < 0.5) return owner;
+        if (r < 0.9) return pick(eoas);
+        return a.signer;
+    }
+    const mayReportUptime = (s) => s.address === owner.address ||
+        (m.oracle !== ethers.ZeroAddress && s.address === m.oracle);
+
     async function doUptime(a) {
         const n = m.node(a.addr);
         const u = BigInt(pick([0, 5000, 9000, 9999, 10000, 10001]));
-        const byOwner = !chance(0.1);
-        const predicted = byOwner && n.status === S.ACTIVE && u <= BPS;
-        const res = await exec("uptime", (o) => registry.connect(byOwner ? owner : a.signer).updateUptime(a.addr, u, o));
+        const who = uptimeCaller(a);
+        const predicted = mayReportUptime(who) && n.status === S.ACTIVE && u <= BPS;
+        const res = await exec("uptime", (o) => registry.connect(who).updateUptime(a.addr, u, o));
         expectOutcome("uptime", predicted, res);
         if (!res.ok) return;
         m.advance(res.ts);
         m.settle(a.addr, res.ts);
         n.uptime = u;
+    }
+
+    async function doUptimeBatch() {
+        const who = uptimeCaller(actors[0]);
+        const size = pick([0, 1, 2, 3, actors.length]);
+        const list = Array.from({ length: size }, () => pick(actors));
+        const ups = list.map(() => BigInt(pick([0, 3000, 10000, 10000, 10001])));
+        const predicted = mayReportUptime(who) && ups.every((u) => u <= BPS);
+        const res = await exec("uptimeBatch", (o) => registry.connect(who).updateUptimeBatch(list.map((a) => a.addr), ups, o));
+        expectOutcome("updateUptimeBatch", predicted, res);
+        if (!res.ok) return;
+        m.advance(res.ts);
+        // ทีละรายการตามลำดับ (ที่อยู่ซ้ำในชุด = ค่าหลังสุดชนะ) · โหนดที่ไม่ active ถูกข้าม
+        list.forEach((a, i) => {
+            const n = m.node(a.addr);
+            if (n.status !== S.ACTIVE) return;
+            m.settle(a.addr, res.ts);
+            n.uptime = ups[i];
+        });
     }
 
     async function doFund() {
@@ -431,9 +463,9 @@ async function runSeed(seed) {
             const tc = m.tiers[t];
             const minStake = chance(0.6) ? tc.minStake : pick([1n, E18, 1000n * E18, 10_000n * E18, 1_000_000n * E18, 3n * 10n ** 25n]);
             const maxNodes = BigInt(pick([0, 1, 2, 3, 5, 100]));
-            const lockDays = BigInt(pick([0, 1, 7, 30, 90, 180, 365, 366, 36500]));
-            const slash = BigInt(pick([0, 1, 500, 1500, 5000, 5001]));
-            const predicted = byOwner && slash <= 5000n && minStake > 0n && lockDays <= 365n &&
+            const lockDays = BigInt(pick([0, 1, 7, 30, 90, 180, 181, 365, 36500]));
+            const slash = BigInt(pick([0, 1, 500, 1500, 1501, 5000]));
+            const predicted = byOwner && slash <= 1500n && minStake > 0n && lockDays <= 180n &&
                 (minStake === tc.minStake || tc.active === 0n);
             const res = await exec("updateTierConfig", (o) => registry.connect(who).updateTierConfig(t, minStake, maxNodes, lockDays, slash, tc.share, o));
             expectOutcome("updateTierConfig", predicted, res);
@@ -470,6 +502,13 @@ async function runSeed(seed) {
             if (!res.ok) return;
             m.advance(res.ts);
             m.paused = p;
+        } else if (r < 0.94) {
+            const oracle = pick([ethers.ZeroAddress, ...eoas.map((s) => s.address)]);
+            const res = await exec("setOracle", (o) => registry.connect(who).setUptimeOracle(oracle, o));
+            expectOutcome("setUptimeOracle", byOwner, res);
+            if (!res.ok) return;
+            m.advance(res.ts);
+            m.oracle = oracle;
         } else {
             const k = pick(["yes", "yes", "yes", "no", "revert", "none"]);
             const addr = k === "none" ? ethers.ZeroAddress : kycAddrs[k];
@@ -573,7 +612,8 @@ async function runSeed(seed) {
         }
         else if (r < 0.655) await doFund();
         else if (r < 0.74) await doAdvanceYear();
-        else if (r < 0.81) await doOwnerConfig();
+        else if (r < 0.785) await doOwnerConfig();
+        else if (r < 0.81) await doUptimeBatch();
         else await doTravel();
         await checkAll();
     }

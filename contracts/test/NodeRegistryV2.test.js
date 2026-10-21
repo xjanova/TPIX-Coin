@@ -218,15 +218,32 @@ describe("NodeRegistryV2", function () {
     });
 
     // ────────────────────────────────────────────────────────────
-    //  ขนาด bytecode — tx deploy ต้องลอดลิมิต body 32KB ของ RPC proxy
+    //  ขนาด bytecode — tx deploy ต้องลอดลิมิต body ของ RPC proxy (rpc1 ขยายเป็น 128k เมื่อ 2026-10-22)
     // ────────────────────────────────────────────────────────────
     describe("deploy size", function () {
-        it("initcode ของ NodeRegistryV2 ต้องเล็กพอให้ eth_sendRawTransaction ผ่าน rpc1 (nginx 32k)", async function () {
+        it("initcode ของ NodeRegistryV2 ต้องเล็กพอให้ eth_sendRawTransaction ผ่าน rpc1 (nginx 128k)", async function () {
             const artifact = await artifacts.readArtifact("NodeRegistryV2");
             const initBytes = (artifact.bytecode.length - 2) / 2;
-            // raw tx ≈ initcode + ~120 ไบต์ (nonce/gas/v/r/s) → hex ×2 + JSON ~100 ไบต์ ต้อง < 32,768
+            // raw tx ≈ initcode + ~120 ไบต์ (nonce/gas/v/r/s) → hex ×2 + JSON ~100 ไบต์ ต้อง < 131,072
             const jsonBodyBytes = (initBytes + 120) * 2 + 2 + 100;
-            expect(jsonBodyBytes, `initcode ${initBytes} ไบต์`).to.be.lt(32768 - 512);
+            expect(jsonBodyBytes, `initcode ${initBytes} ไบต์`).to.be.lt(131072 - 512);
+            // runtime ต้องไม่ชนเพดาน EIP-170 (24,576 ไบต์) — เชนปฏิเสธ deploy ทั้งที่ RPC รับ
+            const runtimeBytes = (artifact.deployedBytecode.length - 2) / 2;
+            expect(runtimeBytes, `runtime ${runtimeBytes} ไบต์`).to.be.lt(24576);
+        });
+
+        it("hash ของ runtime ที่ compile ได้ ต้องอยู่ในรายการที่ TPIX Wallet ตรึงไว้", async function () {
+            // แอปยอมเขียนธุรกรรมเข้าเฉพาะสัญญาที่ keccak256(eth_getCode) อยู่ในรายการ
+            // (ไม่มี immutable → ค่านี้เท่ากับ eth_getCode ทุกที่อยู่) — แก้สัญญาแม้แต่คอมเมนต์
+            // hash เปลี่ยน (metadata ของ solc ฝัง hash ของไฟล์ต้นฉบับ) ต้อง pin ใหม่ทั้ง Wallet
+            // และแอป PC (TPIX-Masternode/electron/node-registry.js) แล้วปล่อยแอปก่อนชี้เว็บ
+            const fs = require("fs");
+            const path = require("path");
+            const artifact = await artifacts.readArtifact("NodeRegistryV2");
+            const hash = ethers.keccak256(artifact.deployedBytecode).toLowerCase();
+            const walletPins = fs.readFileSync(
+                path.join(__dirname, "..", "..", "wallet", "lib", "services", "masternode_service.dart"), "utf8");
+            expect(walletPins, `runtime hash ${hash} ยังไม่ได้ pin ใน wallet`).to.include(`'${hash}'`);
         });
     });
 
@@ -258,7 +275,7 @@ describe("NodeRegistryV2", function () {
             const { registry, alice, bob } = await loadFixture(fundedFixture);
             await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
             await expect(registry.connect(bob).updateUptime(alice.address, 5000))
-                .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+                .to.be.revertedWith("Not owner or uptime oracle");
         });
     });
 
@@ -504,10 +521,10 @@ describe("NodeRegistryV2", function () {
     });
 
     describe("audit 2026-10: slash ย้อนหลังแรงกว่าตอนสมัครไม่ได้", function () {
-        it("Light สมัครตอน slash 0% → owner ขึ้นเป็น 50% ทีหลัง เงินต้นต้องไม่ถูกตัด", async function () {
+        it("Light สมัครตอน slash 0% → owner ขึ้นเป็นเพดาน 15% ทีหลัง เงินต้นต้องไม่ถูกตัด", async function () {
             const { registry, owner, alice } = await loadFixture(deployFixture);
             await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
-            await registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 5000, 1500);
+            await registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 1500, 1500);
 
             await registry.connect(owner).slashNode(alice.address, "test");
             expect((await registry.getNodeInfo(alice.address)).stakedAmount).to.equal(LIGHT_STAKE);
@@ -634,7 +651,7 @@ describe("NodeRegistryV2", function () {
     describe("audit 2026-10c: ระยะล็อก · KYC · ถอนตอนพูลว่าง", function () {
         const DAY = 24 * 60 * 60;
 
-        it("owner (ซึ่งรัน validator เอง) แทรก lockDays 100 ปีก่อน tx สมัคร → เงินต้นต้องไม่ถูกขังเกิน 365 วัน", async function () {
+        it("owner (ซึ่งรัน validator เอง) แทรก lockDays 100 ปีก่อน tx สมัคร → เงินต้นต้องไม่ถูกขังเกิน 180 วัน", async function () {
             const { registry, owner, alice } = await loadFixture(deployFixture);
 
             // ผู้ใช้เห็น Light ล็อก 7 วันแล้วกดสมัคร — owner/validator แทรก tx ก่อนในบล็อกเดียวกันได้
@@ -645,7 +662,7 @@ describe("NodeRegistryV2", function () {
             await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
 
             const n = await registry.getNodeInfo(alice.address);
-            expect(n.unlockAt - n.registeredAt).to.be.lte(365n * BigInt(DAY));
+            expect(n.unlockAt - n.registeredAt).to.be.lte(180n * BigInt(DAY));
         });
 
         it("สัญญา KYC ที่เปลี่ยนเป็น revert / ถูกถอดออก ห้ามขวาง Validator ถอนหรือเคลม", async function () {
@@ -686,13 +703,285 @@ describe("NodeRegistryV2", function () {
                 .to.emit(registry, "RewardClaimed").withArgs(alice.address, owed);
             await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
         });
+    });
 
-        it("lockDays เกิน 365 → revert · 365 พอดีได้", async function () {
+    describe("audit 2026-10d: แทรก % slash ก่อนสมัคร · uptime oracle · โอน owner 2 ขั้น", function () {
+        const DAY = 24 * 60 * 60;
+        const YEAR = 365 * DAY;
+
+        it("owner (ซึ่งรัน validator เอง) แทรก slash 50% ก่อน tx สมัคร → เงินต้นต้องไม่ถูกตัดเกิน 15%", async function () {
+            const { registry, owner, alice } = await loadFixture(deployFixture);
+
+            // ช่องเดียวกับ lockDays: สัญญาจำ % slash ณ ตอนสมัครเป็นเพดานของโหนด
+            // ผู้ใช้เห็น Light slash 0% แต่ owner แทรก tx ตั้ง 50% ไว้ก่อนในบล็อกเดียวกันได้
+            await registry.connect(owner)
+                .updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 5000, 1500)
+                .catch(() => {});
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(owner).slashNode(alice.address, "front-run");
+
+            expect((await registry.getNodeInfo(alice.address)).stakedAmount)
+                .to.be.gte(LIGHT_STAKE - (LIGHT_STAKE * 1500n) / 10000n);
+        });
+
+        it("slash เกิน 15% → revert · 15% พอดีได้ · lockDays เกิน 180 → revert · 180 พอดีได้", async function () {
             const { registry, owner } = await loadFixture(deployFixture);
-            await expect(registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 366, 0, 1500))
-                .to.be.revertedWith("Max 365-day lock");
-            await expect(registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 365, 0, 1500))
+            expect(await registry.MAX_SLASH_BPS()).to.equal(1500);
+            expect(await registry.MAX_LOCK_DAYS()).to.equal(180);
+            await expect(registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 1501, 1500))
+                .to.be.revertedWith("Max 15% slash");
+            await expect(registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 181, 0, 1500))
+                .to.be.revertedWith("Max 180-day lock");
+            await expect(registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 180, 1500, 1500))
                 .to.emit(registry, "TierConfigUpdated").withArgs(TIER.LIGHT);
+        });
+
+        it("ยังไม่ตั้ง oracle: โหนดใหม่เริ่ม uptime 100% เหมือนเดิม", async function () {
+            const { registry, alice } = await loadFixture(deployFixture);
+            expect(await registry.uptimeOracle()).to.equal(ethers.ZeroAddress);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            expect((await registry.getNodeInfo(alice.address)).uptime).to.equal(10000);
+        });
+
+        it("ตั้ง oracle แล้ว: โหนดใหม่เริ่ม 0% ไม่ได้รางวัลจนกว่า oracle ยืนยันว่ารันเครื่องจริง", async function () {
+            const { registry, owner, alice, carol } = await loadFixture(fundedFixture);
+            await expect(registry.connect(owner).setUptimeOracle(carol.address))
+                .to.emit(registry, "UptimeOracleUpdated").withArgs(carol.address);
+
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            expect((await registry.getNodeInfo(alice.address)).uptime).to.equal(0);
+            await time.increase(10 * DAY);
+            expect(await registry.pendingReward(alice.address)).to.equal(0);
+
+            // oracle เห็นว่าเครื่องเปิดจริง → ได้รางวัลตั้งแต่ตอนนั้นไป (ไม่ย้อนหลัง)
+            await registry.connect(carol).updateUptime(alice.address, 10000);
+            await time.increase(YEAR);
+            const owed = await registry.pendingReward(alice.address);
+            expect(owed).to.be.gte(ethers.parseEther("599.9"));    // 6% ของ 10K ต่อปี
+            expect(owed).to.be.lte(ethers.parseEther("600.01"));
+        });
+
+        it("oracle ตั้งได้ทีละชุด: ข้ามโหนดที่ไม่ active และย้อนไปตัดรางวัลที่หาไว้แล้วไม่ได้", async function () {
+            const { registry, owner, alice, bob, carol } = await loadFixture(fundedFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(owner).setUptimeOracle(carol.address);
+            await time.increase(30 * DAY);
+            const before = await registry.pendingReward(alice.address);
+
+            // bob ไม่ได้ลงโหนด — ชุดต้องไม่ล้มทั้งชุดเพราะคนเดียว
+            await expect(registry.connect(carol).updateUptimeBatch([alice.address, bob.address], [0, 10000]))
+                .to.emit(registry, "UptimeUpdated").withArgs(alice.address, 0);
+            expect((await registry.getNodeInfo(alice.address)).uptime).to.equal(0);
+            expect((await registry.getNodeInfo(bob.address)).status).to.equal(0);   // Inactive เหมือนเดิม
+            expect((await registry.getNodeInfo(bob.address)).uptime).to.equal(0);   // ข้ามจริง ไม่ได้เขียนทับ
+            expect(await registry.pendingReward(alice.address)).to.be.gte(before);
+
+            await time.increase(30 * DAY);
+            const frozen = await registry.pendingReward(alice.address);
+            await time.increase(30 * DAY);
+            expect(await registry.pendingReward(alice.address)).to.equal(frozen);  // uptime 0 = ไม่เพิ่ม
+        });
+
+        it("batch: ความยาวไม่ตรง / เกิน 100 / ค่าเกิน 10000 → revert", async function () {
+            const { registry, owner, alice, carol } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(owner).setUptimeOracle(carol.address);
+            await expect(registry.connect(carol).updateUptimeBatch([alice.address], [1, 2]))
+                .to.be.revertedWith("Length mismatch");
+            const many = Array(101).fill(alice.address);
+            await expect(registry.connect(carol).updateUptimeBatch(many, Array(101).fill(1)))
+                .to.be.revertedWith("Batch too large");
+            await expect(registry.connect(carol).updateUptimeBatch([alice.address], [10001]))
+                .to.be.revertedWith("Max 10000");
+        });
+
+        it("batch เต็ม 100 โหนด (กรณีแพงสุด: รางวัลค้าง 0 → มีค่าทุกตัว) ใช้แก๊สต่ำกว่าเพดานบล็อก 10M พอสมควร", async function () {
+            this.timeout(120000);
+            const { registry, owner, carol } = await loadFixture(fundedFixture);
+            await registry.connect(owner).setUptimeOracle(carol.address);
+            const ops = [];
+            for (let i = 0; i < 100; i++) {
+                const w = ethers.Wallet.createRandom().connect(ethers.provider);
+                await setBalance(w.address, ethers.parseEther("20000"));
+                await registry.connect(w).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+                ops.push(w.address);
+            }
+            await registry.connect(carol).updateUptimeBatch(ops, Array(100).fill(10000));
+            await time.increase(30 * DAY);
+            const rc = await (await registry.connect(carol).updateUptimeBatch(ops, Array(100).fill(5000))).wait();
+            expect(rc.gasUsed, `gas ${rc.gasUsed}`).to.be.lt(8_000_000n);
+        });
+
+        it("oracle แตะได้แค่ uptime — slash / แก้เงื่อนไข / หยุดระบบ / ตั้ง oracle / โอน owner ไม่ได้", async function () {
+            const { registry, owner, alice, carol } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(owner).setUptimeOracle(carol.address);
+            const o = registry.connect(carol);
+            const denied = "OwnableUnauthorizedAccount";
+            await expect(o.slashNode(alice.address, "x")).to.be.revertedWithCustomError(registry, denied);
+            await expect(o.updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 0, 1500)).to.be.revertedWithCustomError(registry, denied);
+            await expect(o.setRewardShares(2500, 2500, 2500, 2500)).to.be.revertedWithCustomError(registry, denied);
+            await expect(o.setTierAprCap(TIER.LIGHT, 5000)).to.be.revertedWithCustomError(registry, denied);
+            await expect(o.setRegistrationPaused(true)).to.be.revertedWithCustomError(registry, denied);
+            await expect(o.setKYCContract(carol.address)).to.be.revertedWithCustomError(registry, denied);
+            await expect(o.setUptimeOracle(carol.address)).to.be.revertedWithCustomError(registry, denied);
+            await expect(o.transferOwnership(carol.address)).to.be.revertedWithCustomError(registry, denied);
+            expect((await registry.getNodeInfo(alice.address)).stakedAmount).to.equal(SENTINEL_STAKE);
+        });
+
+        it("ถอด oracle แล้วตั้ง uptime ไม่ได้อีก · คนนอกตั้งไม่ได้", async function () {
+            const { registry, owner, alice, bob, carol } = await loadFixture(deployFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(owner).setUptimeOracle(carol.address);
+            await expect(registry.connect(bob).updateUptime(alice.address, 0))
+                .to.be.revertedWith("Not owner or uptime oracle");
+            await registry.connect(owner).setUptimeOracle(ethers.ZeroAddress);
+            await expect(registry.connect(carol).updateUptime(alice.address, 0))
+                .to.be.revertedWith("Not owner or uptime oracle");
+            await expect(registry.connect(carol).updateUptimeBatch([alice.address], [0]))
+                .to.be.revertedWith("Not owner or uptime oracle");
+            await registry.connect(owner).updateUptime(alice.address, 5000);      // owner ยังทำได้
+        });
+
+        it("โอน owner ต้องให้ปลายทางกดรับก่อน — พิมพ์ที่อยู่ผิดไม่เสียสิทธิ์แอดมิน", async function () {
+            const { registry, owner, bob, carol } = await loadFixture(deployFixture);
+            await registry.connect(owner).transferOwnership(bob.address);       // สมมติพิมพ์ผิด
+            expect(await registry.owner()).to.equal(owner.address);
+            expect(await registry.pendingOwner()).to.equal(bob.address);
+            await registry.connect(owner).setRegistrationPaused(true);            // ยังเป็นแอดมินอยู่
+
+            await registry.connect(owner).transferOwnership(carol.address);      // แก้ปลายทาง
+            await expect(registry.connect(bob).acceptOwnership())
+                .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+            await registry.connect(carol).acceptOwnership();
+            expect(await registry.owner()).to.equal(carol.address);
+            await expect(registry.connect(owner).setRegistrationPaused(false))
+                .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+        });
+    });
+
+    describe("security 2026-10-22: กุญแจ owner / oracle ถูกยึด", function () {
+        const DAY = 24 * 60 * 60;
+        const REVERT_CODE = "0x60006000fd";
+        const balanceOf = (a) => ethers.provider.getBalance(a);
+
+        // ผู้โจมตีถือกุญแจ owner แล้วใช้ทุกสิทธิ์ที่สัญญามีพร้อมกัน — เงินต้นต้องเสียได้ไม่เกินเพดาน
+        // และต้องถอนออกได้เสมอ (ไม่มีทางขังถาวร ไม่มีทางดึงเงินออกไปที่ใคร)
+        it("owner ถูกยึด: แทรกเงื่อนไขสูงสุด + slash + หยุดระบบ + uptime 0 + ตัดรางวัล + KYC พัง + โอน/สละ owner → เงินต้นเสียไม่เกิน 15% ถอนได้ใน 180 วัน", async function () {
+            this.timeout(60000);
+            const { registry, owner, alice, bob, carol, funder } = await loadFixture(fundedFixture);
+            const [, , , , , attacker2] = await ethers.getSigners();
+            const regAddr = await registry.getAddress();
+
+            // bob สมัครก่อนโดนยึด (Light: slash 0% ล็อก 7 วัน) แล้วหารางวัลไว้ 30 วัน
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await time.increase(30 * DAY);
+            const bobEarned = await registry.pendingReward(bob.address);
+            expect(bobEarned).to.be.gt(0);
+
+            // ── กุญแจหลุด ──
+            await registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 180, 1500, 1500);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(carol).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+
+            await registry.connect(owner).setUptimeOracle(owner.address);
+            await registry.connect(owner).updateUptimeBatch([alice.address, bob.address, carol.address], [0, 0, 0]);
+            await registry.connect(owner).setTierAprCap(TIER.LIGHT, 1);
+            await registry.connect(owner).setRewardShares(5000, 5000, 0, 0);
+            const kyc = "0x00000000000000000000000000000000000c0de2";
+            await setCode(kyc, REVERT_CODE);
+            await registry.connect(owner).setKYCContract(kyc);
+            await registry.connect(owner).setRegistrationPaused(true);
+            await registry.connect(owner).slashNode(alice.address, "attack");
+            await registry.connect(owner).slashNode(bob.address, "attack");          // สมัครตอน 0% → ตัดไม่ได้
+            await registry.connect(owner).transferOwnership(attacker2.address);
+            await registry.connect(attacker2).acceptOwnership();
+            await registry.connect(attacker2).renounceOwnership();
+            expect(await registry.owner()).to.equal(ethers.ZeroAddress);
+
+            // ── ผู้ใช้ถอนเงิน ──
+            // alice โดน slash: ได้ส่วนที่เหลือคืนทันที ไม่ต้องรอล็อก
+            await registry.connect(alice).withdrawSlashedStake();
+            // bob: % ตอนสมัคร = 0 → เงินต้นครบ + รางวัลที่หาไว้ก่อนโดนยึดยังเคลมได้
+            expect(await registry.pendingReward(bob.address)).to.be.gte(bobEarned);
+            await registry.connect(bob).withdrawSlashedStake();
+            await registry.connect(bob).claimRewards();
+            // carol ไม่โดน slash แต่โดนล็อก 180 วัน (เพดาน) — ก่อนครบถอนไม่ได้ ครบแล้วได้เต็ม
+            await expect(registry.connect(carol).deregisterNode()).to.be.revertedWith("Still locked");
+            await time.increase(180 * DAY);
+            const before = await balanceOf(carol.address);
+            const rc = await (await registry.connect(carol).deregisterNode()).wait();
+            // เงินต้นครบ + รางวัลเศษไม่กี่วินาทีก่อนผู้โจมตีตั้ง uptime 0 (หาไว้แล้ว ต้องได้)
+            const carolGot = await balanceOf(carol.address) - before + rc.gasUsed * rc.gasPrice;
+            const carolRewards = (await registry.getNodeInfo(carol.address)).totalRewards;
+            expect(carolGot).to.equal(LIGHT_STAKE + carolRewards);
+            expect(carolRewards).to.be.lt(ethers.parseEther("1"));
+
+            expect((await registry.getNodeInfo(alice.address)).totalRewards).to.equal(0);
+            expect((await registry.getNodeInfo(bob.address)).totalRewards).to.be.gte(bobEarned);
+            expect(await registry.totalStaked()).to.equal(0);
+            // ที่ถูก slash (15% ของ alice) ยังอยู่ในสัญญาเป็นงบรางวัล — ไม่ได้ออกไปหาผู้โจมตี
+            const slashed = (LIGHT_STAKE * 1500n) / 10000n;
+            const funded = ethers.parseEther("5000000");
+            const paidOut = (await registry.getNodeInfo(bob.address)).totalRewards + carolRewards;
+            expect(await registry.totalRewardsDistributed()).to.equal(paidOut);
+            expect(await balanceOf(regAddr)).to.equal(funded + slashed - paidOut);
+            expect(await registry.availableRewardFunds()).to.equal(funded + slashed - paidOut);
+            void funder;
+        });
+
+        it("oracle ถูกยึด: ตั้ง 0 ทุกคนรัว ๆ ได้แค่หยุดรางวัลจากนี้ไป — รางวัลที่หาไว้แล้วและเงินต้นอยู่ครบ", async function () {
+            const { registry, owner, alice, bob, carol } = await loadFixture(fundedFixture);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await time.increase(60 * DAY);
+            const earnedA = await registry.pendingReward(alice.address);
+            const earnedB = await registry.pendingReward(bob.address);
+
+            await registry.connect(owner).setUptimeOracle(carol.address);
+            for (let i = 0; i < 5; i++) {
+                await registry.connect(carol).updateUptimeBatch([alice.address, bob.address, alice.address], [0, 0, 0]);
+            }
+            await time.increase(60 * DAY);
+            expect(await registry.pendingReward(alice.address)).to.be.gte(earnedA);
+            expect(await registry.pendingReward(alice.address)).to.be.lt(earnedA + ethers.parseEther("0.01"));
+            expect(await registry.pendingReward(bob.address)).to.be.gte(earnedB);
+
+            // owner ถอด oracle แล้วคืนค่าได้ · ทุกคนถอนเงินต้นครบ
+            await registry.connect(owner).setUptimeOracle(ethers.ZeroAddress);
+            await registry.connect(owner).updateUptimeBatch([alice.address, bob.address], [10000, 10000]);
+            await registry.connect(alice).deregisterNode();
+            await registry.connect(bob).deregisterNode();
+            expect(await registry.totalStaked()).to.equal(0);
+            expect((await registry.getNodeInfo(alice.address)).totalRewards).to.be.gte(earnedA);
+        });
+
+        it("oracle ถูกยึด: ตั้ง 100% ให้โหนดที่ไม่ได้รันได้แค่เพดาน APR และจ่ายจากพูลเท่านั้น — ไม่แตะเงินต้นคนอื่น", async function () {
+            const { registry, owner, alice, bob, carol, funder } = await loadFixture(deployFixture);
+            await registry.connect(owner).setUptimeOracle(carol.address);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(carol).updateUptime(alice.address, 10000);       // alice ไม่ได้รันจริง
+            await registry.connect(funder).fundRewardPool({ value: ethers.parseEther("100") });
+            await time.increase(365 * DAY);
+
+            // ได้ไม่เกิน 6% ของ 10K/ปี และจ่ายได้แค่ 100 ที่อยู่ในพูล — เงินต้นของ bob ไม่ถูกแตะ
+            expect(await registry.pendingReward(alice.address)).to.be.lte(ethers.parseEther("600.01"));
+            await registry.connect(alice).claimRewards();
+            expect((await registry.getNodeInfo(alice.address)).totalRewards).to.equal(ethers.parseEther("100"));
+            expect(await ethers.provider.getBalance(await registry.getAddress())).to.equal(LIGHT_STAKE * 2n);
+            await registry.connect(bob).deregisterNode();
+            expect((await registry.getNodeInfo(bob.address)).stakedAmount).to.equal(0);
+        });
+
+        it("batch: ที่อยู่ซ้ำ = ค่าหลังสุดชนะ · ที่อยู่ศูนย์/ไม่เคยสมัครถูกข้าม ไม่ทำให้ทั้งชุดล้ม", async function () {
+            const { registry, owner, alice, carol } = await loadFixture(deployFixture);
+            await registry.connect(owner).setUptimeOracle(carol.address);
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(carol).updateUptimeBatch(
+                [alice.address, ethers.ZeroAddress, alice.address], [10000, 10000, 2500]);
+            expect((await registry.getNodeInfo(alice.address)).uptime).to.equal(2500);
+            expect((await registry.getNodeInfo(ethers.ZeroAddress)).status).to.equal(0);
         });
     });
 

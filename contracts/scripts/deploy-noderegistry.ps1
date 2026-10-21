@@ -8,7 +8,7 @@
 # ทำให้ครบในรอบเดียว:
 #   1. ถามคีย์กระเป๋าแบบซ่อน (ไม่ขึ้นจอ ไม่เข้า history ไม่ลงไฟล์) แล้วโชว์ที่อยู่ที่จะใช้ deploy
 #   2. ดึงโทเคนทะเบียนสัญญาจากเซิร์ฟเวอร์ให้เอง (ssh) — ไม่ต้อง copy ไปมา
-#   3. ตรวจว่าเชนรับ bytecode ได้จริง (ด่าน PUSH0) + ขนาด tx ลอดลิมิต 32KB ของ RPC proxy
+#   3. ตรวจว่าเชนรับ bytecode ได้จริง (ด่าน PUSH0) + ขนาด tx ลอดลิมิต 128KB ของ RPC proxy
 #   4. deploy ValidatorKYC + NodeRegistryV2 แล้วผูกเข้าหากัน
 #   5. ลงทะเบียนที่อยู่กับเว็บ → /masternode, แอป PC 1.14.6 และ TPIX Wallet เห็นเองภายใน ~1 นาที
 #   6. ตรวจผลจากเว็บจริง
@@ -180,16 +180,22 @@ if ($deployExit -ne 0) { Say "`ndeploy ไม่สำเร็จ — อ่า
 # ─────────────────────────────────────────────────────────────────────────────
 Say ""
 Say "ขั้นที่ 5/5  ตรวจว่าเว็บรับรู้แล้ว" Yellow
+# ต้องเทียบกับที่อยู่ที่เพิ่ง deploy — ตอน redeploy ตัวเก่ายัง live อยู่ ถ้าดูแค่ registry_live
+# จะขึ้นว่า "พร้อมแล้ว" ทั้งที่เว็บยังชี้ตัวเก่า (ลงทะเบียนผ่าน ssh ล้มเงียบ ๆ ได้)
+$newRegistry = ((Get-Content .\deployed-contracts.json -Raw | ConvertFrom-Json).contracts |
+    Where-Object { $_.name -eq 'NodeRegistryV2' } | Select-Object -First 1).address
+Say "  NodeRegistryV2 ที่เพิ่ง deploy: $newRegistry" Cyan
 $ok = $false
 for ($i = 0; $i -lt 10 -and -not $ok; $i++) {
     try {
         $cfg = Invoke-RestMethod -Uri "$siteUrl/api/v1/masternode/config" -TimeoutSec 20
-        if ($cfg.data.registry_live) {
+        $siteRegistry = [string]$cfg.data.registry_address
+        if ($cfg.data.registry_live -and $newRegistry -and $siteRegistry.ToLower() -eq $newRegistry.ToLower()) {
             $ok = $true
-            Say "  เว็บพร้อมแล้ว — NodeRegistry $($cfg.data.registry_address)" Green
+            Say "  เว็บพร้อมแล้ว — NodeRegistry $siteRegistry" Green
             if ($cfg.data.kyc_contract) { Say "  ValidatorKYC $($cfg.data.kyc_contract)" Green }
         } else {
-            Say "  ยังไม่เห็น (รอบ $($i + 1)/10) — รอ 30 วินาที ..." DarkGray
+            Say "  เว็บยังชี้ $siteRegistry (รอบ $($i + 1)/10) — รอ 30 วินาที ..." DarkGray
             Start-Sleep -Seconds 30
         }
     } catch {
@@ -198,8 +204,9 @@ for ($i = 0; $i -lt 10 -and -not $ok; $i++) {
     }
 }
 if (-not $ok) {
-    Say "  เว็บยังไม่เห็นสัญญา — ถ้าลงทะเบียนอัตโนมัติไม่ผ่าน ให้เอาบรรทัด .env ที่พิมพ์ไว้ด้านบนไปใส่" DarkYellow
-    Say "  แล้วรัน: ssh $sshHost `"cd $appPath && php artisan config:cache && php artisan cache:clear`"" DarkYellow
+    Say "  เว็บยังไม่ชี้สัญญาใหม่ — ลงทะเบียนอัตโนมัติไม่ผ่าน (มักเป็น ssh ดึงโทเคนไม่ได้)" DarkYellow
+    Say "  ⚠️ แก้ .env ไม่ช่วย: ที่อยู่ในทะเบียนสัญญาบนเว็บชนะ .env เสมอ" DarkYellow
+    Say "  ส่งที่อยู่ NodeRegistryV2 + ValidatorKYC ข้างบนให้ Claude ลงทะเบียนจากฝั่งเซิร์ฟเวอร์ (POST /api/infra/contracts, force)" DarkYellow
 }
 
 Say ""

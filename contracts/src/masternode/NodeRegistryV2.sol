@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
@@ -57,11 +57,24 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *  set uptime (multiplier on future rewards), slash a node (capped at the slash %
  *  in force when that node registered; slashed TPIX stays in the contract as
  *  reward budget), change tier terms for future registrations (min stake only
- *  while the tier has no active nodes; lock <= 365 days), set APR caps
- *  (<= 50%) and the KYC contract.
+ *  while the tier has no active nodes; lock <= MAX_LOCK_DAYS, slash <= MAX_SLASH_BPS),
+ *  set APR caps (<= 50%), the KYC contract and the uptime oracle.
+ *  Ownership moves in two steps (Ownable2Step): the new owner must accept.
+ *
+ *  TERMS ARE CAPPED, NOT JUST "NOT RETROACTIVE" — registerNode takes no
+ *  "max lock / max slash" argument and the owner runs the IBFT validators, so it
+ *  can put updateTierConfig ahead of a user's registerNode in the same block. The
+ *  node then registers under the new terms (they are snapshotted at registration).
+ *  The hard caps bound what that can do to a newcomer's principal.
+ *
+ *  UPTIME ORACLE — a hot key the server can hold to report whether nodes really
+ *  run. It can only set uptime (a multiplier on FUTURE rewards; never principal,
+ *  never what is already earned). While an oracle is set, new nodes start at 0%
+ *  uptime and earn nothing until the oracle reports them running; with no oracle
+ *  they start at 100% (plain staking).
  * ─────────────────────────────────────────────────────────────────────────
  */
-contract NodeRegistryV2 is Ownable, ReentrancyGuard {
+contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
 
     // ============================================================
     //  Enums & Structs
@@ -104,6 +117,11 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     uint256 private constant MAX_ENDPOINT_LEN = 100;
     uint256 private constant YEAR = 365 days;
     uint256 public constant MAX_APR_CAP_BPS = 5000;   // เพดานของเพดาน — ตั้ง APR เกิน 50% ไม่ได้
+    // เพดานเงื่อนไขที่ owner แทรกก่อน tx สมัครได้ (ดูหัวไฟล์) = ค่าสูงสุดที่ใช้จริง (ชั้น Validator)
+    uint256 public constant MAX_SLASH_BPS = 1500;
+    uint256 public constant MAX_LOCK_DAYS = 180;
+    // uptime ทีละชุด — 100 โหนดวัดจริงกรณีแพงสุดราว 4.6M จากเพดานบล็อก 10M
+    uint256 public constant MAX_UPTIME_BATCH = 100;
 
     // Tier configurations
     mapping(NodeTier => TierConfig) public tiers;
@@ -150,6 +168,9 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     // ย้อนไปปรับคนที่สมัครไว้ก่อนแรงกว่าที่เขายอมรับไว้ไม่ได้
     mapping(address => uint256) public nodeSlashCapBps;
 
+    // กุญแจที่ตั้งได้แค่ uptime — ให้เซิร์ฟเวอร์รายงานว่าโหนดรันจริงโดยไม่ต้องถือกุญแจ owner
+    address public uptimeOracle;
+
     // ============================================================
     //  Events
     // ============================================================
@@ -166,6 +187,15 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     event KYCContractUpdated(address indexed kycContract);
     event RegistrationPaused(bool paused);
     event TierAprCapUpdated(NodeTier tier, uint256 aprBps);
+    event UptimeOracleUpdated(address indexed oracle);
+
+    modifier onlyOwnerOrUptimeOracle() {
+        require(
+            msg.sender == owner() || (uptimeOracle != address(0) && msg.sender == uptimeOracle),
+            "Not owner or uptime oracle"
+        );
+        _;
+    }
 
     // ============================================================
     //  Constructor
@@ -396,7 +426,8 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
             unlockAt: block.timestamp + (tc.lockDays * 1 days),
             lastRewardAt: block.timestamp,
             totalRewards: 0,
-            uptime: 10000,  // Start at 100%
+            // มี oracle = ต้องพิสูจน์ว่ารันเครื่องจริงก่อนถึงได้รางวัล · ไม่มี = staking ล้วน 100%
+            uptime: uptimeOracle == address(0) ? 10000 : 0,
             nodeId: nodeId,
             endpoint: _endpoint,
             rewardDebt: accRewardPerNode[_tier],  // starts earning from now, not retroactively
@@ -530,17 +561,38 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     // ============================================================
 
     /**
-     * @notice Update node uptime score (called by monitoring oracle)
+     * @notice Update node uptime score (owner or the uptime oracle)
      */
-    function updateUptime(address _operator, uint256 _uptime) external onlyOwner nonReentrant {
+    function updateUptime(address _operator, uint256 _uptime) external onlyOwnerOrUptimeOracle nonReentrant {
         require(_uptime <= 10000, "Max 10000");
         require(_operator != address(0), "Zero address");
-        MasterNode storage node = nodes[_operator];
-        require(node.status == NodeStatus.Active, "Not active");
+        require(nodes[_operator].status == NodeStatus.Active, "Not active");
+        _setUptime(_operator, _uptime);
+    }
 
+    /**
+     * @notice Update many nodes in one tx. Nodes that are no longer active (exited or
+     *         slashed since the oracle read the list) are skipped, not reverted on —
+     *         one stale entry must not stop everyone else's update.
+     */
+    function updateUptimeBatch(address[] calldata _operators, uint256[] calldata _uptimes)
+        external
+        onlyOwnerOrUptimeOracle
+        nonReentrant
+    {
+        require(_operators.length == _uptimes.length, "Length mismatch");
+        require(_operators.length <= MAX_UPTIME_BATCH, "Batch too large");
+        for (uint256 i = 0; i < _operators.length; i++) {
+            require(_uptimes[i] <= 10000, "Max 10000");
+            if (nodes[_operators[i]].status != NodeStatus.Active) continue;
+            _setUptime(_operators[i], _uptimes[i]);
+        }
+    }
+
+    function _setUptime(address _operator, uint256 _uptime) internal {
         // Lock in earnings at the OLD uptime before changing it
         _settle(_operator);
-        node.uptime = _uptime;
+        nodes[_operator].uptime = _uptime;
         emit UptimeUpdated(_operator, _uptime);
     }
 
@@ -724,11 +776,11 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
         uint256 _slashPercent,
         uint256 _rewardShare
     ) external onlyOwner {
-        require(_slashPercent <= 5000, "Max 50% slash");
+        // ผู้สมัครกำหนด "ล็อก/slash ได้ไม่เกิน" เองไม่ได้ และ owner รัน validator เองจึงแทรก tx ก่อนได้
+        // → เพดานคือสิ่งเดียวที่จำกัดว่าคนสมัครใหม่จะโดนขัง/ตัดเงินต้นได้แค่ไหน
+        require(_slashPercent <= MAX_SLASH_BPS, "Max 15% slash");
         require(_minStake > 0, "Min stake must be > 0");
-        // ผู้สมัครกำหนด "ล็อกได้ไม่เกิน" เองไม่ได้ และ owner รัน validator เองจึงแทรก tx ก่อนได้
-        // → ไม่มีเพดาน = ขังเงินต้นคนสมัครใหม่ได้เป็นร้อยปี
-        require(_lockDays <= 365, "Max 365-day lock");
+        require(_lockDays <= MAX_LOCK_DAYS, "Max 180-day lock");
 
         // Reward shares are about to change — settle every tier at the old split
         _syncAllTiers();
@@ -805,6 +857,14 @@ contract NodeRegistryV2 is Ownable, ReentrancyGuard {
     function setKYCContract(address _kycContract) external onlyOwner {
         kycContract = _kycContract;
         emit KYCContractUpdated(_kycContract);
+    }
+
+    /**
+     * @notice Set (or clear with address(0)) the key allowed to report uptime.
+     */
+    function setUptimeOracle(address _oracle) external onlyOwner {
+        uptimeOracle = _oracle;
+        emit UptimeOracleUpdated(_oracle);
     }
 
     /**

@@ -413,13 +413,11 @@ class MasterNodeService {
     // TPIX-Coin 026f5f9 — ตัวที่ deploy จริง 0x9c3662972921705FeFa9E9bF0d91190d7B514A2B
     // (ตรวจซ้ำจาก eth_getCode บน rpc1.tpix.online แล้ว 2026-10-11)
     '0x127979541deea4d4cd468271bea206277d593660634fc78197c5354782c76ce3',
-    // TPIX-Coin 7e37dbd — ห้ามแก้ minStake ของระดับที่มีโหนดอยู่ (ถ้า redeploy ตัวนี้)
-    '0x8e14ff731f16f502264211c48cc47595f02a4016724f69b67d679c42758765a0',
-    // TPIX-Coin 66066d8 (efa20cb) — ล็อกได้ไม่เกิน 365 วัน + ผ่านออดิทเชิงลึก/invariant fuzz 2026-10-11
-    // ตัวที่จะ redeploy แทน 0x9c36…4A2B
-    '0x7a03e6425a6779dfa0f60ba80ee569635f0618a22906a631dda2abdf28e696bf',
-    // ตัวเดียวกันแต่ compile จากไฟล์ .sol แบบ LF (TPIX-Coin e3eb329 บังคับ *.sol eol=lf) — clone ใหม่ได้ตัวนี้
-    '0x35a1f6779f2e6941581c4d84c8def53cd42544cdf49fc0a2b9cffb60471329f6',
+    // TPIX-Coin fix/noderegistry-slash-oracle-2step (2026-10-22) — ตัวที่จะ redeploy แทน 0x9c36…4A2B
+    // เพดาน slash 15% / ล็อก 180 วัน (owner แทรก tx ก่อนสมัครได้) · uptime oracle แยกจาก owner ·
+    // Ownable2Step · build จาก .sol แบบ LF — เทสต์ฝั่งสัญญาเทียบ hash นี้กับที่ compile ได้ทุกรอบ
+    // (ตัด 7e37dbd / 66066d8 ออกแล้ว — สองตัวนั้นยังโดนแทรก slash 50% ก่อนสมัครได้ และจะไม่ถูก deploy)
+    '0x1c49f5e7661539977d5abfef5a268b66bcaf812735b67b20328af002a70816fb',
   };
 
   /// ที่อยู่ที่ตรวจ bytecode ผ่านแล้วในรอบนี้ (ตัวเล็ก) — โค้ดของสัญญา CREATE ที่ไม่มี selfdestruct

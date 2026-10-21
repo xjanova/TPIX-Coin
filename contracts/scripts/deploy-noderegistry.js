@@ -40,9 +40,9 @@ const REGISTRY_PATH = path.join(__dirname, "..", "deployed-contracts.json");
 // ตั้ง DEPLOY_KYC=1 ถ้าต้องการ deploy ValidatorKYC แล้วผูกเข้ากับ registry ด้วย
 const DEPLOY_KYC = process.env.DEPLOY_KYC === "1";
 
-// rpc1.tpix.online อยู่หลัง nginx ที่ตั้ง client_max_body_size 32k
-// (TPIX-Coin/infrastructure/nginx-rpc.conf) — tx deploy ที่ใหญ่กว่านี้โดน 413 ก่อนถึงเชน
-const RPC_BODY_LIMIT = 32 * 1024;
+// rpc1.tpix.online อยู่หลัง nginx ที่ตั้ง client_max_body_size 128k (ขยายจาก 32k เมื่อ 2026-10-22)
+// (TPIX-Coin/infrastructure/single-host/nginx-rpc.conf) — tx deploy ที่ใหญ่กว่านี้โดน 413 ก่อนถึงเชน
+const RPC_BODY_LIMIT = 128 * 1024;
 
 const TIER_NAMES = ["Guardian", "Sentinel", "Light", "Validator"];
 
