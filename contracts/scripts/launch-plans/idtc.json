@@ -18,5 +18,12 @@
     "priceUsd": "0.0000015",
     "_priceNote": "≈ 0.00005 บาท · จ่ายด้วย USDT บนเชน TPIX (USDT_TPIX, 6 ทศนิยม) → 1 USDT = 666,666.66… IDTC",
     "payToken": "USDT_TPIX"
+  },
+  "pools": {
+    "_doc": "ไวท์เปเปอร์ หัวข้อสภาพคล่อง: เปิดพูลละประมาณ 10 USDT ต่อฝั่งที่ราคา presale แล้วล็อก LP อย่างน้อย 12 เดือน · อ่านโดย scripts/launch-pools.js",
+    "usdt": "10",
+    "tpix": "100",
+    "_tpixNote": "100 TPIX ≈ 10 USD ที่ TPIX $0.10 — ฝั่ง IDTC คิดจากราคา TPIX ในพูล WTPIX/USDT ตอนรัน (หรือ TPIX_USD)",
+    "lpLock": { "label": "ล็อก 12 เดือน", "cliffPeriods": 12, "releasePeriods": 1 }
   }
 }
