@@ -1,0 +1,66 @@
+#!/bin/bash
+# ============================================================
+# tpix-node-peers — รายงานรายชื่อ peer ที่ต่อ bootnode สาธารณะอยู่ ให้ tpix.online ทุก 1 นาที
+#
+# นี่คือหลักฐานชั้นเครือข่ายของ uptime oracle: heartbeat จากแอปบอกได้แค่ว่า "รู้หัวเชน"
+# (อ่านจาก RPC สาธารณะก็ได้) แต่การที่ bootnode เห็น peer ID นั้นต่ออยู่ ต้องมีโหนดรันจริง
+#
+# ติดตั้ง: /usr/local/sbin/tpix-node-peers (0755 root) + /etc/cron.d/tpix-node-peers
+# ค่าตั้ง: /etc/tpix-node-peers.env (0600 root)
+#   TPIX_NODE_PEERS_TOKEN=<ค่าเดียวกับ TPIX_NODE_PEERS_TOKEN ใน .env ของเว็บ>   (จำเป็น)
+#   TPIX_NODE_PEERS_URL=https://tpix.online/api/infra/node-peers                 (ค่าเริ่มต้น)
+#   TPIX_BOOTNODE_CONTAINER=tpix-bootnode                                         (ค่าเริ่มต้น)
+#
+# กติกา: bootnode ไม่รัน / ถามไม่ได้ = **ไม่ส่งอะไรเลย** (ไม่ส่งรายการว่าง)
+#   เว็บจะเห็นว่ารายงานขาด แล้วไม่ลด uptime ของใครในชั่วโมงนั้น — ความผิดฝั่งเรา ไม่ใช่ของผู้รันโหนด
+#   ส่งรายการว่าง = "bootnode ทำงานแต่ไม่มีใครต่อ" ซึ่งทำให้ทุกคนได้ 0 — ต้องเป็นความจริงเท่านั้น
+#
+# script นี้อ่านอย่างเดียว ไม่ restart อะไร ไม่แตะ validator · ไม่ต้องถือ /run/tpix-chain-maint.lock
+# ============================================================
+set -uo pipefail
+
+ENV_FILE="${TPIX_NODE_PEERS_ENV:-/etc/tpix-node-peers.env}"
+if [ -f "$ENV_FILE" ]; then
+    # shellcheck disable=SC1090
+    set -a; . "$ENV_FILE"; set +a
+fi
+
+URL="${TPIX_NODE_PEERS_URL:-https://tpix.online/api/infra/node-peers}"
+TOKEN="${TPIX_NODE_PEERS_TOKEN:-}"
+CONTAINER="${TPIX_BOOTNODE_CONTAINER:-tpix-bootnode}"
+SOURCE="${TPIX_NODE_PEERS_SOURCE:-$CONTAINER}"
+LOG="${TPIX_NODE_PEERS_LOG:-/var/log/tpix-node-peers.log}"
+DOCKER="${DOCKER:-docker}"
+
+log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
+
+[ -n "$TOKEN" ] || { log "TPIX_NODE_PEERS_TOKEN not set — nothing sent"; exit 0; }
+[[ "$SOURCE" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || { log "bad source name"; exit 0; }
+
+# สถานะ container — ไม่รัน = ไม่ส่ง (ดูกติกาด้านบน)
+running="$($DOCKER inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)"
+[ "$running" = "true" ] || exit 0
+
+if ! out="$(timeout 20 $DOCKER exec "$CONTAINER" polygon-edge peers list --grpc-address 127.0.0.1:10000 2>&1)"; then
+    log "peers list failed: $(echo "$out" | tr '\n' ' ' | cut -c1-200)"
+    exit 0
+fi
+# คำตอบต้องเป็นรายการจริง ("[PEERS LIST]" มาเสมอ แม้ไม่มีใครต่อ) — ข้อความ error แปลก ๆ ห้ามแปลงเป็นรายการว่าง
+grep -q 'PEERS LIST\|"peers"' <<<"$out" || { log "unexpected peers list output"; exit 0; }
+
+# peer ID เป็น base58 (ไม่มีอักขระที่ต้อง escape ใน JSON) — ประกอบ JSON เองได้ปลอดภัย
+peers="$(grep -oE '16Uiu2[1-9A-HJ-NP-Za-km-z]{40,60}' <<<"$out" | sort -u | sed 's/.*/"&"/' | paste -sd, -)"
+body="{\"source\":\"${SOURCE}\",\"peers\":[${peers}]}"
+
+# token ผ่านไฟล์ header (0600) ไม่ใช่ argv — argv โผล่ใน `ps` ให้ผู้ใช้อื่นบนเครื่องเห็น
+umask 077
+hdr="$(mktemp)"
+trap 'rm -f "$hdr"' EXIT
+printf 'Authorization: Bearer %s\n' "$TOKEN" > "$hdr"
+
+# ⚠️ ต้องมี User-Agent เสมอ — Cloudflare WAF ตอบ 403 ให้ request ที่ไม่มี UA
+code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' -A 'tpix-node-peers/1.0' \
+    -H @"$hdr" -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    --data-binary "$body" "$URL" 2>&1)" || code="curl-failed:$code"
+[ "$code" = "200" ] || log "report failed: HTTP $code"
+exit 0

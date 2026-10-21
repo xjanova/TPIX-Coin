@@ -1,0 +1,62 @@
+# TPIX Chain — public bootnode / sentry (NON-validator)
+#
+# ไฟล์ต้นฉบับ — สำเนาที่ใช้จริงอยู่ที่ /opt/tpix-bootnode/docker-compose.yml
+# ออกแบบ + เหตุผลทุกบรรทัด: docs/MASTERNODE_PUBLIC_BOOTNODE.md · ขั้นตอนทำจริง: ./RUNBOOK.md
+#
+# แยก compose project โดยตั้งใจ: watchdog สั่ง `docker compose up -d` กับ project tpix (/opt/tpix)
+# ต้องไม่มีวันแตะ container นี้ — `docker stop tpix-bootnode` จึงเป็นสวิตช์ฉุกเฉินที่เชื่อถือได้
+# ห้ามเพิ่ม service นี้เข้า /opt/tpix/docker-compose.yml หรือรายการ VALIDATORS ใด ๆ
+# ห้ามคัดลอก consensus/ หรือ libp2p/ จาก validator มาใส่ ./data — กุญแจของตัวนี้ต้องเป็นของมันเอง
+#
+# --max-inbound-peers 150 (ข้อเสนอเดิม 48): ทุกมาสเตอร์โหนดที่จะได้รางวัลต้องต่อ bootnode นี้
+# ค้างไว้ตลอด (uptime oracle นับจากรายชื่อ peer ของตัวนี้) — เกิน ~150 โหนดให้เพิ่ม bootnode ตัวที่สอง
+# กฎ DOCKER-USER (tpix-p2p-firewall) ยังจำกัดรวม 256 / ต่อ IP 8 เหมือนเดิม
+name: tpix-bootnode
+
+services:
+  tpix-bootnode:
+    image: 0xpolygon/polygon-edge:0.9.0
+    container_name: tpix-bootnode
+    restart: unless-stopped          # สั่ง stop เอง (สวิตช์ฉุกเฉิน) แล้วรีบูตก็ยังหยุดอยู่
+    stop_grace_period: 30s
+    command: >
+      server --data-dir /data --chain /genesis.json
+      --libp2p 0.0.0.0:30301 --nat 123.253.62.252
+      --grpc-address 127.0.0.1:10000 --jsonrpc 0.0.0.0:8545
+      --seal=false --price-limit 0 --max-slots 4096 --max-enqueued 16
+      --max-inbound-peers 150 --max-outbound-peers 8
+      --log-level INFO
+    ports:
+      # STAGE 1 (sync ครั้งแรก ยังไม่เปิดสาธารณะ): "127.0.0.1:30301:30301/tcp"
+      # STAGE 2 (สาธารณะ):                        "0.0.0.0:30301:30301/tcp"
+      - "127.0.0.1:30301:30301/tcp"
+      - "127.0.0.1:8549:8545/tcp"    # JSON-RPC: เฉพาะ loopback ของโฮสต์ ไว้ตรวจ
+    volumes:
+      - /opt/tpix-bootnode/data:/data
+      - /opt/tpix/chain/genesis.json:/genesis.json:ro   # ไฟล์เดียวกับ validator (bootnodes /dns4 = validator)
+    environment:
+      GOGC: "50"
+      GOMEMLIMIT: "768MiB"
+      GOMAXPROCS: "2"
+    cpus: 1.5
+    mem_limit: 1g
+    pids_limit: 256
+    ulimits:
+      nofile: { soft: 8192, hard: 8192 }
+    cap_drop: [ALL]                  # ถ้าเขียน /data ไม่ได้ (EPERM) ให้ลบบรรทัดนี้ก่อน
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "polygon-edge status --grpc-address 127.0.0.1:10000 > /dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+    networks: [tpix]
+
+networks:
+  tpix:
+    name: tpix_tpix
+    external: true

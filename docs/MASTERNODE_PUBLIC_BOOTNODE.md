@@ -1,6 +1,10 @@
 # Public bootnode so community master nodes can sync TPIX Chain
 
 > **สถานะ: ข้อเสนอ (proposal) — ยังไม่ได้ทำอะไรบนเซิร์ฟเวอร์เลย**
+> **2026-10-22:** ไฟล์จริงอยู่ที่ [`infrastructure/single-host/bootnode/`](../infrastructure/single-host/bootnode/) แล้ว
+> ทำตาม [`RUNBOOK.md`](../infrastructure/single-host/bootnode/RUNBOOK.md) — ต่างจากข้อเสนอนี้แค่ `--max-inbound-peers 150`
+> และเพิ่ม cron `tpix-node-peers` ที่ส่งรายชื่อ peer ให้ uptime oracle ของ tpix.online
+> (แอป: ข้อ §3.5 ทุกข้อแก้ไปแล้วใน TPIX-Masternode — ไม่มี `--bootnode`, มี `--insecure`, `--seal=false`, `genesis.run.json`)
 > Observed read-only on `tpixserver` (123.253.62.252) on 2026-10-11, 04:42–05:00 UTC.
 > Nothing was restarted, written or opened. Every server command in this file is for the owner to run.
 

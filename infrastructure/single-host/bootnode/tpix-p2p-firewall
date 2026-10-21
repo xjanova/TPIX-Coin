@@ -1,0 +1,54 @@
+#!/bin/bash
+# DOCKER-USER rules for the TPIX public bootnode. usage: tpix-p2p-firewall apply|remove|status
+# ติดตั้งที่ /usr/local/sbin/tpix-p2p-firewall (0755 root) — เหตุผลของแต่ละกฎ: docs/MASTERNODE_PUBLIC_BOOTNODE.md §3.3
+# พอร์ตที่ docker publish ข้าม ufw ทั้งหมด (DNAT ใน PREROUTING) — กฎจริงต้องอยู่ใน DOCKER-USER
+# ทุกกฎมี comment "tpix-p2p-*" — remove ลบตาม comment (ไม่ต้องเก็บ state)
+set -euo pipefail
+WAN_IF="${WAN_IF:-ens33}"
+P2P_PORT="${P2P_PORT:-30301}"
+NET_NAME="${NET_NAME:-tpix_tpix}"
+CH=DOCKER-USER
+
+subnet_of_net() {   # subnet ของเครือข่ายเชน (172.18.0.0/16 ตอนตรวจ) — ตอนบูตต้องรอ dockerd ก่อน
+  local s i
+  for i in $(seq 1 30); do
+    s="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$NET_NAME" 2>/dev/null || true)"
+    [[ "$s" =~ ^[0-9.]+/[0-9]+$ ]] && { echo "$s"; return 0; }
+    sleep 2
+  done
+  echo "tpix-p2p-firewall: network $NET_NAME not found — rules NOT applied" >&2; return 1
+}
+
+specs() {
+  local sn="$1"
+  # 1) เพดานรวม: การเชื่อมต่อ P2P ขาเข้าพร้อมกันจากทุกแหล่ง
+  echo "-i $WAN_IF -p tcp --dport $P2P_PORT --syn -m connlimit --connlimit-above 256 --connlimit-mask 0 -m comment --comment tpix-p2p-global -j REJECT --reject-with tcp-reset"
+  # 2) ต่อ IP — 8 ไม่ใช่ 2-3: เน็ตบ้าน/มือถือไทยใช้ CGNAT (หลายคน IP เดียว)
+  echo "-i $WAN_IF -p tcp --dport $P2P_PORT --syn -m connlimit --connlimit-above 8 --connlimit-mask 32 -m comment --comment tpix-p2p-perip -j REJECT --reject-with tcp-reset"
+  # 3) อัตราเปิดการเชื่อมต่อใหม่ต่อ IP (โหนดต่อ bootnode ใหม่ราวทุก 60 วิ — เผื่อไว้มาก)
+  echo "-i $WAN_IF -p tcp --dport $P2P_PORT --syn -m hashlimit --hashlimit-name tpix_p2p --hashlimit-mode srcip --hashlimit-above 20/minute --hashlimit-burst 40 -m comment --comment tpix-p2p-rate -j DROP"
+  # 4) container ในเครือข่ายเชนเปิด TCP ใหม่ออกเน็ตได้แค่ DNS/HTTP(S):
+  #    - validator ไม่ dial โหนดชุมชนตรง (bootnode เป็นด่านเดียว)
+  #    - slot ขาออกของ bootnode เหลือไว้ให้ validator (RST = dial ล้มทันที)
+  #    blockscout ใช้แค่ 443/80 (โหลด compiler ฯลฯ) — อนุญาต
+  echo "-s $sn ! -d $sn -o $WAN_IF -p tcp --syn -m multiport ! --dports 53,80,443 -m comment --comment tpix-p2p-noegress -j REJECT --reject-with tcp-reset"
+}
+
+case "${1:-status}" in
+  apply)
+    sn="$(subnet_of_net)"
+    while IFS= read -r r; do
+      # shellcheck disable=SC2086
+      iptables -C $CH $r 2>/dev/null || iptables -I $CH 1 $r
+    done < <(specs "$sn")
+    iptables -L $CH -v -n --line-numbers ;;
+  remove)
+    { iptables -S $CH | grep -- '--comment tpix-p2p-' || true; } | sed 's/^-A /-D /' | while read -r r; do
+      # shellcheck disable=SC2086
+      iptables $r
+    done
+    iptables -L $CH -v -n --line-numbers ;;
+  status)
+    iptables -L $CH -v -n --line-numbers ;;
+  *) echo "usage: $0 apply|remove|status" >&2; exit 2 ;;
+esac

@@ -1,0 +1,5 @@
+# /etc/cron.d/tpix-node-peers — รายชื่อ peer ของ bootnode → tpix.online ทุกนาที (หลักฐาน uptime oracle)
+# อ่านอย่างเดียว ไม่แตะ validator · ดู infrastructure/single-host/bootnode/RUNBOOK.md
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+* * * * * root /usr/local/sbin/tpix-node-peers
