@@ -216,9 +216,11 @@ cmd_vote() {
             if [ "$peers" -gt 0 ]; then
                 log "โหนดใหม่เป็นเพียร์กับ validator ในเครื่องนี้ $peers ตัว"
             elif [ "$hub_peers" -gt 0 ]; then
-                # validator หลักอยู่หลัง docker bridge — โหนดภายนอกอาจต่อได้แค่ผ่าน bootnode สาธารณะ
-                # ข้อความ IBFT เดินผ่าน gossip ได้ แต่ยืนยันไม่ได้จนกว่าจะเห็นมันเซ็นบล็อกจริง
-                warn "โหนดใหม่ต่ออยู่กับ ${PEER_HUBS[*]} แต่ยังไม่เป็นเพียร์ตรงกับ validator — หลังโหวตต้องเห็น 'เซ็น %' ขึ้นใน 5 นาที ไม่งั้นถอดออก"
+                # ทางปกติของโหนดภายนอก: libp2p ของ validator ไม่เปิดออกเน็ต และ tpix-p2p-firewall
+                # (bootnode/ rule 4) ห้าม validator โทรออกหาโหนดภายนอก → เห็นกันผ่าน tpix-bootnode เท่านั้น
+                # ข้อความ IBFT ไปถึงด้วย gossip ผ่าน bootnode (เพิ่ม 1 hop) — bootnode ดับ = validator ตัวนี้หลุด
+                log "โหนดใหม่ต่ออยู่กับ ${PEER_HUBS[*]} (ทางปกติของโหนดภายนอก — ข้อความ IBFT ผ่าน bootnode)"
+                warn "bootnode เป็นทางเดียวของ validator ตัวนี้ — หลังโหวตต้องเห็น 'เซ็น %' ขึ้นใน 5 นาที (ดู runbook ข้อทางตรงจำกัด IP)"
             else
                 [ "$skip_peer" -eq 1 ] || die "โหนด $node_id ไม่ได้ต่อกับ validator หรือ bootnode ในเครื่องนี้ — โหวตเข้าแล้วจะเซ็นอะไรไม่ได้ (ตรวจไฟร์วอลล์/genesis ของโหนดนั้น)"
                 warn "--skip-peer-check: ข้ามการตรวจเพียร์ตามที่สั่ง"

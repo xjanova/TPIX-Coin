@@ -18,8 +18,10 @@
 หลังจากนั้นตลอดอายุ: ตัวเฝ้าดู `validators:seal-monitor` (เว็บ) นับรายตัวว่าใครเสนอ/เซ็นรับรองบล็อก
 ถอน stake / ถูก slash / ดับนาน → **เจ้าของต้องโหวตถอดเอง** (ไม่มีอะไรถอดให้อัตโนมัติ)
 
-ขั้น 5 ขึ้นกับ public bootnode ([MASTERNODE_PUBLIC_BOOTNODE.md](MASTERNODE_PUBLIC_BOOTNODE.md)) — ตอนนี้ libp2p
-ของ validator ไม่ได้เปิดออกเน็ต โหนดภายนอกจึงยังซิงก์ไม่ได้ ต้องเสร็จก่อนโหวตตัวแรกเข้า
+ขั้น 5 ขึ้นกับ public bootnode `tpix-bootnode` (123.253.62.252:30301 — `infrastructure/single-host/bootnode/`,
+[MASTERNODE_PUBLIC_BOOTNODE.md](MASTERNODE_PUBLIC_BOOTNODE.md)) ต้องขึ้นก่อนโหวตตัวแรกเข้า
+libp2p ของ validator หลักไม่เปิดออกเน็ต และ `tpix-p2p-firewall` (rule 4) ห้าม validator โทรออกหาโหนดภายนอก
+→ validator ภายนอกเห็นเครือข่าย **ผ่าน tpix-bootnode เท่านั้น** ข้อความ IBFT ไปถึง validator หลักด้วย gossip ผ่าน bootnode (เพิ่ม 1 hop)
 
 ---
 
@@ -39,6 +41,10 @@ polygon-edge 0.9 (`OptimalQuorumSize`): ปิดบล็อกต้องเ�
 - validator ที่ดับยังได้คิวเสนอบล็อก ทุกครั้งที่ถึงคิวบล็อกช้า 10+ วินาที (เหตุ 5 ส.ค. 2026)
 - คะแนนโหวตที่ยังไม่ครบถูกล้างทุก epoch (100,000 บล็อก ≈ 55 ชม.)
 - ช่องสั่งโหวต (gRPC) ไม่มีการยืนยันตัวตน — ต้องอยู่แค่ในเครื่องเชน ห้ามเปิดออกเน็ต
+- **bootnode เป็นทางเดียว** ของ validator ภายนอก: bootnode ดับ/รีสตาร์ท = validator ภายนอกทุกตัวหลุดพร้อมกัน
+  ถ้ามี validator ภายนอกเท่ากับหรือมากกว่าค่าที่ทนได้ การรีสตาร์ท bootnode ครั้งเดียวทำเชนหยุดได้ — ก่อนถึงจุดนั้นให้เปิดทางตรง:
+  publish 10001 ของ validator หลักเฉพาะ IP ของ validator ภายนอก (DOCKER-USER allow ตาม source IP) +
+  ยกเว้น rule 4 ของ tpix-p2p-firewall ให้ IP นั้น (หัว `single-host/docker-compose.yml` เขียนแผนนี้ไว้แล้ว)
 
 ---
 
@@ -127,7 +133,7 @@ sudo bash infrastructure/single-host/validator-vote.sh status   # ชุด + �
 | อาการ | สาเหตุ / ทางแก้ |
 |---|---|
 | `ไม่ได้ต่อกับ validator หรือ bootnode` | โหนดใหม่ต่อเครือข่ายไม่ได้ (ไฟร์วอลล์/genesis) — ห้ามข้ามด้วย `--skip-peer-check` ถ้าไม่แน่ใจ |
-| `ต่ออยู่กับ tpix-bootnode แต่ยังไม่เป็นเพียร์ตรงกับ validator` | validator หลักอยู่หลัง docker bridge โหนดภายนอกอาจเห็นแค่ bootnode — ไปต่อได้ แต่หลังโหวตต้องเห็น "เซ็น %" ขึ้นใน 5 นาที |
+| `ต่ออยู่กับ tpix-bootnode (ทางปกติของโหนดภายนอก …)` | ปกติ — ตรวจเองได้ด้วย `sudo docker exec tpix-bootnode polygon-edge peers list --grpc-address 127.0.0.1:10000` · หลังโหวตต้องเห็น "เซ็น %" ขึ้นใน 5 นาที |
 | โหวตแล้วไม่เข้าชุด | ดู `status` ว่า candidates ยังค้างไหม · ครบเสียงเมื่อ validator แต่ละตัวได้คิวเสนอ · ข้าม epoch = ถูกล้าง โหวตใหม่ |
 | `เชนไม่เดิน` | ห้ามเปลี่ยนชุดตอนเชนค้าง — ดู chain-watchdog / REGENESIS-RUNBOOK ก่อน |
 | ตัวใหม่เซ็น 0% | BLS ที่ผูกไม่ตรงกับกุญแจจริง หรือโหนดหลุด — ถอด แล้วให้ผู้สมัครผูกใหม่ |

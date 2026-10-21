@@ -152,7 +152,8 @@ echo tpix-bootnode >> "$T/running"
 echo "{\"peers\":[\"$NEW_NODE\"]}" > "$T/peers-tpix-bootnode.json"
 run auth --addr "$NEW" --bls "$NEW_BLS" --node-id "$NEW_NODE"
 check "a node reachable only through the bootnode passes the dry-run" code 0
-check "and is warned to watch the seal monitor" has "แต่ยังไม่เป็นเพียร์ตรงกับ validator"
+check "it is reported as the normal external path" has "ต่ออยู่กับ tpix-bootnode (ทางปกติของโหนดภายนอก"
+check "and is warned that the bootnode is its only path" has "bootnode เป็นทางเดียวของ validator ตัวนี้"
 TPIX_PEER_HUBS="" run auth --addr "$NEW" --bls "$NEW_BLS" --node-id "$NEW_NODE"
 check "without a hub the same node is refused" code 1
 teardown
