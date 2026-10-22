@@ -177,35 +177,41 @@
     document.head.appendChild(s);
   }
 
-  function toast(text, kind, link) {
+  function toast(text, kind, links) {
     var old = document.querySelector('.tpix-toast');
     if (old) old.remove();
     var t = document.createElement('div');
     t.className = 'tpix-toast' + (kind ? ' ' + kind : '');
     t.setAttribute('role', 'status');
     t.textContent = text;                      // textContent — ข้อความ error จากกระเป๋าห้ามตีความเป็น HTML
-    if (link) {
+    (links || []).forEach(function (link) {
       var a = document.createElement('a');
       a.href = link.href;
       a.target = '_blank';
       a.rel = 'noopener';
       a.textContent = link.text;
       t.appendChild(a);
-    }
+    });
     document.body.appendChild(t);
-    setTimeout(function () { t.remove(); }, link ? 9000 : 4500);
+    setTimeout(function () { t.remove(); }, links ? 12000 : 4500);
   }
 
   function isMobile() { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''); }
 
+  /* ไม่มีกระเป๋า → TPIX Wallet มาก่อน MetaMask เป็นทางเลือกที่สอง
+   * TPIX Wallet มีแต่ Android: บน Android ส่งไฟล์ APK ล่าสุดเลย (tpix.online ชี้ไป release ล่าสุดเอง)
+   * เครื่องอื่นพาไปหน้าดาวน์โหลด ซึ่งบอกว่าเป็นแอป Android */
+  var TPIX_WALLET_APK = 'https://tpix.online/api/v1/app/chain-download?type=wallet';
+  var TPIX_DOWNLOAD_PAGE = 'https://tpix.online/download';
+
   function noWallet() {
-    if (isMobile()) {
-      toast('ไม่พบกระเป๋าในเบราว์เซอร์นี้ · No wallet in this browser', 'err',
-        { href: 'https://metamask.app.link/dapp/' + location.host + location.pathname, text: 'เปิดใน MetaMask' });
-    } else {
-      toast('ไม่พบกระเป๋าในเบราว์เซอร์ ติดตั้ง MetaMask ก่อน · No wallet found', 'err',
-        { href: 'https://metamask.io/download/', text: 'MetaMask' });
-    }
+    var tpixWallet = /Android/i.test(navigator.userAgent || '')
+      ? { href: TPIX_WALLET_APK, text: 'ดาวน์โหลด TPIX Wallet' }
+      : { href: TPIX_DOWNLOAD_PAGE, text: 'TPIX Wallet' };
+    var metamask = isMobile()
+      ? { href: 'https://metamask.app.link/dapp/' + location.host + location.pathname, text: 'เปิดใน MetaMask' }
+      : { href: 'https://metamask.io/download/', text: 'MetaMask' };
+    toast('ไม่พบกระเป๋า ติดตั้ง TPIX Wallet ก่อน · No wallet found — get TPIX Wallet', 'err', [tpixWallet, metamask]);
   }
 
   /* ดึงจาก API ของ Blockscout เอง (same-origin) — symbol/decimals ต้องตรงกับสัญญา
