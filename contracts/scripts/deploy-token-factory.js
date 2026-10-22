@@ -27,14 +27,68 @@
  */
 const fs = require("fs");
 const path = require("path");
-const { ethers, network } = require("hardhat");
+const { ethers, network, artifacts } = require("hardhat");
 const { registerWithSite, printEnvFallback } = require("./lib/register-with-site");
 
 const REGISTRY_PATH = path.join(__dirname, "..", "deployed-contracts.json");
 const EIP170 = 24576;
+const IS_DRY_RUN = network.name === "hardhat" || network.name === "localhost";
+
+/*
+ * ── ส่งธุรกรรมเป็นจังหวะ ────────────────────────────────────────────────────
+ * ด่าน njs หน้า rpc1 (infrastructure/njs/tpix-rpc.js) ให้ 10 ธุรกรรมต่อ IP และตัวนับ "ล้างเมื่อเงียบครบ 10 วินาที"
+ * (js_shared_dict_zone timeout=10s) — ไม่ใช่หน้าต่างเลื่อน · ส่งต่อเนื่องใบละ ~2 วินาทีจึงชนที่ใบที่ 11
+ * แล้ว hardhat ลองซ้ำทุก 5 วินาทีจนตัวนับไม่เคยล้าง (เกิดจริง 2026-10-22: ผูก creator ตัวที่ 2 ได้ 429 ค้าง)
+ * → ทุก 8 ธุรกรรมพักเงียบ 12 วินาที
+ */
+const TX_PER_BURST = 8;
+const QUIET_MS = 12_000;
+let txSent = 0;
+async function pace() {
+    if (IS_DRY_RUN) return;
+    if (txSent > 0 && txSent % TX_PER_BURST === 0) {
+        console.log(`      … พัก ${QUIET_MS / 1000} วินาทีตามโควตาเขียนของ RPC`);
+        await new Promise((r) => setTimeout(r, QUIET_MS));
+    }
+    txSent++;
+}
+
+/*
+ * ── รันต่อจากรอบที่ค้างได้ ──────────────────────────────────────────────────
+ * เดิมบันทึกที่อยู่ลง registry ตอนจบเท่านั้น → ล้มกลางทาง (เช่น 429) แล้วรันใหม่ = deploy ซ้ำทั้งชุด สัญญาเก่ากำพร้า
+ * ตอนนี้จดที่อยู่ลงไฟล์ progress ทันทีหลัง deploy แต่ละตัว รอบหน้าใช้ของเดิมเฉพาะเมื่อผ่าน reuseCheck() ทุกข้อ
+ * (โค้ดบนเชนตรง artifact · deployer ของ creator = กระเป๋านี้ · factory ชี้ creator ชุดเดียวกัน)
+ * ไฟล์ถูกลบเมื่อจบครบ (registry เป็นที่บันทึกถาวร) · ตั้ง FRESH_DEPLOY=1 ถ้าตั้งใจ deploy ใหม่ทั้งชุด
+ */
+function progressPath(chainId) {
+    return path.join(__dirname, "..", "deployments", `token-factory-${chainId}.progress.json`);
+}
+function loadProgress(chainId) {
+    if (IS_DRY_RUN || process.env.FRESH_DEPLOY === "1") return {};
+    try { return JSON.parse(fs.readFileSync(progressPath(chainId), "utf8")); } catch { return {}; }
+}
+function saveProgress(chainId, progress) {
+    if (IS_DRY_RUN) return;
+    fs.mkdirSync(path.dirname(progressPath(chainId)), { recursive: true });
+    fs.writeFileSync(progressPath(chainId), JSON.stringify(progress, null, 2) + "\n");
+}
+
+/** runtime bytecode บนเชนต้องตรง artifact ทุกไบต์ (ยกเว้นช่อง immutable ที่ constructor เขียนลงโค้ด) */
+async function codeMatches(name, addr) {
+    const source = findArtifact(name).replace(/\/[^/]+\.json$/, "");
+    const bi = await artifacts.getBuildInfo(`${source}:${name}`);
+    const out = bi.output.contracts[source][name].evm.deployedBytecode;
+    const mask = (hex) => {
+        const b = Buffer.from(hex.replace(/^0x/, ""), "hex");
+        for (const list of Object.values(out.immutableReferences || {})) for (const { start, length } of list) b.fill(0, start, start + length);
+        return b;
+    };
+    return mask(await ethers.provider.getCode(addr)).equals(mask("0x" + out.object));
+}
 
 /** deploy พร้อมเช็กขนาดโค้ดและยืนยันว่ามี bytecode อยู่บนเชนจริง */
 async function deploy(name, args = []) {
+    await pace();
     const Factory = await ethers.getContractFactory(name);
 
     const artifact = JSON.parse(
@@ -129,24 +183,74 @@ async function main() {
     }
     await preflightBodySize();
 
+    const progress = loadProgress(net.chainId);
+    if (Object.keys(progress).length) {
+        console.log(`\nพบรอบที่ค้าง (${path.relative(process.cwd(), progressPath(net.chainId))}) — ใช้ของเดิมเฉพาะตัวที่ตรวจบนเชนผ่าน`);
+    }
+    const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+    const operatorEnv = (process.env.FACTORY_OPERATOR || "").trim().toLowerCase();
+
+    /** creator: deployer ต้องเป็นกระเป๋านี้ (มีแต่ deployer ที่ bindFactory ได้) */
+    const creatorCheck = async (addr) => {
+        const c = new ethers.Contract(addr, ["function deployer() view returns (address)"], ethers.provider);
+        return same(await c.deployer(), deployer.address) ? [] : [`deployer ของ creator ไม่ใช่ ${deployer.address}`];
+    };
+    /** factory: ต้องชี้ creator ชุดเดียวกับรอบนี้ และ owner เป็นกระเป๋านี้หรือผู้ดำเนินการ */
+    const factoryCheck = (getters, expected) => async (addr) => {
+        const abi = [...getters.map((g) => `function ${g}() view returns (address)`), "function owner() view returns (address)"];
+        const f = new ethers.Contract(addr, abi, ethers.provider);
+        const problems = [];
+        for (let i = 0; i < getters.length; i++) {
+            const got = await f[getters[i]]();
+            if (!same(got, expected[i])) problems.push(`${getters[i]}() = ${got} ไม่ใช่ ${expected[i]}`);
+        }
+        const owner = await f.owner();
+        if (!same(owner, deployer.address) && !(operatorEnv && same(owner, operatorEnv))) problems.push(`owner = ${owner}`);
+        return problems;
+    };
+
+    /** ใช้ของรอบก่อนถ้าตรวจผ่านทุกข้อ ไม่งั้น deploy ใหม่แล้วจดลง progress ทันที */
+    async function step(name, args = [], check = null) {
+        const prev = progress[name];
+        if (prev) {
+            const problems = [];
+            if ((await ethers.provider.getCode(prev)) === "0x") problems.push("ไม่มีโค้ดบนเชน");
+            else if (!(await codeMatches(name, prev))) problems.push("โค้ดบนเชนไม่ตรง artifact ที่ compile อยู่");
+            if (!problems.length && check) problems.push(...(await check(prev)));
+            if (problems.length) {
+                throw new Error(`${name} ${prev} จากรอบก่อนใช้ต่อไม่ได้: ${problems.join(" · ")}\n`
+                    + "  ยังไม่ได้ส่งอะไรเพิ่ม — ตรวจไฟล์ progress หรือตั้ง FRESH_DEPLOY=1 ถ้าตั้งใจ deploy ใหม่ทั้งชุด");
+            }
+            console.log(`      ${name.padEnd(24)} ${prev}  (ของรอบก่อน — ตรวจบนเชนผ่าน)`);
+            return prev;
+        }
+        const addr = await deploy(name, args);
+        progress[name] = addr;
+        saveProgress(net.chainId, progress);
+        return addr;
+    }
+
     console.log("\n[1/5] creator ของ ERC-20 ...");
-    const erc20V2Creator = await deploy("ERC20V2Creator");
-    const utilityCreator = await deploy("UtilityTokenCreator");
-    const rewardCreator = await deploy("RewardTokenCreator");
-    const governanceCreator = await deploy("GovernanceTokenCreator");
-    const stablecoinCreator = await deploy("StablecoinTokenCreator");
+    const erc20V2Creator = await step("ERC20V2Creator", [], creatorCheck);
+    const utilityCreator = await step("UtilityTokenCreator", [], creatorCheck);
+    const rewardCreator = await step("RewardTokenCreator", [], creatorCheck);
+    const governanceCreator = await step("GovernanceTokenCreator", [], creatorCheck);
+    const stablecoinCreator = await step("StablecoinTokenCreator", [], creatorCheck);
 
     console.log("\n[2/5] TPIXTokenFactoryV2 ...");
-    const tokenFactory = await deploy("TPIXTokenFactoryV2", [
-        erc20V2Creator, utilityCreator, rewardCreator, governanceCreator, stablecoinCreator,
-    ]);
+    const erc20Creators = [erc20V2Creator, utilityCreator, rewardCreator, governanceCreator, stablecoinCreator];
+    const tokenFactory = await step("TPIXTokenFactoryV2", erc20Creators, factoryCheck(
+        ["erc20V2Creator", "utilityCreator", "rewardCreator", "governanceCreator", "stablecoinCreator"], erc20Creators,
+    ));
 
     console.log("\n[3/5] creator ของ NFT ...");
-    const erc721Creator = await deploy("FactoryERC721Creator");
-    const collectionCreator = await deploy("NFTCollectionCreator");
+    const erc721Creator = await step("FactoryERC721Creator", [], creatorCheck);
+    const collectionCreator = await step("NFTCollectionCreator", [], creatorCheck);
 
     console.log("\n[4/5] TPIXNFTFactory ...");
-    const nftFactory = await deploy("TPIXNFTFactory", [erc721Creator, collectionCreator]);
+    const nftFactory = await step("TPIXNFTFactory", [erc721Creator, collectionCreator], factoryCheck(
+        ["erc721Creator", "collectionCreator"], [erc721Creator, collectionCreator],
+    ));
 
     // ── ผูก creator กับ factory ของมัน (CreatorAccess) ──
     // ไม่ผูก = ทุก create*() revert · ผูกได้ครั้งเดียวโดยกระเป๋าที่ deploy creator เท่านั้น
@@ -163,6 +267,7 @@ async function main() {
     for (const [name, creatorAddr, factoryAddr] of bindings) {
         const creator = await ethers.getContractAt(name, creatorAddr);
         if ((await creator.factory()) === ethers.ZeroAddress) {
+            await pace();
             await (await creator.bindFactory(factoryAddr)).wait();
         }
         const bound = await creator.factory();
@@ -215,6 +320,7 @@ async function main() {
         for (const [name, addr] of [["TPIXTokenFactoryV2", tokenFactory], ["TPIXNFTFactory", nftFactory]]) {
             const f = await ethers.getContractAt(name, addr);
             if ((await f.owner()).toLowerCase() !== operator.toLowerCase()) {
+                await pace();
                 await (await f.transferOwnership(operator)).wait();
             }
             const now = await f.owner();
@@ -226,8 +332,7 @@ async function main() {
         console.log("       เว็บจะสร้างเหรียญได้ก็ต่อเมื่อ DEPLOYER_PRIVATE_KEY บนเซิร์ฟเวอร์คือกระเป๋านี้");
     }
 
-    const isDryRun = network.name === "hardhat" || network.name === "localhost";
-    if (isDryRun) {
+    if (IS_DRY_RUN) {
         console.log("\n[dry-run] เครือข่าย", network.name, "— ไม่เขียน deployed-contracts.json");
         console.log("\nซ้อมผ่านหมด พร้อม deploy จริงด้วย --network tpix");
         return;
@@ -265,6 +370,8 @@ async function main() {
     delete reg._contractsNote;
     fs.writeFileSync(REGISTRY_PATH, JSON.stringify(reg, null, 2) + "\n");
     console.log("\nบันทึกลง deployed-contracts.json แล้ว");
+    // registry คือที่บันทึกถาวรแล้ว — ลบ progress ไม่ให้รอบหน้าหยิบของชุดนี้ไปใช้ซ้ำโดยไม่ตั้งใจ
+    fs.rmSync(progressPath(net.chainId), { force: true });
 
     // ── ลงทะเบียนกับเว็บ (ContractRegistry) — ถ้าเครื่องนี้ไม่มีโทเคน จะพิมพ์บรรทัด .env ให้แทน ──
     const payload = { token_factory_v2: tokenFactory, nft_factory: nftFactory };

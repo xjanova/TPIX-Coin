@@ -18,6 +18,8 @@
 # Developed by Xman Studio
 
 $ErrorActionPreference = 'Stop'
+# npx พิมพ์ "npm notice" (มี npm รุ่นใหม่) ลง stderr — ปิดไว้ ไม่ให้ปนผลลัพธ์
+$env:NPM_CONFIG_UPDATE_NOTIFIER = 'false'
 
 function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color }
 
@@ -98,8 +100,27 @@ if ($operator.ToLower() -eq $deployerAddress.ToLower()) {
 # ─────────────────────────────────────────────────────────────────────────────
 Say ""
 Say "ขั้นที่ 3/5  ตรวจว่าเชนรับ bytecode ได้ (อ่านอย่างเดียว ไม่เสียอะไร)" Yellow
-npx hardhat compile 2>&1 | Select-Object -Last 1 | ForEach-Object { Say "    $_" DarkGray }
-node scripts/check-deployable.js 2>&1 | Select-String -Pattern 'Creator|TPIXTokenFactoryV2|TPIXNFTFactory|ผ่าน |ไม่ผ่าน' | ForEach-Object { Say "    $_" DarkGray }
+# Windows PowerShell 5.1 + 'Stop': บรรทัดใดก็ตามที่ native exe เขียนลง stderr (คำเตือน npm/hardhat) กลายเป็น
+# error ร้ายแรงเมื่อใช้ 2>&1 → สคริปต์หยุดกลางขั้นที่อ่านอย่างเดียว ขั้นนี้จึงใช้ 'Continue' แล้วตัดสินจากผลจริง
+$ErrorActionPreference = 'Continue'
+$compileOut = @(npx hardhat compile 2>&1 | ForEach-Object { "$_" })
+$compileExit = $LASTEXITCODE
+$compileOut | Select-Object -Last 1 | ForEach-Object { Say "    $_" DarkGray }
+$checkOut = @(node scripts/check-deployable.js 2>&1 | ForEach-Object { "$_" })
+$ErrorActionPreference = 'Stop'
+$checkOut | Select-String -Pattern 'Creator|TPIXTokenFactoryV2|TPIXNFTFactory|ผ่าน |ไม่ผ่าน' | ForEach-Object { Say "    $_" DarkGray }
+if ($compileExit -ne 0) {
+    Say "compile ไม่ผ่าน — หยุดก่อน deploy" Red
+    $compileOut | Select-Object -Last 15 | ForEach-Object { Say "    $_" DarkGray }
+    $plainKey = $null
+    exit 1
+}
+$summary = $checkOut | Select-String -Pattern 'deploy ไม่ได้ (\d+)' | Select-Object -First 1
+if ($summary -and [int]$summary.Matches[0].Groups[1].Value -gt 0) {
+    Say "มีสัญญาที่เชนไม่รับ — หยุดก่อน deploy (ดูรายการด้านบน)" Red
+    $plainKey = $null
+    exit 1
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4) ยืนยันแล้ว deploy
