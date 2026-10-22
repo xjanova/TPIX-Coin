@@ -113,7 +113,7 @@
   function render() {
     if (document.querySelector('.tpix-treasury')) return;      // แทรกซ้ำไม่ได้
     var main = document.querySelector('main');
-    if (!main) return;
+    if (!main || !hydrated(main)) return;
 
     styles();
     var box = document.createElement('section');
@@ -364,11 +364,20 @@
     return a;
   }
 
+  /* React ติด __reactFiber$… ให้ node ตอน hydrate เสร็จ — ใช้บอกว่าแตะ DOM ได้แล้ว
+   * สคริปต์นี้รันต่อจาก chunk ของ Next ทันที ซึ่งเร็วกว่าการ hydrate ถ้าแทรกของลง
+   * HTML ที่มาจากเซิร์ฟก่อน React จะเจอ DOM ไม่ตรง (error #418/#423) แล้ววาดใหม่
+   * ทั้งหน้า — เจอจริงตอนเพิ่มแถบนี้ v6 (2026-10-22) */
+  function hydrated(el) {
+    for (var k in el) if (k.indexOf('__reactFiber') === 0) return true;
+    return false;
+  }
+
   /* วางในคอลัมน์ซ้ายใต้ Copyright (footer > grid > คอลัมน์แรก) ต่อท้ายสุด
    * ไม่แทรกกลางลูกที่ React จัดการ — ถ้า React วาดใหม่จนหาย apply() รอบถัดไปจะใส่คืน */
   function registries() {
     var col = document.querySelector('footer > div > div:first-child');
-    if (!col || col.querySelector('.tpix-reg')) return;
+    if (!col || !hydrated(col) || col.querySelector('.tpix-reg')) return;
     registryStyles();
     var box = document.createElement('div');
     box.className = 'tpix-reg';
@@ -425,6 +434,9 @@
       pending = true;
       setTimeout(function () { pending = false; apply(); }, 400);
     }).observe(document.body, { childList: true, subtree: true });
+    /* apply() แรกมักมาก่อน hydrate จึงข้าม (ดู hydrated()) และหน้าที่ hydrate แล้ว
+     * DOM ไม่ขยับเลยจะไม่ปลุก observer — ลองซ้ำตามเวลาไว้ให้ footer ขึ้นแน่ */
+    [1000, 2500, 6000].forEach(function (ms) { setTimeout(apply, ms); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
