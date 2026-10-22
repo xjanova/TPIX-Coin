@@ -15,7 +15,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import gate from './tpix-rpc.js';
 
-const { classify, spendWrites, WRITE_PER_WINDOW } = gate;
+const { classify, spendWrites, WRITE_PER_WINDOW, WINDOW_SECONDS } = gate;
 
 const rpc = (method, params = []) =>
     JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 });
@@ -160,6 +160,31 @@ test('คนละ IP คนละถัง — คนยิงถล่มต�
     }
     assert.equal(spendWrites(dict, 'attacker', 1), false);
     assert.equal(spendWrites(dict, 'ผู้ใช้จริง', 1), true, 'ผู้ใช้คนอื่นต้องไม่โดนหางเลข');
+});
+
+test('โควตาเต็มแล้วหน้าต่างถัดไปส่งได้อีก — แม้ค่าในโซนไม่หมดอายุเองเลย (njs 0.8.2)', () => {
+    // fakeDict ไม่มีการหมดอายุ = พฤติกรรมจริงของ incr() บน libnginx-mod-http-js 0.8.2
+    // รุ่นเดิม (กุญแจ = IP) ล้มตรงนี้: ใบที่ 11 ถูกปฏิเสธตลอดไป ไม่ว่าจะเว้นนานแค่ไหน
+    const dict = fakeDict();
+    const t0 = 1_800_000_000_000;
+    for (let i = 0; i < WRITE_PER_WINDOW; i++) {
+        assert.equal(spendWrites(dict, '1.2.3.4', 1, t0), true);
+    }
+    assert.equal(spendWrites(dict, '1.2.3.4', 1, t0 + 1000), false, 'หน้าต่างเดิมยังเต็ม');
+    const later = t0 + WINDOW_SECONDS * 1000;
+    assert.equal(spendWrites(dict, '1.2.3.4', 1, later), true, 'หน้าต่างใหม่ต้องเริ่มนับใหม่');
+    assert.equal(spendWrites(dict, '1.2.3.4', 1, t0 + 7 * 60 * 1000), true, '7 นาทีต่อมาต้องส่งได้');
+});
+
+test('ครั้งที่ถูกปฏิเสธในหน้าต่างเดียวกันไม่ลามไปหน้าต่างถัดไป', () => {
+    // hardhat ลองส่งซ้ำทุก 5 วินาทีหลังโดน 429 — เดิมแต่ละครั้งนับเพิ่มจนไม่มีวันหลุด
+    const dict = fakeDict();
+    const t0 = 1_800_000_000_000;
+    spendWrites(dict, '1.2.3.4', WRITE_PER_WINDOW, t0);
+    for (let i = 0; i < 50; i++) {
+        assert.equal(spendWrites(dict, '1.2.3.4', 1, t0 + 100 + i), false);
+    }
+    assert.equal(spendWrites(dict, '1.2.3.4', 1, t0 + WINDOW_SECONDS * 1000 + 1), true);
 });
 
 test('โซนหาย = ปฏิเสธ ไม่ใช่ปล่อยผ่านเงียบ ๆ', () => {

@@ -174,12 +174,20 @@ function clientKey(r) {
 }
 
 /**
- * ถังโควตาเขียน — ใช้ js_shared_dict_zone ที่ timeout เท่ากับความกว้างหน้าต่าง
- * คีย์หมดอายุเองเมื่อเงียบครบหน้าต่าง จึงไม่ต้องมีตัวเก็บกวาด
+ * ถังโควตาเขียน — หน้าต่างคงที่ WINDOW_SECONDS วินาที ผูกเลขหน้าต่างไว้ในกุญแจ
  *
+ * ⚠️ เดิมใช้กุญแจ = IP อย่างเดียว แล้วหวังให้ timeout ของ js_shared_dict_zone ล้างค่าเอง
+ *    แต่บน njs 0.8.2 (libnginx-mod-http-js ของ Ubuntu) ค่าที่สร้างด้วย incr() ไม่หมดอายุ
+ *    → ทุก IP ส่งธุรกรรมได้ 10 ใบ "ตลอดไป" จน nginx restart (เจอจริง 2026-10-22: deploy Token Factory
+ *    ค้างหลังธุรกรรมที่ 10 แล้วรอบใหม่ 7 นาทีต่อมาก็ยังโดน 429 ตั้งแต่ใบแรก)
+ *    ตอนนี้หน้าต่างใหม่ = กุญแจใหม่ เริ่มนับจาก 0 เสมอ ไม่ว่า timeout จะทำงานหรือไม่
+ *    กุญแจของหน้าต่างเก่าไม่มีใครอ่านอีก — โซนตั้ง evict ไว้ ตัวเก่าสุดถูกเขี่ยเมื่อเต็ม
+ *    (ไม่ส่ง timeout เป็นอาร์กิวเมนต์ที่ 4 ของ incr — ไม่แน่ใจว่า 0.8.2 รับ ถ้าโยน error ทุกธุรกรรมจะได้ 500)
+ *
+ * @param {number} [nowMs] เวลาปัจจุบัน (มิลลิวินาที) — ใส่ได้เพื่อเทสต์
  * @returns {boolean} true = ยังอยู่ในโควตา
  */
-function spendWrites(dict, key, units) {
+function spendWrites(dict, key, units, nowMs) {
     if (units <= 0) {
         return true;
     }
@@ -190,7 +198,9 @@ function spendWrites(dict, key, units) {
         return false;
     }
 
-    var used = dict.incr(key, units, 0);
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var windowNo = Math.floor(now / (WINDOW_SECONDS * 1000));
+    var used = dict.incr(key + '|' + windowNo, units, 0);
     return used <= WRITE_PER_WINDOW;
 }
 
