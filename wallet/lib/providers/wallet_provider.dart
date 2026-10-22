@@ -531,6 +531,11 @@ class WalletProvider extends ChangeNotifier {
   Future<String> signPersonalMessage(String message) async =>
       _walletService.signPersonalMessage(message);
 
+  /// เซ็นไบต์ดิบแบบ EIP-191 (personal_sign / eth_sign ของ WalletConnect)
+  /// [expectedAddress] ไม่ตรงกับกระเป๋าที่เปิดอยู่ → WalletChangedException ไม่เซ็น
+  Future<String> signPersonalMessageBytes(Uint8List message, {String? expectedAddress}) async =>
+      _walletService.signPersonalMessageBytes(message, expectedAddress: expectedAddress);
+
   // ═══════════════════════════════════════════════════════════
   //  Multi-Chain Operations
   // ═══════════════════════════════════════════════════════════
