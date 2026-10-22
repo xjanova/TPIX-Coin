@@ -16,6 +16,8 @@
  *   3. ปุ่ม + หลังชื่อเหรียญทุกแถวในหน้า /tokens กดแล้วสลับ/เพิ่มเชน TPIX
  *      ให้กระเป๋า แล้วเพิ่มเหรียญนั้นเข้ารายการ (wallet_watchAsset)
  *      Blockscout มีปุ่ม MetaMask แค่ในหน้ารายละเอียดเหรียญ หน้ารายการไม่มี
+ *   4. แถบ "ลงทะเบียนอยู่บน" พร้อมโลโก้ทะเบียนเชนใน footer ทุกหน้า
+ *      NEXT_PUBLIC_FOOTER_LINKS (tpix-footer-links.json) ใส่ได้แค่ลิงก์ตัวหนังสือ
  *
  * ทำไมต้องดึงยอดจาก RPC เอง ไม่ใช้ API ของ Blockscout
  *   Blockscout ค้นพบ address จาก block/transaction เท่านั้น กระเป๋าที่ได้เงิน
@@ -311,6 +313,75 @@
     });
   }
 
+  /* ── ทะเบียนเชนใน footer ───────────────────────────────────────────────── */
+
+  /* ใส่เฉพาะที่ตรวจแล้วว่ามีหน้า chain 4289 จริง (ethereum-lists/chains PR #8148)
+   * chainid.network ไม่มีโลโก้ทางการ จึงใช้ป้ายชื่อ — ห้ามวาดโลโก้ปลอมขึ้นเอง
+   * ไม่ลิงก์ไฟล์ต้นทางบน GitHub ตามกฎเดียวกับเว็บหลัก (หน้าผู้ใช้ไม่มีลิงก์ GitHub ของเรา)
+   * โลโก้เสิร์ฟจาก explorer เอง (assets/ → /opt/tpix/www/assets/) ไม่ hotlink เว็บนอก
+   * chainlist.svg ต้นทาง (chainlist.org/logo.svg) เขียน stopColor แบบ JSX ซึ่ง SVG ไม่รู้จัก
+   * ไอคอนจึงออกดำแทนฟ้า — สำเนาของเราแก้เป็น stop-color แล้ว */
+  var REGISTRIES = [
+    { name: 'Chainlist', href: 'https://chainlist.org/chain/4289', logo: '/tpix-assets/chainlist.svg' },
+    { name: 'chainid.network', href: 'https://chainid.network/chain/4289/' }
+  ];
+  var LINK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>' +
+    '<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+
+  function registryStyles() {
+    if (document.getElementById('tpix-reg-css')) return;
+    var s = document.createElement('style');
+    s.id = 'tpix-reg-css';
+    s.textContent = [
+      '.tpix-reg{margin-top:20px}',
+      '.tpix-reg p{font-size:12px;line-height:1.5;opacity:.7;margin:0 0 8px}',
+      '.tpix-reg-list{display:flex;flex-wrap:wrap;gap:8px}',
+      /* พื้นขาวทั้งสองธีม — โลโก้ Chainlist เป็นตัวหนังสือสีเข้ม บนพื้นมืดจะมองไม่เห็น */
+      '.tpix-reg a{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:8px;',
+      '  background:rgba(255,255,255,.92);border:1px solid rgba(128,145,170,.35);color:#1a202c;',
+      '  font:600 12px/1 system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}',
+      '.tpix-reg a:hover{background:#fff;border-color:#06b6d4}',
+      '.tpix-reg img{height:16px;width:auto;display:block}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  function registryLink(r) {
+    var a = document.createElement('a');
+    a.href = r.href;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.title = 'TPIX Chain (4289) — ' + r.name;
+    var label = function () { a.innerHTML = LINK_ICON; a.appendChild(document.createTextNode(r.name)); };
+    if (!r.logo) { label(); return a; }
+    var img = document.createElement('img');
+    img.src = r.logo;
+    img.alt = r.name;
+    img.loading = 'lazy';
+    img.onerror = label;                        // โหลดโลโก้ไม่ได้ ยังเหลือป้ายชื่อให้กด
+    a.appendChild(img);
+    return a;
+  }
+
+  /* วางในคอลัมน์ซ้ายใต้ Copyright (footer > grid > คอลัมน์แรก) ต่อท้ายสุด
+   * ไม่แทรกกลางลูกที่ React จัดการ — ถ้า React วาดใหม่จนหาย apply() รอบถัดไปจะใส่คืน */
+  function registries() {
+    var col = document.querySelector('footer > div > div:first-child');
+    if (!col || col.querySelector('.tpix-reg')) return;
+    registryStyles();
+    var box = document.createElement('div');
+    box.className = 'tpix-reg';
+    var p = document.createElement('p');
+    p.textContent = 'TPIX Chain (ID 4289) ลงทะเบียนอยู่บน · Registered on';
+    var list = document.createElement('div');
+    list.className = 'tpix-reg-list';
+    REGISTRIES.forEach(function (r) { list.appendChild(registryLink(r)); });
+    box.appendChild(p);
+    box.appendChild(list);
+    col.appendChild(box);
+  }
+
   /* ── branding ──────────────────────────────────────────────────────────── */
 
   /* ไม่ยุ่งกับโลโก้ที่นี่แล้ว — ปล่อยให้ NEXT_PUBLIC_NETWORK_LOGO/_ICON ทำงาน
@@ -338,6 +409,7 @@
 
   function apply() {
     branding();
+    registries();
     if (isHome()) render();
     else { var b = document.querySelector('.tpix-treasury'); if (b) b.remove(); }
     if (isTokens()) addWatchButtons();
