@@ -1,0 +1,14 @@
+[Unit]
+Description=TPIX public bootnode firewall rules (DOCKER-USER)
+Wants=docker.service
+After=docker.service
+
+# ไม่มี PartOf=docker.service โดยตั้งใจ — หยุด dockerd (live-restore) container ยังรันอยู่ กฎต้องอยู่ต่อ
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/tpix-p2p-firewall apply
+ExecStop=/usr/local/sbin/tpix-p2p-firewall remove
+
+[Install]
+WantedBy=multi-user.target
