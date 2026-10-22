@@ -13,6 +13,9 @@
  *      (โลโก้ไม่ทำที่นี่แล้ว — ตั้งผ่าน NEXT_PUBLIC_NETWORK_LOGO/_ICON ใน compose
  *       เหตุผลอยู่ที่ฟังก์ชัน branding() ด้านล่าง)
  *   2. เพิ่มแถบการ์ด "กระเป๋าคลัง" บนหน้าแรก แยกจาก Top accounts
+ *   3. ปุ่ม + หลังชื่อเหรียญทุกแถวในหน้า /tokens กดแล้วสลับ/เพิ่มเชน TPIX
+ *      ให้กระเป๋า แล้วเพิ่มเหรียญนั้นเข้ารายการ (wallet_watchAsset)
+ *      Blockscout มีปุ่ม MetaMask แค่ในหน้ารายละเอียดเหรียญ หน้ารายการไม่มี
  *
  * ทำไมต้องดึงยอดจาก RPC เอง ไม่ใช้ API ของ Blockscout
  *   Blockscout ค้นพบ address จาก block/transaction เท่านั้น กระเป๋าที่ได้เงิน
@@ -140,6 +143,168 @@
     });
   }
 
+  /* ── ปุ่ม + เพิ่มเหรียญเข้ากระเป๋า (หน้า /tokens) ─────────────────────────── */
+
+  var CHAIN = {
+    chainId: '0x10c1',                                       // 4289
+    chainName: 'TPIX Chain',
+    nativeCurrency: { name: 'TPIX', symbol: 'TPIX', decimals: 18 },
+    rpcUrls: [RPC],
+    blockExplorerUrls: ['https://explorer.tpix.online'],
+    iconUrls: ['https://tpix.online/images/tpix-logo-512.png']
+  };
+  var TOKEN_LINK = /^\/token\/(0x[0-9a-fA-F]{40})$/;
+  var tokenCache = {};
+
+  function watchStyles() {
+    if (document.getElementById('tpix-watch-css')) return;
+    var s = document.createElement('style');
+    s.id = 'tpix-watch-css';
+    s.textContent = [
+      '.tpix-watch{flex:none;margin-left:8px;width:22px;height:22px;padding:0;border-radius:6px;',
+      '  border:1px solid rgba(6,182,212,.45);background:rgba(6,182,212,.08);color:#06b6d4;',
+      '  font:600 16px/1 system-ui,sans-serif;display:inline-flex;align-items:center;justify-content:center;',
+      '  cursor:pointer;transition:background .15s,border-color .15s}',
+      '.tpix-watch:hover{background:rgba(6,182,212,.2);border-color:#06b6d4}',
+      '.tpix-watch:disabled{cursor:wait;opacity:.5}',
+      '.tpix-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;',
+      '  max-width:min(92vw,460px);padding:10px 16px;border-radius:10px;background:#1a202c;color:#e2e8f0;',
+      '  border:1px solid rgba(128,145,170,.3);font-size:.85rem;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.35)}',
+      '.tpix-toast.ok{border-color:rgba(0,230,118,.55)}',
+      '.tpix-toast.err{border-color:rgba(239,68,68,.6)}',
+      '.tpix-toast a{color:#06b6d4;margin-left:8px;text-decoration:underline}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  function toast(text, kind, link) {
+    var old = document.querySelector('.tpix-toast');
+    if (old) old.remove();
+    var t = document.createElement('div');
+    t.className = 'tpix-toast' + (kind ? ' ' + kind : '');
+    t.setAttribute('role', 'status');
+    t.textContent = text;                      // textContent — ข้อความ error จากกระเป๋าห้ามตีความเป็น HTML
+    if (link) {
+      var a = document.createElement('a');
+      a.href = link.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = link.text;
+      t.appendChild(a);
+    }
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, link ? 9000 : 4500);
+  }
+
+  function isMobile() { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''); }
+
+  function noWallet() {
+    if (isMobile()) {
+      toast('ไม่พบกระเป๋าในเบราว์เซอร์นี้ · No wallet in this browser', 'err',
+        { href: 'https://metamask.app.link/dapp/' + location.host + location.pathname, text: 'เปิดใน MetaMask' });
+    } else {
+      toast('ไม่พบกระเป๋าในเบราว์เซอร์ ติดตั้ง MetaMask ก่อน · No wallet found', 'err',
+        { href: 'https://metamask.io/download/', text: 'MetaMask' });
+    }
+  }
+
+  /* ดึงจาก API ของ Blockscout เอง (same-origin) — symbol/decimals ต้องตรงกับสัญญา
+   * ไม่งั้น MetaMask ปฏิเสธ หรือแสดงยอดผิดหลัก */
+  function tokenInfo(addr) {
+    var key = addr.toLowerCase();
+    if (!tokenCache[key]) {
+      tokenCache[key] = fetch('/api/v2/tokens/' + addr).then(function (r) {
+        if (!r.ok) throw Object.assign(new Error('HTTP ' + r.status), { code: 'NO_META' });
+        return r.json();
+      }).then(function (t) {
+        if (t.type !== 'ERC-20') throw Object.assign(new Error(String(t.type)), { code: 'NOT_ERC20' });
+        var dec = parseInt(t.decimals, 10);
+        if (!t.symbol || !(dec >= 0 && dec <= 36)) throw Object.assign(new Error('bad metadata'), { code: 'NO_META' });
+        return {
+          address: t.address_hash || t.address || addr,
+          symbol: String(t.symbol).slice(0, 11),             // MetaMask รับ symbol ไม่เกิน 11 ตัว
+          decimals: dec,
+          image: t.icon_url || null
+        };
+      });
+      tokenCache[key].catch(function () { delete tokenCache[key]; });   // พลาดแล้วให้กดใหม่ได้
+    }
+    return tokenCache[key];
+  }
+
+  /* wallet_watchAsset เพิ่มเหรียญให้ "เชนที่กระเป๋าเปิดอยู่" — ต้องอยู่บน 4289 ก่อน
+   * ไม่งั้นเหรียญจะไปโผล่ในรายการของเชนอื่นแล้วยอดเป็น 0 */
+  function ensureChain(eth) {
+    return eth.request({ method: 'eth_chainId' }).then(function (id) {
+      if (parseInt(id, 16) === 4289) return;
+      return eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN.chainId }] })
+        .catch(function (e) {
+          var code = e && (e.code || (e.data && e.data.originalError && e.data.originalError.code));
+          if (code !== 4902 && !/unrecognized|not added|unknown chain/i.test((e && e.message) || '')) throw e;
+          return eth.request({ method: 'wallet_addEthereumChain', params: [CHAIN] });
+        });
+    });
+  }
+
+  function walletMessage(e) {
+    var code = e && e.code;
+    if (code === 4001 || code === 'ACTION_REJECTED') return 'ยกเลิกในกระเป๋า · Request rejected';
+    if (code === -32002) return 'มีคำขอค้างอยู่ เปิดกระเป๋าเพื่อยืนยัน · A request is already pending in your wallet';
+    if (code === 'NOT_ERC20') return 'เพิ่มได้เฉพาะเหรียญ ERC-20 · Only ERC-20 tokens can be added';
+    if (code === 'NO_META') return 'อ่านข้อมูลเหรียญไม่ได้ ลองใหม่อีกครั้ง · Could not load token details';
+    var msg = ((e && e.message) || String(e)).slice(0, 140);
+    return 'เพิ่มไม่สำเร็จ · Failed: ' + msg;
+  }
+
+  function onWatch(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    var btn = ev.currentTarget;
+    if (btn.disabled) return;
+    /* อ่านที่อยู่ตอนกด ไม่ผูกไว้ตอนสร้างปุ่ม — React อาจใช้แถวเดิมแสดงเหรียญอื่น
+     * (แถว skeleton ตอนโหลด, เปลี่ยนหน้า, กรอง) ปุ่มที่ติดอยู่จะได้ที่อยู่ใหม่เสมอ */
+    var link = btn.parentElement && btn.parentElement.querySelector('a[href^="/token/0x"]');
+    var m = link && TOKEN_LINK.exec(link.getAttribute('href') || '');
+    if (!m) return;
+    var eth = window.ethereum;
+    if (!eth || typeof eth.request !== 'function') { noWallet(); return; }
+
+    btn.disabled = true;
+    tokenInfo(m[1]).then(function (t) {
+      return ensureChain(eth).then(function () {
+        var options = { address: t.address, symbol: t.symbol, decimals: t.decimals };
+        if (t.image) options.image = t.image;
+        return eth.request({ method: 'wallet_watchAsset', params: { type: 'ERC20', options: options } });
+      }).then(function (added) {
+        if (added === false) toast('ยกเลิกแล้ว · Cancelled');
+        else toast('เพิ่ม ' + t.symbol + ' เข้ากระเป๋าแล้ว · Added to wallet', 'ok');
+      });
+    }).catch(function (e) {
+      toast(walletMessage(e), 'err');
+    }).then(function () {
+      btn.disabled = false;
+    });
+  }
+
+  function addWatchButtons() {
+    var links = document.querySelectorAll('main a[href^="/token/0x"]');
+    if (!links.length) return;
+    watchStyles();
+    links.forEach(function (a) {
+      if (!TOKEN_LINK.test(a.getAttribute('href') || '')) return;
+      var box = a.parentElement;
+      if (!box || box.querySelector('.tpix-watch')) return;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tpix-watch';
+      b.textContent = '+';
+      b.title = 'เพิ่มเหรียญเข้ากระเป๋า · Add token to wallet';
+      b.setAttribute('aria-label', 'Add token to wallet');
+      b.addEventListener('click', onWatch);
+      box.appendChild(b);                     // ต่อท้ายสุด — ไม่แทรกกลางลูกที่ React จัดการอยู่
+    });
+  }
+
   /* ── branding ──────────────────────────────────────────────────────────── */
 
   /* ไม่ยุ่งกับโลโก้ที่นี่แล้ว — ปล่อยให้ NEXT_PUBLIC_NETWORK_LOGO/_ICON ทำงาน
@@ -163,11 +328,13 @@
   /* ── lifecycle ─────────────────────────────────────────────────────────── */
 
   function isHome() { return location.pathname === '/' || location.pathname === ''; }
+  function isTokens() { return /^\/tokens\/?$/.test(location.pathname); }
 
   function apply() {
     branding();
     if (isHome()) render();
     else { var b = document.querySelector('.tpix-treasury'); if (b) b.remove(); }
+    if (isTokens()) addWatchButtons();
   }
 
   function boot() {
