@@ -1,7 +1,7 @@
 {
   "_doc": "Registry of deployed contracts on TPIX Chain (4289). Keep in sync after each deploy. Feeds scripts/verify-sources.js and external explorers/aggregators.",
   "_schema_version": 2,
-  "updated": "2026-10-21",
+  "updated": "2026-10-22",
   "chain": {
     "chainId": 4289,
     "name": "TPIX Chain",
@@ -99,7 +99,7 @@
         "runs": 200
       },
       "evmVersion": "london",
-      "verified": false,
+      "verified": true,
       "deployedAt": "2026-10-20",
       "name": "TPIXBridgeMinter",
       "category": "bridge",
