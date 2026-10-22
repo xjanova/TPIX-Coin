@@ -1065,13 +1065,29 @@ class WalletService {
   /// Sign a personal message (EIP-191) for wallet verification.
   /// Returns 0x-prefixed hex signature (65 bytes = 130 hex chars).
   /// Used by WalletAuthService for challenge-sign-verify flow.
-  String signPersonalMessage(String message) {
-    if (_credentials == null) throw Exception('Wallet not unlocked');
-    final messageBytes = Uint8List.fromList(utf8.encode(message));
-    final signature =
-        _credentials!.signPersonalMessageToUint8List(messageBytes);
-    // Ensure v is in Ethereum standard (27/28), not raw (0/1)
-    // MetaMask and most servers expect v = 27 or 28
+  String signPersonalMessage(String message) =>
+      signPersonalMessageBytes(Uint8List.fromList(utf8.encode(message)));
+
+  /// เซ็น "ไบต์ดิบ" แบบ EIP-191 — personal_sign ของ WalletConnect ส่งข้อความมาเป็น 0x-hex
+  /// ต้องเซ็นไบต์ตามนั้นเป๊ะ (ถอดเป็น UTF-8 แล้วเข้ารหัสกลับ = ไบต์ที่ไม่ใช่ UTF-8 เพี้ยน ลายเซ็นใช้ไม่ได้)
+  ///
+  /// [expectedAddress] = กระเป๋าที่เว็บขอให้เซ็น — ไม่ตรงกับใบที่เปิดอยู่ → [WalletChangedException] ไม่เซ็น
+  String signPersonalMessageBytes(Uint8List message, {String? expectedAddress}) {
+    // จับกุญแจ + ที่อยู่ไว้ก่อน — กันสลับกระเป๋าระหว่างเช็กกับเซ็น
+    final credentials = _credentials;
+    final from = _address;
+    if (credentials == null) throw Exception('Wallet not unlocked');
+    if (expectedAddress != null && (from == null || expectedAddress.toLowerCase() != from.toLowerCase())) {
+      throw const WalletChangedException();
+    }
+    return signPersonalBytesWith(credentials, message);
+  }
+
+  /// EIP-191 ด้วยกุญแจที่ให้มา → 0x + r(32) s(32) v(1) — v เป็น 27/28 เสมอ
+  /// (เซิร์ฟเวอร์ของ TPIX TRADE / MetaMask ทำ ecrecover โดยรับแค่ 27/28)
+  @visibleForTesting
+  static String signPersonalBytesWith(EthPrivateKey credentials, Uint8List message) {
+    final signature = credentials.signPersonalMessageToUint8List(message);
     if (signature.last < 27) {
       signature[signature.length - 1] += 27;
     }

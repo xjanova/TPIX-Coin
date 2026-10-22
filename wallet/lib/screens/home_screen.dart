@@ -33,6 +33,7 @@ import 'bridge_screen.dart';
 import 'dapp_connect_screen.dart';
 import 'obsidian_tabs.dart';
 import '../services/walletconnect_service.dart';
+import '../services/wc_deep_link.dart';
 import '../services/bug_reporter.dart';
 import '../services/peer_link_service.dart';
 import '../services/peer_sign_service.dart';
@@ -84,6 +85,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   /// ใช้กันเฉพาะทาง getInitialLink ที่คืนลิงก์เดิมซ้ำ ส่วนลิงก์ใหม่ทาง stream รับเสมอ
   static final Set<String> _handledLinks = {};
 
+  /// ลิงก์ WalletConnect ล่าสุด + เวลา — เปิดแอปเย็นจากลิงก์ app_links ส่งลิงก์เดียวกันมาสองทาง
+  /// (getInitialLink + uriLinkStream) ห้ามจับคู่ซ้ำ/เปิดหน้าเชื่อมต่อซ้อนสองชั้น
+  String? _lastWcLink;
+  DateTime? _lastWcLinkAt;
+
+  /// หน้าเชื่อมต่อ dApp ที่หน้านี้ push เอง — ก่อนหน้าใหม่ build เสร็จ DAppConnectScreen.isOpen ยังเป็น false
+  Route<void>? _dappRoute;
+
   @override
   void initState() {
     super.initState();
@@ -118,22 +127,54 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         wc.init(wp);
       }
 
-      // Show dApp approval dialog when proposal arrives
-      wc.onProposalReceived = (_) {
-        if (!mounted) return;
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const DAppConnectScreen(),
-        ));
-      };
-
-      // Show signing dialog when request arrives
-      wc.onRequestReceived = (_) {
-        if (!mounted) return;
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const DAppConnectScreen(),
-        ));
-      };
+      // Show dApp approval card when proposal / request arrives
+      // เปิดอยู่แล้ว = ไม่ push ซ้ำ (หน้าเดิมวาดคิวใหม่จาก service เอง) — เดิมซ้อนหน้าเหมือนกันทีละชั้น
+      wc.onProposalReceived = (_) => _showDAppConnect();
+      wc.onRequestReceived = (_) => _showDAppConnect();
     });
+  }
+
+  /// เปิดหน้าเชื่อมต่อ dApp ถ้ายังไม่มีหน้าเปิดอยู่ — มีแล้วและมี [pairUri] = ให้หน้านั้นจับคู่ต่อ
+  void _showDAppConnect({String? pairUri}) {
+    if (!mounted) return;
+    if (DAppConnectScreen.isOpen || (_dappRoute?.isActive ?? false)) {
+      if (pairUri != null && !DAppConnectScreen.pairInOpenScreen(pairUri)) {
+        // หน้าที่เพิ่ง push ยังไม่ทัน build — ส่งให้หลังเฟรมนี้
+        WidgetsBinding.instance.addPostFrameCallback((_) => DAppConnectScreen.pairInOpenScreen(pairUri));
+      }
+      return;
+    }
+    final route = MaterialPageRoute<void>(builder: (_) => DAppConnectScreen(initialUri: pairUri));
+    _dappRoute = route;
+    Navigator.push(context, route);
+  }
+
+  /// ลิงก์ WalletConnect เดิมซ้ำภายใน 5 วิ (ทาง getInitialLink + stream ตอนเปิดแอปเย็น) → ข้าม
+  bool _isRepeatedWcLink(String link) {
+    final now = DateTime.now();
+    final last = _lastWcLinkAt;
+    final repeated = _lastWcLink == link && last != null && now.difference(last) < const Duration(seconds: 5);
+    _lastWcLink = link;
+    _lastWcLinkAt = now;
+    return repeated;
+  }
+
+  /// tpixwallet://wc… จากเว็บบนมือถือ (ดู wc_deep_link.dart) — ทุกแบบที่ใช้ได้นับว่า "มาจากเบราว์เซอร์"
+  /// ตอบเสร็จแล้วแอปถอยกลับไปให้เบราว์เซอร์ขึ้นมาเอง · จับคู่ได้จาก ?uri=wc:… เท่านั้น
+  void _handleWcBrowserLink(WcDeepLink link) {
+    final wc = context.read<WalletConnectService>();
+    wc.beginBrowserVisit(link);
+    switch (link) {
+      case WcPairLink(:final uri):
+        _showDAppConnect(pairUri: uri);
+      case WcRequestLink():
+      case WcOpenLink():
+        // ไม่จับคู่ — คำขออาจอยู่ในคิวแล้ว หรือกำลังวิ่งมาทาง relay (หน้าเชื่อมต่อโชว์ "กำลังรอ…")
+        _showDAppConnect();
+      case WcInvalidLink():
+        wc.showNotice(const WcNotice('wc.invalidLink'));
+        _showDAppConnect();
+    }
   }
 
   /// Handle WalletConnect deep links (wc: URI scheme).
@@ -176,10 +217,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     BugReporter.I.breadcrumb('deeplink ${uri.scheme}://${uri.host}');
     if (uriStr.startsWith('wc:')) {
       // WalletConnect URI — open dApp connect screen
-      if (!mounted) return;
-      Navigator.push(context, MaterialPageRoute(
-        builder: (_) => DAppConnectScreen(initialUri: uriStr),
-      ));
+      if (!mounted || _isRepeatedWcLink(uriStr)) return;
+      _showDAppConnect(pairUri: uriStr);
       return;
     }
 
@@ -195,6 +234,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _lastPayLink = uriStr;
       _lastPayLinkAt = now;
       _openPaymentUri(uriStr);
+      return;
+    }
+
+    // tpixwallet://wc — WalletConnect จากเว็บบนมือถือ (จับคู่ / เว็บเพิ่งส่งคำขอ / เปิดหน้าเชื่อมต่อ)
+    final wcLink = WcDeepLink.classify(uri);
+    if (wcLink != null) {
+      if (!mounted || _isRepeatedWcLink(uriStr)) return;
+      _handleWcBrowserLink(wcLink);
       return;
     }
 
@@ -483,13 +530,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final trimmed = value.trim();
 
     // WalletConnect — เชื่อมกับเว็บ/dApp (เช่น tpix.online บนคอม)
+    // สแกนเองในแอป = ไม่ได้มาจากเบราว์เซอร์ในเครื่อง → ห้ามพากลับเบราว์เซอร์หลังอนุมัติ
     if (trimmed.startsWith('wc:')) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DAppConnectScreen(initialUri: trimmed),
-        ),
-      );
+      context.read<WalletConnectService>().endBrowserVisit();
+      _showDAppConnect(pairUri: trimmed);
       return;
     }
 

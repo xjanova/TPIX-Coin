@@ -12,6 +12,7 @@ extension _DAppObsidian on _DAppConnectScreenState {
     final pad = MediaQuery.paddingOf(context);
     final sessions = wc.sessions;
     final st = ObsidianStyle.of(context);
+    final notice = wc.notice;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -36,13 +37,35 @@ extension _DAppObsidian on _DAppConnectScreenState {
                   child: ListView(
                     padding: EdgeInsets.fromLTRB(24, 4, 24, 24 + pad.bottom),
                     children: [
+                      // ข้อความ + การ์ดที่รอผู้ใช้ตอบขึ้นก่อนการ์ดแนะนำ — มาจากลิงก์ของเว็บบนมือถือ
+                      // ต้องเห็นปุ่มอนุมัติ/ปฏิเสธทันทีโดยไม่ต้องเลื่อน (ไม่มีอะไรค้าง = หน้าตาเหมือนเดิม)
+                      for (final card in [
+                        // แตะข้อความเพื่อปิด
+                        if (_error != null)
+                          _obsDismissible(
+                            l,
+                            ObsidianNotice(tone: ObsidianTone.danger, lines: [_error!]),
+                            _dismissError,
+                          ),
+                        if (notice != null)
+                          _obsDismissible(
+                            l,
+                            ObsidianNotice(tone: ObsidianTone.danger, lines: [_noticeText(l, notice)]),
+                            wc.clearNotice,
+                          ),
+                        // เปิดจากลิงก์ของเว็บแล้ว แต่คำขอยังวิ่งทาง relay มาไม่ถึง
+                        if (!_isPairing && wc.awaitingBrowserProposal)
+                          ObsidianNotice(tone: ObsidianTone.info, icon: Icons.sync_rounded, lines: [l.t('wc.pairing')]),
+                        if (wc.awaitingBrowserRequest)
+                          ObsidianNotice(
+                            tone: ObsidianTone.info,
+                            icon: Icons.hourglass_top_rounded,
+                            lines: [l.t('wc.waitingRequest')],
+                          ),
+                        if (wc.hasPendingProposal) _obsProposal(l, wc),
+                        if (wc.hasPendingRequest) _obsRequest(l, wc),
+                      ]) ...[card, const SizedBox(height: 14)],
                       _obsHero(l),
-                      if (_error != null) ...[
-                        const SizedBox(height: 14),
-                        ObsidianNotice(tone: ObsidianTone.danger, lines: [_error!]),
-                      ],
-                      if (wc.hasPendingProposal) ...[const SizedBox(height: 14), _obsProposal(l, wc)],
-                      if (wc.hasPendingRequest) ...[const SizedBox(height: 14), _obsRequest(l, wc)],
                       const SizedBox(height: 22),
                       Row(
                         children: [
@@ -145,11 +168,51 @@ extension _DAppObsidian on _DAppConnectScreenState {
     );
   }
 
+  /// แตะเพื่อปิดข้อความ
+  Widget _obsDismissible(LocaleProvider l, Widget child, VoidCallback onDismiss) => GestureDetector(
+        onTap: onDismiss,
+        child: Semantics(hint: l.t('wc.dismiss'), child: child),
+      );
+
   Widget _obsProposal(LocaleProvider l, WalletConnectService wc) {
     final st = ObsidianStyle.of(context);
-    final peer = wc.pendingProposal!.params.proposer.metadata;
+    final proposal = wc.pendingProposal!;
+    final peer = proposal.params.proposer.metadata;
+    final origin = WcOrigin.check(proposal.verifyContext, peer.url);
+    final scam = origin.level == WcOriginLevel.scam;
+    final locked = _locked(wc);
+
+    final reject = scam
+        // เว็บหลอกลวง → ปฏิเสธคือปุ่มหลัก (ปุ่มขาวนูน ป้ายแดง) ส่วนอนุมัติถอยเป็นปุ่มรอง
+        ? ObsidianButton(
+            label: l.t('wc.reject'),
+            height: 52,
+            labelColor: ObsidianColors.danger,
+            loading: _action == 'rejectProposal',
+            onPressed: locked ? null : () => _run('rejectProposal', () => wc.rejectProposal(proposal.id)),
+          )
+        : ObsidianButton.secondary(
+            label: l.t('wc.reject'),
+            labelColor: ObsidianColors.dangerSoft,
+            loading: _action == 'rejectProposal',
+            onPressed: locked ? null : () => _run('rejectProposal', () => wc.rejectProposal(proposal.id)),
+          );
+    final approve = scam
+        ? ObsidianButton.secondary(
+            label: l.t('wc.approveAnyway'),
+            labelColor: ObsidianColors.textMuted,
+            loading: _action == 'approveProposal',
+            onPressed: locked ? null : () => _run('approveProposal', () => wc.approveProposal(proposal.id)),
+          )
+        : ObsidianButton(
+            label: l.t('wc.approve'),
+            height: 52,
+            loading: _action == 'approveProposal',
+            onPressed: locked ? null : () => _run('approveProposal', () => wc.approveProposal(proposal.id)),
+          );
+
     return ObsidianPanel(
-      surface: ObsidianCards.accent,
+      surface: origin.isDanger ? ObsidianCards.tinted(ObsidianColors.danger, radius: 22) : ObsidianCards.accent,
       padding: const EdgeInsets.all(18),
       child: Column(
         children: [
@@ -167,6 +230,23 @@ extension _DAppObsidian on _DAppConnectScreenState {
             textAlign: TextAlign.center,
             style: st.mono(fontSize: 12.5, color: ObsidianColors.cyan),
           ),
+          const SizedBox(height: 12),
+          // ที่มาของเว็บตาม WalletConnect Verify — แดง = อาจเป็นเว็บปลอม (ผู้ใช้ยังตัดสินใจเองได้)
+          ObsidianNotice(
+            key: ValueKey(origin.isDanger ? 'wc-origin-warning' : 'wc-origin-${origin.level.name}'),
+            tone: origin.isDanger
+                ? ObsidianTone.danger
+                : origin.level == WcOriginLevel.verified
+                    ? ObsidianTone.success
+                    : ObsidianTone.info,
+            icon: origin.isDanger
+                ? Icons.gpp_bad_rounded
+                : origin.level == WcOriginLevel.verified
+                    ? Icons.verified_rounded
+                    : Icons.help_outline_rounded,
+            lines: [_originText(l, origin)],
+            emphasizeFirst: origin.isDanger,
+          ),
           const SizedBox(height: 10),
           Text(
             l.t('wc.wantsToConnect'),
@@ -174,19 +254,12 @@ extension _DAppObsidian on _DAppConnectScreenState {
             style: st.ui(fontSize: 13, color: ObsidianColors.textSec),
           ),
           const SizedBox(height: 16),
+          // ปุ่มหลักอยู่ขวาเสมอ
           Row(
             children: [
-              Expanded(
-                child: ObsidianButton.secondary(
-                  label: l.t('wc.reject'),
-                  labelColor: ObsidianColors.dangerSoft,
-                  onPressed: () => wc.rejectProposal(),
-                ),
-              ),
+              Expanded(child: scam ? approve : reject),
               const SizedBox(width: 10),
-              Expanded(
-                child: ObsidianButton(label: l.t('wc.approve'), height: 52, onPressed: () => wc.approveProposal()),
-              ),
+              Expanded(child: scam ? reject : approve),
             ],
           ),
         ],
@@ -196,7 +269,11 @@ extension _DAppObsidian on _DAppConnectScreenState {
 
   Widget _obsRequest(LocaleProvider l, WalletConnectService wc) {
     final st = ObsidianStyle.of(context);
-    final info = wc.getRequestDisplayInfo();
+    final request = wc.pendingRequest!;
+    final view = wc.pendingRequestView!;
+    final from = _requestFrom(l, wc);
+    final more = wc.pendingRequestCount - 1;
+    final locked = _locked(wc);
     return ObsidianPanel(
       surface: ObsidianCards.tinted(ObsidianColors.orange, radius: 22),
       padding: const EdgeInsets.all(16),
@@ -209,25 +286,36 @@ extension _DAppObsidian on _DAppConnectScreenState {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  info['title'] ?? l.t('obs.wc.request'),
+                  view.kind == WcRequestKind.other ? l.t('obs.wc.request') : _requestTitle(l, view),
                   style: st.ui(fontSize: 15.5, fontWeight: FontWeight.w600, color: ObsidianColors.text),
                 ),
               ),
             ],
           ),
+          if (from != null) ...[
+            const SizedBox(height: 4),
+            Text(from, style: st.ui(fontSize: 12.5, color: ObsidianColors.textSec)),
+          ],
           const SizedBox(height: 10),
           CustomPaint(
             painter: ObsidianSurfacePainter(ObsidianSurface.field.copyWith(radius: 14)),
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Text(
-                info['description'] ?? '',
-                maxLines: 6,
+                _requestBody(l, view),
+                maxLines: 10,
                 overflow: TextOverflow.ellipsis,
                 style: st.mono(fontSize: 12, color: ObsidianColors.textSoft, height: 1.5),
               ),
             ),
           ),
+          if (more > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              _DAppConnectScreenState._fill(l.t('wc.moreRequests'), {'n': '$more'}),
+              style: st.ui(fontSize: 12, color: ObsidianColors.textMuted),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -235,12 +323,18 @@ extension _DAppObsidian on _DAppConnectScreenState {
                 child: ObsidianButton.secondary(
                   label: l.t('wc.reject'),
                   labelColor: ObsidianColors.dangerSoft,
-                  onPressed: () => wc.rejectRequest(),
+                  loading: _action == 'rejectRequest',
+                  onPressed: locked ? null : () => _run('rejectRequest', () => wc.rejectRequest(request.id)),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: ObsidianButton(label: l.t('wc.confirm'), height: 52, onPressed: () => wc.approveRequest()),
+                child: ObsidianButton(
+                  label: l.t('wc.confirm'),
+                  height: 52,
+                  loading: _action == 'approveRequest',
+                  onPressed: locked ? null : () => _run('approveRequest', () => wc.approveRequest(request.id)),
+                ),
               ),
             ],
           ),
