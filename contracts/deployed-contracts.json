@@ -138,6 +138,141 @@
       "deployedAt": "2026-10-21",
       "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
       "description": "KYC gate for the Validator tier of NodeRegistryV2"
+    },
+    {
+      "name": "ERC20V2Creator",
+      "category": "token-factory",
+      "address": "0x7E09257D1980103170EBA2F28b9345D70f14E29a",
+      "sourceFile": "contracts/src/token-factory/creators/ERC20V2Creator.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
+    },
+    {
+      "name": "UtilityTokenCreator",
+      "category": "token-factory",
+      "address": "0x96fD8327C3E7F0206bE60B1d2682E44628CaF45d",
+      "sourceFile": "contracts/src/token-factory/creators/UtilityTokenCreator.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
+    },
+    {
+      "name": "RewardTokenCreator",
+      "category": "token-factory",
+      "address": "0x08D448D105e41591e1eFAE3441143aB825A04938",
+      "sourceFile": "contracts/src/token-factory/creators/RewardTokenCreator.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
+    },
+    {
+      "name": "GovernanceTokenCreator",
+      "category": "token-factory",
+      "address": "0x5F8DA614DC24E10B38e45b814b53a9aE126FD9Fc",
+      "sourceFile": "contracts/src/token-factory/creators/GovernanceTokenCreator.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
+    },
+    {
+      "name": "StablecoinTokenCreator",
+      "category": "token-factory",
+      "address": "0x1925A2aaFb3dEd4C24Db2139311C43d68c42CaAa",
+      "sourceFile": "contracts/src/token-factory/creators/StablecoinTokenCreator.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
+    },
+    {
+      "name": "TPIXTokenFactoryV2",
+      "category": "token-factory",
+      "address": "0x4daE7a803348933ac9279357C0eC18fc76A7518C",
+      "sourceFile": "contracts/src/token-factory/TPIXTokenFactoryV2.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
+    },
+    {
+      "name": "FactoryERC721Creator",
+      "category": "token-factory",
+      "address": "0xA0C05896917168bbD2E6EE7bD0AE1B1ffe7EA944",
+      "sourceFile": "contracts/src/token-factory/creators/FactoryERC721Creator.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
+    },
+    {
+      "name": "NFTCollectionCreator",
+      "category": "token-factory",
+      "address": "0x64D446Af1bf144f8d128f3F7d8Be70c218d5Ef7c",
+      "sourceFile": "contracts/src/token-factory/creators/NFTCollectionCreator.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
+    },
+    {
+      "name": "TPIXNFTFactory",
+      "category": "token-factory",
+      "address": "0xC7caD1B39c46E705949d08d8B21E0fb2a2A7dfC5",
+      "sourceFile": "contracts/src/token-factory/TPIXNFTFactory.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "viaIR": true,
+      "verified": true,
+      "deployedAt": "2026-10-22"
     }
   ],
   "retired": [
