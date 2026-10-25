@@ -21,6 +21,7 @@ describe("fund-reward-pool script helpers", function () {
         const Registry = await ethers.getContractFactory("NodeRegistryV2");
         const registry = await Registry.deploy();
         await registry.waitForDeployment();
+        await registry.setRegistrationPaused(false);
         return { registry, address: await registry.getAddress(), owner, alice, funder };
     }
 
@@ -35,7 +36,7 @@ describe("fund-reward-pool script helpers", function () {
 
     it("เติมด้วย fundRewardPool() แล้วพูลเพิ่มจริง และบอกวันที่พอจ่ายถูก", async function () {
         const { registry, address, alice, funder } = await loadFixture(fixture);
-        await registry.connect(alice).registerNode(2, "203.0.113.10:8545", { value: LIGHT_STAKE });
+        await registry.connect(alice).registerNode(2, "203.0.113.10:8545", 7, 0, ethers.MaxUint256, { value: LIGHT_STAKE });
 
         const r = await fundPool(funder, address, ethers.parseEther("300"));
         expect(r.txHash).to.match(/^0x[0-9a-f]{64}$/);

@@ -9,7 +9,7 @@ pragma solidity ^0.8.20;
  * ว่าได้เงินแค่รอบเดียว และเงินต้นของคนอื่นไม่ถูกแตะ
  */
 interface INodeRegistryV2Probe {
-    function registerNode(uint8 _tier, string calldata _endpoint) external payable;
+    function registerNode(uint8 _tier, string calldata _endpoint, uint256, uint256, uint256) external payable;
     function claimRewards() external;
     function deregisterNode() external;
 }
@@ -24,7 +24,7 @@ contract RegistryReentrancyProbe {
     }
 
     function register(uint8 _tier, string calldata _endpoint) external payable {
-        registry.registerNode{value: msg.value}(_tier, _endpoint);
+        registry.registerNode{value: msg.value}(_tier, _endpoint, 180, 1500, type(uint256).max);
     }
 
     function claim() external {

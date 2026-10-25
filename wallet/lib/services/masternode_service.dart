@@ -418,6 +418,8 @@ class MasterNodeService {
     // Ownable2Step · build จาก .sol แบบ LF — เทสต์ฝั่งสัญญาเทียบ hash นี้กับที่ compile ได้ทุกรอบ
     // (ตัด 7e37dbd / 66066d8 ออกแล้ว — สองตัวนั้นยังโดนแทรก slash 50% ก่อนสมัครได้ และจะไม่ถูก deploy)
     '0x1c49f5e7661539977d5abfef5a268b66bcaf812735b67b20328af002a70816fb',
+    // Calendar reward schedule + signed registration terms.
+    '0xd7e2e84e40b4abe29cb54e3ee0cba2cd1077a4d6b26f62a25b6f8e713c49ebd9',
   };
 
   /// ที่อยู่ที่ตรวจ bytecode ผ่านแล้วในรอบนี้ (ตัวเล็ก) — โค้ดของสัญญา CREATE ที่ไม่มี selfdestruct
@@ -515,7 +517,7 @@ class MasterNodeService {
   // ── ABI (JSON ของ NodeRegistryV2 เฉพาะฟังก์ชันที่แอปใช้) ──
   static const _abiJson = '''
 [
- {"type":"function","name":"registerNode","stateMutability":"payable","inputs":[{"name":"_tier","type":"uint8"},{"name":"_endpoint","type":"string"}],"outputs":[]},
+ {"type":"function","name":"registerNode","stateMutability":"payable","inputs":[{"name":"_tier","type":"uint8"},{"name":"_endpoint","type":"string"},{"name":"_maxLockDays","type":"uint256"},{"name":"_maxSlashBps","type":"uint256"},{"name":"_deadline","type":"uint256"}],"outputs":[]},
  {"type":"function","name":"deregisterNode","stateMutability":"nonpayable","inputs":[],"outputs":[]},
  {"type":"function","name":"claimRewards","stateMutability":"nonpayable","inputs":[],"outputs":[]},
  {"type":"function","name":"withdrawSlashedStake","stateMutability":"nonpayable","inputs":[],"outputs":[]},
@@ -545,9 +547,14 @@ class MasterNodeService {
   // Calldata สำหรับเขียน
   // ================================================================
 
-  /// registerNode(uint8 tier, string endpoint) — ต้องส่ง value = minStake ของระดับนั้นพอดี
-  static Uint8List encodeRegister(MnTier tier, String endpoint) =>
-      _fn('registerNode').encodeCall([BigInt.from(tier.id), endpoint]);
+  /// Bind the displayed terms and expiry into the signed transaction.
+  static Uint8List encodeRegister(MnTier tier, String endpoint, {
+    required BigInt maxLockDays,
+    required BigInt maxSlashBps,
+    required BigInt deadline,
+  }) => _fn('registerNode').encodeCall([
+    BigInt.from(tier.id), endpoint, maxLockDays, maxSlashBps, deadline,
+  ]);
 
   static Uint8List encodeDeregister() => _fn('deregisterNode').encodeCall(const []);
   static Uint8List encodeClaim() => _fn('claimRewards').encodeCall(const []);
@@ -869,6 +876,11 @@ class MasterNodeService {
   static MnRevert classifyRevert(String message) {
     final m = message.toLowerCase();
     if (m.contains('registration paused')) return MnRevert.paused;
+    if (m.contains('registration expired') ||
+        m.contains('lock terms changed') ||
+        m.contains('slash terms changed')) {
+      return MnRevert.stateChanged;
+    }
     if (m.contains('tier full')) return MnRevert.full;
     if (m.contains('still locked')) return MnRevert.locked;
     if (m.contains('kyc')) return MnRevert.kyc;
