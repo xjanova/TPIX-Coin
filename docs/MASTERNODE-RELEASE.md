@@ -18,6 +18,14 @@ Status: source changes prepared; no mainnet deployment or discovery switch has b
 
 ## Stage with the owner signer
 
+For guided Windows signing, run the hidden-input wrapper in a dedicated PowerShell window:
+
+```powershell
+powershell.exe -NoProfile -File .\scripts\stage-masternode-release.ps1
+```
+
+It verifies the build, asks for the private key with `Read-Host -AsSecureString`, rejects a key that does not match the existing owner, and displays the public owner address before the `DEPLOY` prompt. When following guided steps, stop at that prompt and report only the public address. No chain writes occur before `DEPLOY`. It clears the child process's `DEPLOYER_KEY` on completion, cancellation or failure. Use `-Rehearsal` to exercise the wrapper without a real key or external chain transactions.
+
 With `DEPLOYER_KEY` supplied securely in the local process, run from `contracts`:
 
 ```powershell
