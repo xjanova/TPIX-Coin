@@ -288,6 +288,7 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
           _snack(_blockText(block, l, info: info), error: true);
           return;
         }
+        final deadline = BigInt.from(DateTime.now().millisecondsSinceEpoch ~/ 1000 + 600);
         final endpoint = await showModalBottomSheet<String>(
           context: context,
           isScrollControlled: true,
@@ -306,7 +307,11 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
           tier: info.tier,
           // ★ ต้องเท่ากับ minStake ของระดับนั้นพอดี — สัญญารุ่นใหม่ไม่รับเกิน
           value: info.minStake,
-          data: MasterNodeService.encodeRegister(info.tier, endpoint),
+          data: MasterNodeService.encodeRegister(info.tier, endpoint,
+            maxLockDays: info.lockDays,
+            maxSlashBps: info.slashPercentBps,
+            deadline: deadline,
+          ),
           gasFloor: MasterNodeService.gasFloorRegister,
         );
       });

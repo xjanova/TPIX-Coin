@@ -34,6 +34,7 @@ describe("NodeRegistryV2", function () {
         const Registry = await ethers.getContractFactory("NodeRegistryV2");
         const registry = await Registry.deploy();
         await registry.waitForDeployment();
+        await registry.setRegistrationPaused(false);
         return { registry, owner, alice, bob, carol, funder };
     }
 
@@ -52,7 +53,7 @@ describe("NodeRegistryV2", function () {
     describe("solvency — รางวัลห้ามกินเงินต้น", function () {
         it("pool ว่าง: claim ไม่ได้เงิน และเงินต้นยังอยู่ครบ", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             // ปล่อยเวลาผ่านไป 1 วัน — สูตรเดิมจะคำนวณรางวัลได้มหาศาล
             await time.increase(24 * 60 * 60);
@@ -72,7 +73,7 @@ describe("NodeRegistryV2", function () {
 
         it("pool ว่าง: ถอนคืนได้เต็มจำนวน", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(8 * 24 * 60 * 60); // ผ่าน lock 7 วัน
 
             await registry.connect(alice).claimRewards();
@@ -89,8 +90,8 @@ describe("NodeRegistryV2", function () {
         it("เงินต้นของคนอื่นห้ามถูกจ่ายเป็นรางวัล", async function () {
             const { registry, alice, bob } = await loadFixture(deployFixture);
             // bob วางเงินต้นก้อนใหญ่ไว้ — เป็นเหยื่อของบั๊กเดิม
-            await registry.connect(bob).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.SENTINEL, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: SENTINEL_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             await time.increase(30 * 24 * 60 * 60);
             await registry.connect(alice).claimRewards();
@@ -103,7 +104,7 @@ describe("NodeRegistryV2", function () {
 
         it("เมื่อเติม pool แล้วค่อยจ่ายได้ และเงินต้นยังปลอดภัย", async function () {
             const { registry, alice, funder } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(60 * 60);
             await registry.connect(alice).claimRewards();   // ยังไม่ได้เงิน
             expect(await registry.totalRewardsDistributed()).to.equal(0);
@@ -121,7 +122,7 @@ describe("NodeRegistryV2", function () {
 
         it("จ่ายไม่ครบ ส่วนที่เหลือไม่หาย — ทบไว้เคลมทีหลังได้", async function () {
             const { registry, alice, funder } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             // Light มีเพดาน APR 6% → 10,000 TPIX ได้ ~1.64 TPIX/วัน ปล่อย 30 วันให้ได้ ~49 TPIX
             await time.increase(30 * 24 * 60 * 60);
 
@@ -147,14 +148,14 @@ describe("NodeRegistryV2", function () {
         it("รางวัลช่วงที่อยู่คนเดียว ต้องไม่ถูกหารด้วยจำนวนโหนดใหม่", async function () {
             const { registry, alice, bob } = await loadFixture(fundedFixture);
 
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(10 * 24 * 60 * 60);
 
             const soloEarned = await registry.pendingReward(alice.address);
             expect(soloEarned).to.be.gt(0);
 
             // bob เข้ามาอีก 9 ตัว (จำลองด้วยการเข้าทีละ signer ไม่ได้ จึงใช้ bob 1 ตัวก็พอ)
-            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             // ทันทีที่ bob เข้า ยอดของ alice ต้องไม่ลดลง
             const afterJoin = await registry.pendingReward(alice.address);
@@ -163,10 +164,10 @@ describe("NodeRegistryV2", function () {
 
         it("โหนดใหม่เริ่มนับจากศูนย์ ไม่ได้รางวัลย้อนหลัง", async function () {
             const { registry, alice, bob } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(10 * 24 * 60 * 60);
 
-            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             // bob เพิ่งเข้า ยอดต้องเกือบศูนย์ (ยอมให้มีเศษจากบล็อกที่เพิ่งผ่าน)
             const bobPending = await registry.pendingReward(bob.address);
             const alicePending = await registry.pendingReward(alice.address);
@@ -175,8 +176,8 @@ describe("NodeRegistryV2", function () {
 
         it("สองโหนดที่อยู่ช่วงเวลาเท่ากัน ได้รางวัลเท่ากัน", async function () {
             const { registry, alice, bob } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
-            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(10 * 24 * 60 * 60);
 
             const a = await registry.pendingReward(alice.address);
@@ -192,11 +193,11 @@ describe("NodeRegistryV2", function () {
     describe("operators list", function () {
         it("ลงทะเบียน → ถอน → ลงทะเบียนใหม่ ต้องนับเป็น 1 คน", async function () {
             const { registry, alice } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(8 * 24 * 60 * 60);
             await registry.connect(alice).deregisterNode();
             await registry.connect(alice).claimRewards();
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             expect(await registry.getOperatorCount()).to.equal(1);
             const active = await registry.getActiveOperators(0, 10);
@@ -206,7 +207,7 @@ describe("NodeRegistryV2", function () {
         it("getActiveOperators แบ่งหน้าได้ และข้ามคนที่ถอนไปแล้ว", async function () {
             const { registry, alice, bob, carol } = await loadFixture(fundedFixture);
             for (const s of [alice, bob, carol]) {
-                await registry.connect(s).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+                await registry.connect(s).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             }
             await time.increase(8 * 24 * 60 * 60);
             await registry.connect(bob).deregisterNode();
@@ -253,7 +254,7 @@ describe("NodeRegistryV2", function () {
     describe("uptime", function () {
         it("ลด uptime ทีหลัง ห้ามตัดรางวัลที่หาไว้แล้ว", async function () {
             const { registry, owner, alice } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(10 * 24 * 60 * 60);
 
             const before = await registry.pendingReward(alice.address);
@@ -266,14 +267,14 @@ describe("NodeRegistryV2", function () {
 
         it("uptime > 10000 ไม่ได้", async function () {
             const { registry, owner, alice } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await expect(registry.connect(owner).updateUptime(alice.address, 10001))
                 .to.be.revertedWith("Max 10000");
         });
 
         it("คนอื่นเรียก updateUptime ไม่ได้", async function () {
             const { registry, alice, bob } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await expect(registry.connect(bob).updateUptime(alice.address, 5000))
                 .to.be.revertedWith("Not owner or uptime oracle");
         });
@@ -286,38 +287,38 @@ describe("NodeRegistryV2", function () {
         it("stake ต่ำกว่าขั้นต่ำไม่ได้", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
             await expect(
-                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: ethers.parseEther("9999") })
+                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: ethers.parseEther("9999") })
             ).to.be.revertedWith("Insufficient stake");
         });
 
         it("endpoint ว่างหรือยาวเกินไม่ได้", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
             await expect(
-                registry.connect(alice).registerNode(TIER.LIGHT, "", { value: LIGHT_STAKE })
+                registry.connect(alice).registerNode(TIER.LIGHT, "", 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE })
             ).to.be.revertedWith("Endpoint required");
             await expect(
-                registry.connect(alice).registerNode(TIER.LIGHT, "x".repeat(101), { value: LIGHT_STAKE })
+                registry.connect(alice).registerNode(TIER.LIGHT, "x".repeat(101), 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE })
             ).to.be.revertedWith("Endpoint too long");
         });
 
         it("ลงทะเบียนซ้อนไม่ได้", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await expect(
-                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE })
+                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE })
             ).to.be.revertedWith("Already registered");
         });
 
         it("ถอนก่อนครบ lock ไม่ได้", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await expect(registry.connect(alice).deregisterNode()).to.be.revertedWith("Still locked");
         });
 
         it("tier Validator ต้องมี KYC ก่อน", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
             await expect(
-                registry.connect(alice).registerNode(TIER.VALIDATOR, ENDPOINT, {
+                registry.connect(alice).registerNode(TIER.VALIDATOR, ENDPOINT, 180, 1500, ethers.MaxUint256, {
                     value: ethers.parseEther("10000000"),
                 })
             ).to.be.revertedWith("KYC contract not configured");
@@ -330,7 +331,7 @@ describe("NodeRegistryV2", function () {
     describe("slashing", function () {
         it("โดน slash แล้วถอนส่วนที่เหลือได้ และรางวัลที่หาไว้ไม่หาย", async function () {
             const { registry, owner, alice } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: SENTINEL_STAKE });
             await time.increase(10 * 24 * 60 * 60);
 
             const earnedBefore = await registry.pendingReward(alice.address);
@@ -347,7 +348,7 @@ describe("NodeRegistryV2", function () {
 
         it("คนอื่น slash ไม่ได้", async function () {
             const { registry, alice, bob } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await expect(registry.connect(bob).slashNode(alice.address, "x"))
                 .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
         });
@@ -361,7 +362,7 @@ describe("NodeRegistryV2", function () {
 
         it("Light ตัวเดียว 1 ปี ได้ ~6% ของเงินต้น (600 TPIX) ไม่ใช่ 90 ล้าน", async function () {
             const { registry, alice } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(YEAR);
 
             const earned = await registry.pendingReward(alice.address);
@@ -372,7 +373,7 @@ describe("NodeRegistryV2", function () {
 
         it("pool เติม 5M แล้วโหนดเดียวเคลมได้แค่ตามเพดาน pool ยังเหลือเกือบเต็ม", async function () {
             const { registry, alice } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(YEAR);
             await registry.connect(alice).claimRewards();
 
@@ -397,7 +398,7 @@ describe("NodeRegistryV2", function () {
             expect(aprBps).to.be.gte(599n);
             expect(aprBps).to.be.lte(600n);
 
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             const [cur1] = await registry.nodeRewardRate(TIER.LIGHT);
             expect(cur1).to.equal(next0);
         });
@@ -410,8 +411,8 @@ describe("NodeRegistryV2", function () {
             await registry.connect(owner).updateTierConfig(TIER.LIGHT, ethers.parseEther("10000000"), 0, 7, 0, 1);
 
             const big = ethers.parseEther("10000000");
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: big });
-            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: big });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: big });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: big });
             await time.increase(YEAR);
 
             const a = await registry.pendingReward(alice.address);
@@ -422,7 +423,7 @@ describe("NodeRegistryV2", function () {
 
         it("เปลี่ยนเพดานกลางทาง: ช่วงก่อนหน้าคิดด้วยเพดานเดิม", async function () {
             const { registry, owner, alice } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(YEAR);
             await registry.connect(owner).setTierAprCap(TIER.LIGHT, 300);   // 3%
             await time.increase(YEAR);
@@ -471,23 +472,23 @@ describe("NodeRegistryV2", function () {
         it("ส่งเกินขั้นต่ำ → revert (รางวัลเท่ากันต่อโหนด ส่งเกินมีแต่ถูกล็อกฟรี)", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
             await expect(
-                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE + 1n })
+                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE + 1n })
             ).to.be.revertedWith("Stake must equal tier minimum");
         });
 
         it("ส่งขาด → Insufficient stake เหมือนเดิม (ข้อความเดิมที่เว็บ/แอปแปลไว้)", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
             await expect(
-                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE - 1n })
+                registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE - 1n })
             ).to.be.revertedWith("Insufficient stake");
         });
 
         it("ชั้นเต็ม → Tier full", async function () {
             const { registry, owner, alice, bob } = await loadFixture(deployFixture);
             await registry.connect(owner).updateTierConfig(TIER.SENTINEL, SENTINEL_STAKE, 1, 30, 500, 3000);
-            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: SENTINEL_STAKE });
             await expect(
-                registry.connect(bob).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE })
+                registry.connect(bob).registerNode(TIER.SENTINEL, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: SENTINEL_STAKE })
             ).to.be.revertedWith("Tier full");
         });
     });
@@ -495,13 +496,13 @@ describe("NodeRegistryV2", function () {
     describe("audit 2026-10: หยุดรับสมัครชั่วคราว", function () {
         it("หยุดแล้วสมัครใหม่ไม่ได้ แต่ถอน/เคลมของคนเดิมยังทำได้", async function () {
             const { registry, owner, alice, bob } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(8 * 24 * 60 * 60);
 
             await expect(registry.connect(owner).setRegistrationPaused(true))
                 .to.emit(registry, "RegistrationPaused").withArgs(true);
             await expect(
-                registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE })
+                registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE })
             ).to.be.revertedWith("Registration paused");
 
             await registry.connect(alice).claimRewards();
@@ -510,7 +511,7 @@ describe("NodeRegistryV2", function () {
             expect((await registry.getNodeInfo(alice.address)).stakedAmount).to.equal(0);
 
             await registry.connect(owner).setRegistrationPaused(false);
-            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
         });
 
         it("คนอื่นหยุดระบบไม่ได้", async function () {
@@ -523,7 +524,7 @@ describe("NodeRegistryV2", function () {
     describe("audit 2026-10: slash ย้อนหลังแรงกว่าตอนสมัครไม่ได้", function () {
         it("Light สมัครตอน slash 0% → owner ขึ้นเป็นเพดาน 15% ทีหลัง เงินต้นต้องไม่ถูกตัด", async function () {
             const { registry, owner, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 1500, 1500);
 
             await registry.connect(owner).slashNode(alice.address, "test");
@@ -534,7 +535,7 @@ describe("NodeRegistryV2", function () {
 
         it("owner ลด % ลงทีหลัง → ใช้ % ที่ต่ำกว่า", async function () {
             const { registry, owner, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: SENTINEL_STAKE });
             await registry.connect(owner).updateTierConfig(TIER.SENTINEL, SENTINEL_STAKE, 500, 30, 200, 3000);
             await registry.connect(owner).slashNode(alice.address, "test");
             expect((await registry.getNodeInfo(alice.address)).stakedAmount)
@@ -543,7 +544,7 @@ describe("NodeRegistryV2", function () {
 
         it("เงินที่ถูก slash ไม่ออกไปหาใคร — อยู่ในสัญญาเป็นงบรางวัล", async function () {
             const { registry, owner, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: SENTINEL_STAKE });
             await registry.connect(owner).slashNode(alice.address, "test");
             const slashed = (SENTINEL_STAKE * 500n) / 10000n;
             expect(await ethers.provider.getBalance(await registry.getAddress())).to.equal(SENTINEL_STAKE);
@@ -558,7 +559,7 @@ describe("NodeRegistryV2", function () {
             const probe = await Probe.deploy(await registry.getAddress());
             await probe.waitForDeployment();
 
-            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await probe.register(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
             await time.increase(30 * 24 * 60 * 60);
 
@@ -597,7 +598,7 @@ describe("NodeRegistryV2", function () {
 
         it("owner ขึ้น minStake ทีหลัง → โหนดเดิมที่วาง 10K ต้องไม่ได้เกิน 6% ของเงินต้นตัวเอง", async function () {
             const { registry, owner, alice } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             // เพดาน APR คิดจาก minStake ของชั้น ไม่ใช่เงินต้นของโหนด — ถ้ายอมให้เปลี่ยน
             // alice จะได้ 6% ของ 20K = 1,200 TPIX/ปี (12% ของเงินต้นจริง)
@@ -611,7 +612,7 @@ describe("NodeRegistryV2", function () {
 
         it("owner ตั้ง minStake มหาศาลตอนมีโหนดอยู่ → ห้ามทำให้ถอนเงินต้นไม่ได้ถาวร", async function () {
             const { registry, owner, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             // minStake × เพดาน APR × 1e18 ล้น uint256 → _syncTier ของชั้นนี้ revert ทุกครั้ง
             // (รวมถึง updateTierConfig เองที่ต้อง sync ก่อน — แก้กลับก็ไม่ได้)
@@ -627,7 +628,7 @@ describe("NodeRegistryV2", function () {
 
         it("ชั้นที่มีโหนดอยู่: เปลี่ยน minStake ไม่ได้ แต่ปรับค่าอื่นได้ / ชั้นว่างเปลี่ยนได้", async function () {
             const { registry, owner, alice } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             await expect(
                 registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE * 2n, 0, 7, 0, 1500)
@@ -659,7 +660,7 @@ describe("NodeRegistryV2", function () {
             await registry.connect(owner)
                 .updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 36500, 0, 1500)
                 .catch(() => {});
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             const n = await registry.getNodeInfo(alice.address);
             expect(n.unlockAt - n.registeredAt).to.be.lte(180n * BigInt(DAY));
@@ -671,7 +672,7 @@ describe("NodeRegistryV2", function () {
             await setCode(kyc, "0x600160005260206000f3");            // isApproved → true
             await registry.connect(owner).setKYCContract(kyc);
             const V_STAKE = ethers.parseEther("10000000");
-            await registry.connect(alice).registerNode(TIER.VALIDATOR, ENDPOINT, { value: V_STAKE });
+            await registry.connect(alice).registerNode(TIER.VALIDATOR, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: V_STAKE });
             await funder.sendTransaction({ to: await registry.getAddress(), value: ethers.parseEther("1000000") });
 
             // KYC "อัปเกรด" เป็นโค้ดที่ revert ทุกครั้ง แล้ว owner ถอดออกอีกที
@@ -688,20 +689,20 @@ describe("NodeRegistryV2", function () {
 
         it("ถอนตอนพูลว่าง: ได้เงินต้นครบ รางวัลค้างเป็นหนี้ · สมัครใหม่ต้องรอเคลมก่อน", async function () {
             const { registry, alice, funder } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(8 * DAY);
             await registry.connect(alice).deregisterNode();
 
             const owed = await registry.pendingReward(alice.address);
             expect(owed).to.be.gt(0);
             expect(await ethers.provider.getBalance(await registry.getAddress())).to.equal(0);
-            await expect(registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE }))
+            await expect(registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE }))
                 .to.be.revertedWith("Claim pending rewards first");
 
             await registry.connect(funder).fundRewardPool({ value: ethers.parseEther("1000") });
             await expect(registry.connect(alice).claimRewards())
                 .to.emit(registry, "RewardClaimed").withArgs(alice.address, owed);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
         });
     });
 
@@ -717,7 +718,7 @@ describe("NodeRegistryV2", function () {
             await registry.connect(owner)
                 .updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 7, 5000, 1500)
                 .catch(() => {});
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await registry.connect(owner).slashNode(alice.address, "front-run");
 
             expect((await registry.getNodeInfo(alice.address)).stakedAmount)
@@ -739,7 +740,7 @@ describe("NodeRegistryV2", function () {
         it("ยังไม่ตั้ง oracle: โหนดใหม่เริ่ม uptime 100% เหมือนเดิม", async function () {
             const { registry, alice } = await loadFixture(deployFixture);
             expect(await registry.uptimeOracle()).to.equal(ethers.ZeroAddress);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             expect((await registry.getNodeInfo(alice.address)).uptime).to.equal(10000);
         });
 
@@ -748,7 +749,7 @@ describe("NodeRegistryV2", function () {
             await expect(registry.connect(owner).setUptimeOracle(carol.address))
                 .to.emit(registry, "UptimeOracleUpdated").withArgs(carol.address);
 
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             expect((await registry.getNodeInfo(alice.address)).uptime).to.equal(0);
             await time.increase(10 * DAY);
             expect(await registry.pendingReward(alice.address)).to.equal(0);
@@ -763,7 +764,7 @@ describe("NodeRegistryV2", function () {
 
         it("oracle ตั้งได้ทีละชุด: ข้ามโหนดที่ไม่ active และย้อนไปตัดรางวัลที่หาไว้แล้วไม่ได้", async function () {
             const { registry, owner, alice, bob, carol } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await registry.connect(owner).setUptimeOracle(carol.address);
             await time.increase(30 * DAY);
             const before = await registry.pendingReward(alice.address);
@@ -784,7 +785,7 @@ describe("NodeRegistryV2", function () {
 
         it("batch: ความยาวไม่ตรง / เกิน 100 / ค่าเกิน 10000 → revert", async function () {
             const { registry, owner, alice, carol } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await registry.connect(owner).setUptimeOracle(carol.address);
             await expect(registry.connect(carol).updateUptimeBatch([alice.address], [1, 2]))
                 .to.be.revertedWith("Length mismatch");
@@ -803,7 +804,7 @@ describe("NodeRegistryV2", function () {
             for (let i = 0; i < 100; i++) {
                 const w = ethers.Wallet.createRandom().connect(ethers.provider);
                 await setBalance(w.address, ethers.parseEther("20000"));
-                await registry.connect(w).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+                await registry.connect(w).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
                 ops.push(w.address);
             }
             await registry.connect(carol).updateUptimeBatch(ops, Array(100).fill(10000));
@@ -814,7 +815,7 @@ describe("NodeRegistryV2", function () {
 
         it("oracle แตะได้แค่ uptime — slash / แก้เงื่อนไข / หยุดระบบ / ตั้ง oracle / โอน owner ไม่ได้", async function () {
             const { registry, owner, alice, carol } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(alice).registerNode(TIER.SENTINEL, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: SENTINEL_STAKE });
             await registry.connect(owner).setUptimeOracle(carol.address);
             const o = registry.connect(carol);
             const denied = "OwnableUnauthorizedAccount";
@@ -831,7 +832,7 @@ describe("NodeRegistryV2", function () {
 
         it("ถอด oracle แล้วตั้ง uptime ไม่ได้อีก · คนนอกตั้งไม่ได้", async function () {
             const { registry, owner, alice, bob, carol } = await loadFixture(deployFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await registry.connect(owner).setUptimeOracle(carol.address);
             await expect(registry.connect(bob).updateUptime(alice.address, 0))
                 .to.be.revertedWith("Not owner or uptime oracle");
@@ -874,15 +875,15 @@ describe("NodeRegistryV2", function () {
             const regAddr = await registry.getAddress();
 
             // bob สมัครก่อนโดนยึด (Light: slash 0% ล็อก 7 วัน) แล้วหารางวัลไว้ 30 วัน
-            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await time.increase(30 * DAY);
             const bobEarned = await registry.pendingReward(bob.address);
             expect(bobEarned).to.be.gt(0);
 
             // ── กุญแจหลุด ──
             await registry.connect(owner).updateTierConfig(TIER.LIGHT, LIGHT_STAKE, 0, 180, 1500, 1500);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
-            await registry.connect(carol).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
+            await registry.connect(carol).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
 
             await registry.connect(owner).setUptimeOracle(owner.address);
             await registry.connect(owner).updateUptimeBatch([alice.address, bob.address, carol.address], [0, 0, 0]);
@@ -932,8 +933,8 @@ describe("NodeRegistryV2", function () {
 
         it("oracle ถูกยึด: ตั้ง 0 ทุกคนรัว ๆ ได้แค่หยุดรางวัลจากนี้ไป — รางวัลที่หาไว้แล้วและเงินต้นอยู่ครบ", async function () {
             const { registry, owner, alice, bob, carol } = await loadFixture(fundedFixture);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
-            await registry.connect(bob).registerNode(TIER.SENTINEL, ENDPOINT, { value: SENTINEL_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.SENTINEL, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: SENTINEL_STAKE });
             await time.increase(60 * DAY);
             const earnedA = await registry.pendingReward(alice.address);
             const earnedB = await registry.pendingReward(bob.address);
@@ -959,8 +960,8 @@ describe("NodeRegistryV2", function () {
         it("oracle ถูกยึด: ตั้ง 100% ให้โหนดที่ไม่ได้รันได้แค่เพดาน APR และจ่ายจากพูลเท่านั้น — ไม่แตะเงินต้นคนอื่น", async function () {
             const { registry, owner, alice, bob, carol, funder } = await loadFixture(deployFixture);
             await registry.connect(owner).setUptimeOracle(carol.address);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
-            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
+            await registry.connect(bob).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await registry.connect(carol).updateUptime(alice.address, 10000);       // alice ไม่ได้รันจริง
             await registry.connect(funder).fundRewardPool({ value: ethers.parseEther("100") });
             await time.increase(365 * DAY);
@@ -977,7 +978,7 @@ describe("NodeRegistryV2", function () {
         it("batch: ที่อยู่ซ้ำ = ค่าหลังสุดชนะ · ที่อยู่ศูนย์/ไม่เคยสมัครถูกข้าม ไม่ทำให้ทั้งชุดล้ม", async function () {
             const { registry, owner, alice, carol } = await loadFixture(deployFixture);
             await registry.connect(owner).setUptimeOracle(carol.address);
-            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, { value: LIGHT_STAKE });
+            await registry.connect(alice).registerNode(TIER.LIGHT, ENDPOINT, 180, 1500, ethers.MaxUint256, { value: LIGHT_STAKE });
             await registry.connect(carol).updateUptimeBatch(
                 [alice.address, ethers.ZeroAddress, alice.address], [10000, 10000, 2500]);
             expect((await registry.getNodeInfo(alice.address)).uptime).to.equal(2500);

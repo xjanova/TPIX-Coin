@@ -1,0 +1,37 @@
+{
+  "chainId": 4289,
+  "address": "0x0611E3747B3D29d5f2a6347a66e93dE066344098",
+  "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+  "kycAddress": "0x55E918D8D4D3EC9499f26981B49769Af7Fc094a3",
+  "previousRegistries": [
+    "0x44c497C67B4F756a7769F11c8BEc26439C31F70E",
+    "0x9c3662972921705FeFa9E9bF0d91190d7B514A2B"
+  ],
+  "runtimeCodeHash": "0xd7e2e84e40b4abe29cb54e3ee0cba2cd1077a4d6b26f62a25b6f8e713c49ebd9",
+  "registrationPaused": true,
+  "discoveryPublished": false,
+  "rewardPoolFunded": false,
+  "uptimeOracleActivated": false,
+  "transactions": [
+    {
+      "action": "pause previous registry",
+      "to": "0x44c497C67B4F756a7769F11c8BEc26439C31F70E",
+      "hash": "0xdf008bdba64b1a99f6129229e26a59afd39393f46e7b08ee207785746fe30f00"
+    },
+    {
+      "action": "pause previous registry",
+      "to": "0x9c3662972921705FeFa9E9bF0d91190d7B514A2B",
+      "hash": "0x0d6c3a11ae224666bfea189c69d8b226bc72e589c434f3b44eb7dca260131016"
+    },
+    {
+      "action": "deploy paused registry",
+      "to": "0x0611E3747B3D29d5f2a6347a66e93dE066344098",
+      "hash": "0x3b49ead0d896030a8061cefd474cc43c36ecbe779cc95f70e19765f0eaf0cad3"
+    },
+    {
+      "action": "reuse existing KYC",
+      "to": "0x0611E3747B3D29d5f2a6347a66e93dE066344098",
+      "hash": "0xa9d55cefa78ae700e79a40a43a675c626986ff4d69ae4d48ba6b5444c48b30ce"
+    }
+  ]
+}

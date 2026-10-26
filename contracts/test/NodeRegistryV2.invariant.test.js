@@ -70,6 +70,7 @@ class Model {
         this.boundLast = t0;
         this.start = t0;
         this.year = 0n;
+        this.announced = 0n;
         this.oracle = "0x0000000000000000000000000000000000000000";
         this.rps = EMISSION[0] / YEAR;
         this.pool = 1_400_000_000n * E18;
@@ -93,28 +94,32 @@ class Model {
     // ── independent bounds, integrated with the parameters in force ──
     advance(ts) {
         if (ts <= this.boundLast) return;
-        const dt = ts - this.boundLast;
-        for (const tc of this.tiers) {
-            tc.capN += tc.minStake * tc.cap * dt;
-            tc.emN += this.rps * tc.share * dt;
+        for (let y = 0; y < 3; y++) {
+            const lo = this.boundLast > this.start + BigInt(y)*YEAR ? this.boundLast : this.start + BigInt(y)*YEAR;
+            const hi = min(ts, this.start + BigInt(y+1)*YEAR);
+            if (hi <= lo) continue;
+            for (const tc of this.tiers) {
+                tc.capN += tc.minStake * tc.cap * (hi-lo);
+                tc.emN += (EMISSION[y]/YEAR) * tc.share * (hi-lo);
+            }
         }
         this.boundLast = ts;
+        this.year = min((ts-this.start)/YEAR, 3n);
+        this.rps = this.year < 3n ? EMISSION[Number(this.year)]/YEAR : 0n;
     }
-    // ── mirror of the contract ──
-    perNode(t, n) {
-        if (n === 0n || this.rps === 0n) return 0n;
+    perNode(t, n, rps = this.rps) {
+        if (n === 0n || rps === 0n) return 0n;
         const tc = this.tiers[t];
-        if (tc.share === 0n) return 0n;
-        const tierPerSec = (this.rps * tc.share) / BPS;
-        const share = (tierPerSec * E18) / n;
-        const cap = (tc.minStake * tc.cap * E18) / (BPS * YEAR);
-        return min(share, cap);
+        return min(((rps * tc.share)/BPS)*E18/n, tc.minStake*tc.cap*E18/(BPS*YEAR));
     }
     sync(t, ts) {
         const tc = this.tiers[t];
         if (ts <= tc.last) return;
-        const r = this.perNode(t, tc.active);
-        if (r > 0n) tc.acc += r * (ts - tc.last);
+        for (let y=0; y<3; y++) {
+            const lo = tc.last > this.start+BigInt(y)*YEAR ? tc.last : this.start+BigInt(y)*YEAR;
+            const hi = min(ts, this.start+BigInt(y+1)*YEAR);
+            if (hi>lo) tc.acc += this.perNode(t, tc.active, EMISSION[y]/YEAR)*(hi-lo);
+        }
         tc.last = ts;
     }
     syncAll(ts) { for (let t = 0; t < TIERS; t++) this.sync(t, ts); }
@@ -157,7 +162,11 @@ class Model {
         if (n.status !== S.ACTIVE) return owed;
         const tc = this.tiers[n.tier];
         let acc = tc.acc;
-        if (ts > tc.last) acc += this.perNode(n.tier, tc.active) * (ts - tc.last);
+        for (let y = 0; y < 3; y++) {
+            const lo = tc.last > this.start + BigInt(y)*YEAR ? tc.last : this.start + BigInt(y)*YEAR;
+            const hi = min(ts, this.start + BigInt(y+1)*YEAR);
+            if (hi > lo) acc += this.perNode(n.tier, tc.active, EMISSION[y]/YEAR) * (hi-lo);
+        }
         if (acc > n.debt) owed += (((acc - n.debt) / E18) * n.uptime) / BPS;
         return owed;
     }
@@ -201,6 +210,7 @@ async function runSeed(seed) {
     const Registry = await ethers.getContractFactory("NodeRegistryV2");
     const registry = await Registry.deploy();
     await registry.waitForDeployment();
+        await registry.setRegistrationPaused(false);
     const regAddr = await registry.getAddress();
     const Probe = await ethers.getContractFactory("RegistryReentrancyProbe");
     const probe = await Probe.deploy(regAddr);
@@ -218,7 +228,9 @@ async function runSeed(seed) {
     await setCode(kycAddrs.revert, KYC_REVERT);
 
     const deployBlock = await ethers.provider.getBlock("latest");
-    const m = new Model(BigInt(deployBlock.timestamp));
+    const deployed = await registry.deploymentTransaction().wait();
+    const rewardStartBlock = await ethers.provider.getBlock(deployed.blockNumber);
+    const m = new Model(BigInt(rewardStartBlock.timestamp));
     let now = BigInt(deployBlock.timestamp);
     // actors: 6 EOAs + 1 contract operator that tries reentrancy (never slashed: it has no withdrawSlashed)
     const actors = [...eoas.map((s) => ({ addr: s.address, signer: s, probe: false })), { addr: probeAddr, signer: eoas[0], probe: true }];
@@ -282,7 +294,7 @@ async function runSeed(seed) {
             (t !== 3 || m.kyc === "yes");
         const res = await exec("register", (o) => a.probe
             ? probe.connect(a.signer).register(t, ep, { ...o, value })
-            : registry.connect(a.signer).registerNode(t, ep, { ...o, value }));
+            : registry.connect(a.signer).registerNode(t, ep, 180, 1500, ethers.MaxUint256, { ...o, value }));
         expectOutcome(`register(${t})`, predicted, res);
         if (!res.ok) return;
         m.advance(res.ts);
@@ -444,14 +456,13 @@ async function runSeed(seed) {
     async function doAdvanceYear() {
         const caller = pick([owner, funder, ...eoas]);
         const ts = now + 1n;
-        const predicted = m.year < 3n && ts >= m.start + (m.year + 1n) * YEAR;
+        const predicted = m.announced < 3n && ts >= m.start + (m.announced + 1n) * YEAR;
         const res = await exec("advanceYear", (o) => registry.connect(caller).advanceRewardYear(o));
         expectOutcome("advanceRewardYear", predicted, res);
         if (!res.ok) return;
         m.advance(res.ts);
         m.syncAll(res.ts);
-        m.year++;
-        m.rps = m.year < 3n ? EMISSION[Number(m.year)] / YEAR : 0n;
+        m.announced = min((res.ts - m.start) / YEAR, 3n);
     }
 
     async function doOwnerConfig() {

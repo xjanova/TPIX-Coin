@@ -17,7 +17,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *
  * IMPORTANT: Guardian=0 preserves backward compatibility with V1 enum where Validator=0.
  *
- * Reward Pool: 1,400,000,000 TPIX over 3 years (ending 2028)
+ * Reward Pool: 1,400,000,000 TPIX over 3 years from deployment
  *   Year 1: 600M | Year 2: 500M | Year 3: 300M
  *
  * Reward Shares: Validator 20%, Guardian 35%, Sentinel 30%, Light 15%
@@ -61,11 +61,11 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *  set APR caps (<= 50%), the KYC contract and the uptime oracle.
  *  Ownership moves in two steps (Ownable2Step): the new owner must accept.
  *
- *  TERMS ARE CAPPED, NOT JUST "NOT RETROACTIVE" — registerNode takes no
- *  "max lock / max slash" argument and the owner runs the IBFT validators, so it
- *  can put updateTierConfig ahead of a user's registerNode in the same block. The
- *  node then registers under the new terms (they are snapshotted at registration).
- *  The hard caps bound what that can do to a newcomer's principal.
+ *  REGISTRATION TERMS — the signer supplies the maximum lock and slash they
+ *  accepted and a deadline. An owner changing terms before inclusion cannot
+ *  exceed those limits. The old unprotected registration selector is absent.
+ *  REWARD CLOCK — accrual integrates each scheduled year and stops after year 3,
+ *  even if nobody calls advanceRewardYear. Views use the same clock and math.
  *
  *  UPTIME ORACLE — a hot key the server can hold to report whether nodes really
  *  run. It can only set uptime (a multiplier on FUTURE rewards; never principal,
@@ -145,8 +145,7 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
     uint256 public totalStaked;             // Total TPIX staked across all tiers
 
     // Block reward per second (calculated from yearly emission)
-    uint256 public currentRewardPerSecond;
-    uint256 public currentYear;             // Current reward year (0-2, 3 = ended)
+    uint256 private lastAnnouncedRewardYear; // Event checkpoint only; never drives accrual
 
     // Year emission schedule (in wei) — 3 years
     uint256[3] public yearlyEmission;
@@ -162,7 +161,8 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
     mapping(NodeTier => uint256) public tierAprCapBps;
 
     // หยุดรับโหนดใหม่ชั่วคราว (เช่นเจอปัญหาหลัง deploy) — ไม่กระทบการถอน/เคลม
-    bool public registrationPaused;
+    // A fresh deployment must be configured and verified before accepting stake.
+    bool public registrationPaused = true;
 
     // % slash ที่มีผลตอนโหนดนั้นสมัคร (basis points) — owner ขึ้น % ทีหลังแล้ว
     // ย้อนไปปรับคนที่สมัครไว้ก่อนแรงกว่าที่เขายอมรับไว้ไม่ได้
@@ -256,8 +256,6 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
         yearlyEmission[2] = 300_000_000 ether;
 
         rewardStartTime = block.timestamp;
-        currentYear = 0;
-        _updateRewardRate();
 
         tierLastUpdate[NodeTier.Guardian] = block.timestamp;
         tierLastUpdate[NodeTier.Sentinel] = block.timestamp;
@@ -270,22 +268,33 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
     // ============================================================
 
     /**
-     * @dev Accrue a tier's accumulator up to now at the CURRENT rate and node count.
-     *      Must be called before anything that changes activeNodes, the emission
-     *      rate, or the tier's reward share — otherwise past time is paid at
-     *      tomorrow's terms.
+     * @dev Accrue across scheduled reward years with the current tier terms and
+     *      node count. Settle before changing those terms or membership so past
+     *      time cannot be paid at tomorrow's terms.
      */
     function _syncTier(NodeTier _tier) internal {
         uint256 last = tierLastUpdate[_tier];
         if (block.timestamp <= last) return;
 
-        // With no active nodes there is nobody to credit — that slice of the
-        // emission is simply not distributed.
-        uint256 rate = _perNodeRateScaled(_tier, tiers[_tier].activeNodes);
-        if (rate > 0) {
-            accRewardPerNode[_tier] += rate * (block.timestamp - last);
-        }
+        accRewardPerNode[_tier] += _accruedPerNodeScaled(_tier, last, block.timestamp);
         tierLastUpdate[_tier] = block.timestamp;
+    }
+
+    // At most three intervals, regardless of how late the next transaction is.
+    // Tier parameters and membership are constant since tierLastUpdate because
+    // every setter/join/exit settles the accumulator before changing them.
+    function _accruedPerNodeScaled(NodeTier _tier, uint256 from, uint256 to) internal view returns (uint256 accrued) {
+        uint256 count = tiers[_tier].activeNodes;
+        if (count == 0 || to <= from) return 0;
+        for (uint256 year = 0; year < 3; year++) {
+            uint256 start = rewardStartTime + year * YEAR;
+            uint256 end = start + YEAR;
+            uint256 left = from > start ? from : start;
+            uint256 right = to < end ? to : end;
+            if (right > left) {
+                accrued += _perNodeRateAt(_tier, count, yearlyEmission[year] / YEAR) * (right - left);
+            }
+        }
     }
 
     /**
@@ -294,11 +303,15 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
      *      = min(tier emission / nodes, minStake * APR cap / year)
      */
     function _perNodeRateScaled(NodeTier _tier, uint256 _nodes) internal view returns (uint256) {
-        if (_nodes == 0 || currentRewardPerSecond == 0) return 0;
+        return _perNodeRateAt(_tier, _nodes, currentRewardPerSecond());
+    }
+
+    function _perNodeRateAt(NodeTier _tier, uint256 _nodes, uint256 rate) internal view returns (uint256) {
+        if (_nodes == 0 || rate == 0) return 0;
         TierConfig storage tc = tiers[_tier];
         if (tc.rewardShare == 0) return 0;
 
-        uint256 tierPerSec = (currentRewardPerSecond * tc.rewardShare) / 10000;
+        uint256 tierPerSec = (rate * tc.rewardShare) / 10000;
         uint256 share = (tierPerSec * ACC_PRECISION) / _nodes;
         uint256 cap = (tc.minStake * tierAprCapBps[_tier] * ACC_PRECISION) / (10000 * YEAR);
         return share < cap ? share : cap;
@@ -387,7 +400,13 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
      * @param _endpoint Node RPC endpoint (e.g., "203.0.113.10:8545")
      * @dev Validator tier requires approved KYC — checked via kycContract if set
      */
-    function registerNode(NodeTier _tier, string calldata _endpoint) external payable nonReentrant {
+    function registerNode(
+        NodeTier _tier, string calldata _endpoint,
+        uint256 _maxLockDays, uint256 _maxSlashBps, uint256 _deadline
+    ) external payable nonReentrant {
+        require(block.timestamp <= _deadline, "Registration expired");
+        require(tiers[_tier].lockDays <= _maxLockDays, "Lock terms changed");
+        require(tiers[_tier].slashPercent <= _maxSlashBps, "Slash terms changed");
         require(!registrationPaused, "Registration paused");
         require(nodes[msg.sender].status == NodeStatus.Inactive, "Already registered");
         require(nodes[msg.sender].pendingUnclaimed == 0, "Claim pending rewards first");
@@ -528,7 +547,7 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
         // Mirror _syncTier without writing state
         uint256 last = tierLastUpdate[node.tier];
         if (block.timestamp > last) {
-            acc += _perNodeRateScaled(node.tier, tiers[node.tier].activeNodes) * (block.timestamp - last);
+            acc += _accruedPerNodeScaled(node.tier, last, block.timestamp);
         }
 
         if (acc > node.rewardDebt) {
@@ -633,28 +652,26 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
     // ============================================================
 
     /**
-     * @notice Advance to next reward year (callable by anyone after 365 days)
+     * @notice Emit the current reward year and settle all tiers. Optional keeper
+     *         checkpoint only: time-based rewards never depend on this call.
      */
     function advanceRewardYear() external {
-        require(currentYear < 3, "All years completed");
-        uint256 yearEnd = rewardStartTime + ((currentYear + 1) * 365 days);
-        require(block.timestamp >= yearEnd, "Year not ended");
-
-        // Settle every tier at the OLD rate before it changes
+        require(lastAnnouncedRewardYear < 3, "All years completed");
+        uint256 year = currentYear();
+        require(year > lastAnnouncedRewardYear, "Year not ended");
         _syncAllTiers();
-
-        currentYear++;
-        _updateRewardRate();
-
-        emit RewardYearAdvanced(currentYear, currentRewardPerSecond);
+        lastAnnouncedRewardYear = year;
+        emit RewardYearAdvanced(year, currentRewardPerSecond());
     }
 
-    function _updateRewardRate() internal {
-        if (currentYear < 3) {
-            currentRewardPerSecond = yearlyEmission[currentYear] / 365 days;
-        } else {
-            currentRewardPerSecond = 0;
-        }
+    function currentYear() public view returns (uint256) {
+        uint256 year = (block.timestamp - rewardStartTime) / YEAR;
+        return year < 3 ? year : 3;
+    }
+
+    function currentRewardPerSecond() public view returns (uint256) {
+        uint256 year = currentYear();
+        return year < 3 ? yearlyEmission[year] / YEAR : 0;
     }
 
     // ============================================================
@@ -686,8 +703,8 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
             totalActiveNodes,
             totalRewardsDistributed,
             totalRewardPool - totalRewardsDistributed,
-            currentRewardPerSecond,
-            currentYear
+            currentRewardPerSecond(),
+            currentYear()
         );
     }
 
@@ -776,8 +793,7 @@ contract NodeRegistryV2 is Ownable2Step, ReentrancyGuard {
         uint256 _slashPercent,
         uint256 _rewardShare
     ) external onlyOwner {
-        // ผู้สมัครกำหนด "ล็อก/slash ได้ไม่เกิน" เองไม่ได้ และ owner รัน validator เองจึงแทรก tx ก่อนได้
-        // → เพดานคือสิ่งเดียวที่จำกัดว่าคนสมัครใหม่จะโดนขัง/ตัดเงินต้นได้แค่ไหน
+        // Global ceilings supplement the tighter limits signed by each applicant.
         require(_slashPercent <= MAX_SLASH_BPS, "Max 15% slash");
         require(_minStake > 0, "Min stake must be > 0");
         require(_lockDays <= MAX_LOCK_DAYS, "Max 180-day lock");
