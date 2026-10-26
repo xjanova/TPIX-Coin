@@ -5,7 +5,7 @@
 #   cd ~/TPIX-Coin && git pull
 #   sudo cp /opt/tpix/docker-compose.yml /opt/tpix/docker-compose.yml.bak-$(date +%Y%m%d-%H%M%S)
 #   sudo cp infrastructure/single-host/docker-compose.yml /opt/tpix/docker-compose.yml
-#   sudo bash infrastructure/single-host/apply-rolling.sh
+#   sudo flock -w 900 /run/tpix-chain-maint.lock bash infrastructure/single-host/apply-rolling.sh
 #
 # ห้ามเปลี่ยนชื่อ container: genesis.json อ้าง peer ด้วยชื่อผ่าน
 # /dns4/tpix-validator-N/tcp/10001/p2p/<id> เปลี่ยนชื่อเมื่อไหร่ โหนดจะสตาร์ทขึ้น
@@ -16,8 +16,10 @@
 # publish แบบ 0.0.0.0 จะทะลุไฟร์วอลล์ออกเน็ตทั้งที่ ufw บอก deny
 # วันที่แยก validator ออกคนละเครื่องค่อยเปิด แล้วจำกัดด้วย source IP
 #
-# JSON-RPC/gRPC ผูก 127.0.0.1 เท่านั้น — ทางเข้าสาธารณะคือ nginx บนโฮสต์
-# gRPC 10000 คือช่องแอดมิน สั่ง ibft propose เพิ่ม-ถอด validator ได้ ห้ามโผล่เน็ต
+# JSON-RPC publish เฉพาะ loopback ของโฮสต์ — ทางเข้าสาธารณะคือ nginx
+# gRPC อยู่เฉพาะ loopback ใน container และไม่ publish แม้บนโฮสต์:
+# ช่องนี้สั่ง ibft propose ได้ จึงต้องกัน container อื่นใน bridge ด้วย
+# ใช้ docker exec tpix-validator-N polygon-edge ... --grpc-address 127.0.0.1:10000
 
 name: tpix
 
@@ -76,7 +78,7 @@ x-validator: &validator
 #                     ใส่ธงที่รุ่นนี้ไม่รู้จัก = เชนไม่บูต จึงไม่เสี่ยงโดยไม่จำเป็น
 x-cmd: &cmd >
   server --data-dir /data --chain /genesis.json
-  --grpc-address 0.0.0.0:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545
+  --grpc-address 127.0.0.1:10000 --libp2p 0.0.0.0:10001 --jsonrpc 0.0.0.0:8545
   --seal --price-limit 0
   --max-slots 4096 --max-enqueued 16
   --block-gas-target 10000000
@@ -87,7 +89,7 @@ services:
     <<: *validator
     container_name: tpix-validator-1
     command: *cmd
-    ports: ["127.0.0.1:8545:8545", "127.0.0.1:10000:10000"]
+    ports: ["127.0.0.1:8545:8545"]
     volumes:
       - /opt/tpix/chain/data/validator-1:/data
       - /opt/tpix/chain/genesis.json:/genesis.json:ro
@@ -96,7 +98,7 @@ services:
     <<: *validator
     container_name: tpix-validator-2
     command: *cmd
-    ports: ["127.0.0.1:8546:8545", "127.0.0.1:10010:10000"]
+    ports: ["127.0.0.1:8546:8545"]
     volumes:
       - /opt/tpix/chain/data/validator-2:/data
       - /opt/tpix/chain/genesis.json:/genesis.json:ro
@@ -105,7 +107,7 @@ services:
     <<: *validator
     container_name: tpix-validator-3
     command: *cmd
-    ports: ["127.0.0.1:8547:8545", "127.0.0.1:10020:10000"]
+    ports: ["127.0.0.1:8547:8545"]
     volumes:
       - /opt/tpix/chain/data/validator-3:/data
       - /opt/tpix/chain/genesis.json:/genesis.json:ro
@@ -114,7 +116,7 @@ services:
     <<: *validator
     container_name: tpix-validator-4
     command: *cmd
-    ports: ["127.0.0.1:8548:8545", "127.0.0.1:10030:10000"]
+    ports: ["127.0.0.1:8548:8545"]
     volumes:
       - /opt/tpix/chain/data/validator-4:/data
       - /opt/tpix/chain/genesis.json:/genesis.json:ro
@@ -127,7 +129,7 @@ services:
     image: postgres:16-alpine
     container_name: blockscout-db
     restart: unless-stopped
-    mem_limit: 1g
+    mem_limit: 2g # Match production; do not lower the database limit during validator hardening.
     environment:
       POSTGRES_DB: ${BS_DB}
       POSTGRES_USER: ${BS_USER}
