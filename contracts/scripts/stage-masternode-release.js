@@ -61,6 +61,15 @@ async function stage({ signer, oldAddresses, kycAddress, expectedHash = release.
 
 async function main() {
     const { ethers, network } = hre;
+    if (network.name === 'tpix') {
+        const root = path.join(__dirname, '..');
+        for (const name of fs.readdirSync(root).filter(n => /^masternode-staged-0x[0-9a-fA-F]{40}\.json$/.test(n))) {
+            const staged = JSON.parse(fs.readFileSync(path.join(root, name), 'utf8'));
+            if (staged.chainId === 4289 && staged.runtimeCodeHash === release.runtimeCodeHash) {
+                throw new Error(`This release was already staged at ${staged.address}. Verify its receipts and continue the rollout; do not deploy it again.`);
+            }
+        }
+    }
     const [signer] = await ethers.getSigners();
     if (!signer) throw new Error('Owner signer required in DEPLOYER_KEY; never paste it into chat');
     const rehearsal = network.name === 'hardhat';

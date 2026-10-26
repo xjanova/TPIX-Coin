@@ -1,6 +1,8 @@
 # Masternode calendar and registration-terms release — 2026-10-26
 
-Status: source changes prepared; no mainnet deployment or discovery switch has been performed by this change.
+Status: staged on mainnet at `0x0611E3747B3D29d5f2a6347a66e93dE066344098`, deployment block 3404833 on 2026-10-26. All four owner transactions succeeded (nonces 40–43); both predecessor registries and the new registry are paused. Existing KYC is attached. Discovery has not been switched, the pool is unfunded and the uptime oracle is inactive. Do not run staging again for this release; continue with readiness verification below.
+
+The Windows process reported `UV_HANDLE_CLOSING` after printing the completed manifest. Receipt and live-state verification confirmed success on-chain despite that process error. The manifest is committed as `contracts/masternode-staged-0x0611E3747B3D29d5f2a6347a66e93dE066344098.json`; it contains only public deployment information.
 
 ## Behavior and compatibility
 

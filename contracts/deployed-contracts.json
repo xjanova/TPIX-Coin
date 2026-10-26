@@ -1,7 +1,7 @@
 {
   "_doc": "Registry of deployed contracts on TPIX Chain (4289). Keep in sync after each deploy. Feeds scripts/verify-sources.js and external explorers/aggregators.",
   "_schema_version": 2,
-  "updated": "2026-10-22",
+  "updated": "2026-10-26",
   "chain": {
     "chainId": 4289,
     "name": "TPIX Chain",
@@ -110,7 +110,7 @@
     {
       "name": "NodeRegistryV2",
       "category": "masternode",
-      "address": "0x44c497C67B4F756a7769F11c8BEc26439C31F70E",
+      "address": "0x0611E3747B3D29d5f2a6347a66e93dE066344098",
       "sourceFile": "contracts/src/masternode/NodeRegistryV2.sol",
       "compilerVersion": "0.8.24",
       "optimizer": {
@@ -119,9 +119,14 @@
       },
       "evmVersion": "london",
       "verified": true,
-      "deployedAt": "2026-10-21",
+      "deployedAt": "2026-10-26",
       "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
-      "description": "Master node staking + reward distribution (APR-capped). Reward pool must be funded separately."
+      "description": "Calendar-based three-year rewards and signed registration limits. Staged with existing KYC; registration paused, pool unfunded, oracle inactive.",
+      "runtimeCodeHash": "0xd7e2e84e40b4abe29cb54e3ee0cba2cd1077a4d6b26f62a25b6f8e713c49ebd9",
+      "deploymentTransaction": "0x3b49ead0d896030a8061cefd474cc43c36ecbe779cc95f70e19765f0eaf0cad3",
+      "deploymentBlock": 3404833,
+      "registrationPaused": true,
+      "discoveryPublished": false
     },
     {
       "name": "ValidatorKYC",
@@ -322,7 +327,8 @@
       "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
       "retiredOn": "2026-10-21",
       "retiredReason": "Superseded by the hardened build at 0x44c497C67B4F756a7769F11c8BEc26439C31F70E. This build let the owner, who runs the IBFT validators, put updateTierConfig ahead of a user's registerNode in the same block (slash up to 50%, lock up to 365 days). No node ever registered here. The website stopped pointing here on 2026-10-21; registration is still open on-chain (not paused).",
-      "description": "Master node staking + reward distribution (APR-capped) — first V2 deploy"
+      "description": "Master node staking + reward distribution (APR-capped) — first V2 deploy",
+      "registrationPaused": true
     },
     {
       "name": "ValidatorKYC",
@@ -341,6 +347,25 @@
       "retiredOn": "2026-10-21",
       "retiredReason": "Replaced together with NodeRegistryV2 by 0x55E918D8D4D3EC9499f26981B49769Af7Fc094a3 (same source). Zero applicants ever.",
       "description": "KYC gate for the Validator tier of the retired NodeRegistryV2"
+    },
+    {
+      "name": "NodeRegistryV2",
+      "category": "masternode",
+      "address": "0x44c497C67B4F756a7769F11c8BEc26439C31F70E",
+      "sourceFile": "contracts/src/masternode/NodeRegistryV2.sol",
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": true,
+      "deployedAt": "2026-10-21",
+      "owner": "0xD2eAB07809921fcB36c7AB72D7B5D8D2C12A67d7",
+      "description": "Master node staking + reward distribution (APR-capped). Reward pool must be funded separately.",
+      "retiredOn": "2026-10-26",
+      "retiredReason": "Replaced by calendar-reward/signed-terms registry 0x0611E3747B3D29d5f2a6347a66e93dE066344098. Registration paused on-chain; zero operator history and funds verified.",
+      "registrationPaused": true
     }
   ],
   "notes": {
