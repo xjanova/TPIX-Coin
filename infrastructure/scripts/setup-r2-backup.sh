@@ -65,7 +65,7 @@ SECRET_KEY="${SECRET_KEY:-$CUR_SECRET}"
 
 # ── ทดสอบด้วยไฟล์เล็กก่อน ไม่เอาไฟล์ 650MB มาลองผิดลองถูก ──────────────────
 TMP="$(mktemp -t tpix-r2-test.XXXXXX)"
-trap 'rm -f "$TMP"' EXIT
+trap 'rm -f "$TMP" "${TMP}.r2-verified" "${TMP}.r2-upload.lock"' EXIT
 echo "ทดสอบการเชื่อมต่อ R2 จาก $(hostname) เมื่อ $(date -Is)" > "$TMP"
 
 echo "กำลังทดสอบอัปโหลด…"
@@ -73,7 +73,6 @@ if ! TPIX_R2_ACCOUNT_ID="$ACCOUNT_ID" \
      TPIX_R2_ACCESS_KEY_ID="$ACCESS_KEY" \
      TPIX_R2_SECRET_ACCESS_KEY="$SECRET_KEY" \
      TPIX_R2_BUCKET="$BUCKET" \
-     TPIX_BACKUP_KEEP_DAYS=36500 \
      "$UPLOADER" "$TMP"; then
     die "ทดสอบไม่ผ่าน — ยังไม่เขียนอะไรลง $ENV_FILE เลย ตรวจคีย์/ชื่อ bucket แล้วลองใหม่"
 fi
@@ -84,18 +83,22 @@ export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare \
        RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$SECRET_KEY" \
        RCLONE_CONFIG_R2_ENDPOINT="https://${ACCOUNT_ID}.r2.cloudflarestorage.com"
 rclone deletefile "R2:${BUCKET}/$(basename "$TMP")" 2>/dev/null || true
-ok "เชื่อมต่อ R2 ได้ อัปโหลดและตรวจขนาดผ่าน"
+rclone deletefile "R2:${BUCKET}/$(basename "$TMP").sha256" 2>/dev/null || true
+ok "เชื่อมต่อ R2 ได้ อัปโหลดและตรวจ SHA-256 จากการอ่านกลับผ่าน"
 
 # ── เขียนลงไฟล์ env (สำรองของเดิมไว้ก่อนเสมอ) ──────────────────────────────
 cp -a "$ENV_FILE" "${ENV_FILE}.bak-$(date +%Y%m%d-%H%M%S)"
 
 set_kv() {   # ตั้งค่า key=value แบบไม่ซ้ำบรรทัด
-    local k="$1" v="$2"
+    local k="$1" v quoted
+    printf -v quoted '%q' "$2"
+    # Escape sed replacement metacharacters after shell quoting the value.
+    v=${quoted//\\/\\\\}; v=${v//&/\\&}; v=${v//|/\\|}
     if grep -qE "^#?${k}=" "$ENV_FILE"; then
         # ใช้ตัวคั่นที่ไม่ปรากฏในคีย์ R2 (ฐาน 64 ไม่มี |)
         sed -i -E "s|^#?${k}=.*|${k}=${v}|" "$ENV_FILE"
     else
-        echo "${k}=${v}" >> "$ENV_FILE"
+        printf '%s=%s\n' "$k" "$quoted" >> "$ENV_FILE"
     fi
 }
 
