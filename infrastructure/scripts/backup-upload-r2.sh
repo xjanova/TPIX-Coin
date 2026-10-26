@@ -1,94 +1,80 @@
 #!/bin/bash
-# ============================================================
-# ส่งไฟล์สำรองเชนขึ้น Cloudflare R2
-#
-# ใช้เป็นปลายทางของ backup-chain.sh:
-#   TPIX_BACKUP_UPLOAD='/usr/local/sbin/tpix-backup-upload-r2 {file}'
-#
-# ทำไมต้องมีสคริปต์แยก ไม่ยัด rclone ยาว ๆ ลง TPIX_BACKUP_UPLOAD ตรง ๆ:
-#   1. ต้อง "ยืนยันว่าไบต์ถึงปลายทางจริง" ไม่ใช่แค่ rclone คืน 0
-#      — rclone copy คืน 0 ได้แม้ไฟล์ปลายทางขนาดไม่ตรง ในบางเคส retry ครึ่งทาง
-#   2. ต้อง retry เอง เพราะไฟล์ 650MB ข้ามทวีป เน็ตสะดุดกลางทางเป็นเรื่องปกติ
-#   3. ต้องลบของเก่าฝั่ง R2 ให้ตรงกับ KEEP_DAYS ฝั่งเครื่อง ไม่งั้นจ่ายค่าเก็บเพิ่มไปเรื่อย ๆ
-#
-# ค่าที่ต้องตั้งใน /etc/tpix-backup.env (600 root — ห้าม commit):
-#   TPIX_R2_ACCOUNT_ID          รหัสบัญชี Cloudflare (ขึ้นต้น endpoint)
-#   TPIX_R2_ACCESS_KEY_ID       จาก R2 API token
-#   TPIX_R2_SECRET_ACCESS_KEY   จาก R2 API token
-#   TPIX_R2_BUCKET              ชื่อ bucket (ตั้งต้น tpix-chain-backup)
-#   TPIX_BACKUP_KEEP_DAYS       ใช้ค่าเดียวกับฝั่งเครื่อง (ตั้งต้น 14)
-#
-# ⚠️ คีย์ R2 ตัวนี้ควรเป็น token ที่มีสิทธิ์ "Object Read & Write เฉพาะ bucket นี้"
-#    ไม่ใช่ token ระดับบัญชี — เครื่องเชนถูกยึดเมื่อไรจะได้ไม่ลามไปถังอื่น
-#
-# Developed by Xman Studio
-# ============================================================
-
+# Upload encrypted backups to private R2 and verify a full read-back.
+# Credentials come from the root-only backup environment, never argv.
+# Remote retention belongs to R2 lifecycle + bucket locks. This script NEVER
+# deletes remote objects and does not use TPIX_BACKUP_KEEP_DAYS.
 set -euo pipefail
 umask 077
 
 FILE="${1:-}"
 BUCKET="${TPIX_R2_BUCKET:-tpix-chain-backup}"
-KEEP_DAYS="${TPIX_BACKUP_KEEP_DAYS:-14}"
 RETRIES="${TPIX_R2_RETRIES:-3}"
-
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-log()  { echo -e "${GREEN}[R2]${NC} $(date '+%F %T') $*"; }
-warn() { echo -e "${YELLOW}[R2]${NC} $(date '+%F %T') $*"; }
-err()  { echo -e "${RED}[R2]${NC} $(date '+%F %T') $*" >&2; }
-
-[[ -n "$FILE" ]]  || { err "ต้องส่งพาธไฟล์มาเป็นอาร์กิวเมนต์แรก"; exit 2; }
-[[ -f "$FILE" ]]  || { err "ไม่พบไฟล์ $FILE"; exit 2; }
-command -v rclone >/dev/null || { err "ไม่มี rclone — ติดตั้งก่อน: apt-get install -y rclone"; exit 2; }
-
-for v in TPIX_R2_ACCOUNT_ID TPIX_R2_ACCESS_KEY_ID TPIX_R2_SECRET_ACCESS_KEY; do
-    [[ -n "${!v:-}" ]] || { err "ยังไม่ได้ตั้ง $v ใน /etc/tpix-backup.env"; exit 2; }
+BW_LIMIT="${TPIX_R2_BWLIMIT:-10M}"
+log() { printf '[R2] %s %s\n' "$(date -Is)" "$*"; }
+fail() { log "$*" >&2; exit 1; }
+[[ -n "$FILE" && -f "$FILE" && ! -L "$FILE" ]] || fail 'Expected a regular backup file'
+[[ "$RETRIES" =~ ^[1-9][0-9]*$ && "$RETRIES" -le 10 ]] || fail 'Invalid retry count'
+for cmd in rclone sha256sum stat mktemp cmp flock install; do
+    command -v "$cmd" >/dev/null || fail "Missing command: $cmd"
 done
+for var in TPIX_R2_ACCOUNT_ID TPIX_R2_ACCESS_KEY_ID TPIX_R2_SECRET_ACCESS_KEY; do
+    [[ -n "${!var:-}" ]] || fail "Missing configuration: $var"
+done
+[[ "$TPIX_R2_ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]] || fail 'Invalid R2 account ID'
+[[ "$BUCKET" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] || fail 'Invalid bucket name'
+NAME="$(basename "$FILE")"
+[[ "$NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || fail 'Unsafe object name'
+REMOTE="R2:${BUCKET}/${NAME}"
 
-# ── ตั้งค่า rclone ผ่าน env ไม่ต้องมีไฟล์ config ────────────────────────────
-# ข้อดี: ไม่มีคีย์นอนอยู่ในไฟล์ config อีกที่หนึ่งให้ต้องคอยดูแลสิทธิ์
-export RCLONE_CONFIG_R2_TYPE=s3
-export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
 export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$TPIX_R2_ACCESS_KEY_ID"
 export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$TPIX_R2_SECRET_ACCESS_KEY"
 export RCLONE_CONFIG_R2_ENDPOINT="https://${TPIX_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-# R2 ไม่รองรับ checksum แบบ AWS — ไม่ปิดตัวนี้ rclone จะเตือนรัว ๆ ทุกรอบ
-export RCLONE_S3_NO_CHECK_BUCKET=true
-export RCLONE_CONFIG_R2_ACL=private
+# R2 rejects the S3 x-amz-acl header. An empty ACL omits that header;
+# privacy is enforced by the bucket's disabled public access.
+export RCLONE_CONFIG_R2_ACL='' RCLONE_S3_NO_CHECK_BUCKET=true
 
-NAME="$(basename "$FILE")"
+# Serialize manual retry and cron for this archive without a maintenance lock.
+exec 8>"${FILE}.r2-upload.lock"
+flock -n 8 || fail 'This archive is already uploading'
+TMP_DIR="$(mktemp -d)"
+trap 'rm -f "$TMP_DIR/manifest" "$TMP_DIR/remote-manifest" "$TMP_DIR/receipt"; rmdir "$TMP_DIR"' EXIT
 LOCAL_SIZE="$(stat -c %s "$FILE")"
+LOCAL_HASH="$(sha256sum "$FILE" | cut -d ' ' -f 1)"
+printf '%s  %s\n' "$LOCAL_HASH" "$NAME" > "$TMP_DIR/manifest"
+COMMON=(--bwlimit "$BW_LIMIT" --contimeout 20s --timeout 120s --retries 1 --low-level-retries 5)
 
-# ── อัปโหลด + retry ────────────────────────────────────────────────────────
-UPLOADED=0
-for attempt in $(seq 1 "$RETRIES"); do
-    log "อัปโหลด $NAME ($(numfmt --to=iec "$LOCAL_SIZE")) ครั้งที่ $attempt/$RETRIES"
-    if rclone copyto "$FILE" "R2:${BUCKET}/${NAME}" \
-        --s3-chunk-size 32M --transfers 1 --retries 1 --low-level-retries 5 \
-        --stats-one-line --stats 30s 2>&1; then
-        UPLOADED=1
-        break
-    fi
-    warn "ครั้งที่ $attempt ไม่สำเร็จ"
-    sleep $(( attempt * 10 ))
-done
-[[ "$UPLOADED" -eq 1 ]] || { err "อัปโหลดไม่สำเร็จครบ $RETRIES ครั้ง"; exit 1; }
+upload() {
+    local source="$1" destination="$2" attempt
+    for ((attempt=1; attempt<=RETRIES; attempt++)); do
+        # Same-size objects are verified below, never overwritten.
+        # --immutable refuses different-size collisions.
+        # Old rclone follows R2's versionId with a versioned HEAD, which R2
+        # rejects (501). Skip that post-PUT HEAD; full read-back below verifies
+        # the content instead. Pre-upload collision checks remain enabled.
+        if rclone copyto "$source" "$destination" --immutable --size-only --s3-no-head \
+            --s3-chunk-size 32M --transfers 1 --stats-one-line --stats 30s "${COMMON[@]}"; then
+            return 0
+        fi
+        if (( attempt < RETRIES )); then sleep "$((attempt * 10))"; fi
+    done
+    return 1
+}
 
-# ── ยืนยันว่าไบต์ถึงปลายทางจริง ไม่ใช่แค่คำสั่งคืน 0 ────────────────────────
-# ถามขนาดจาก R2 กลับมาเทียบ — สำรองข้อมูลที่ "อัปโหลดสำเร็จ" แต่ไฟล์ปลายทาง
-# ไม่ครบ คือสิ่งที่แย่กว่าไม่มีสำรองเลย เพราะทำให้เข้าใจผิดว่ามีของ
-REMOTE_SIZE="$(rclone size "R2:${BUCKET}/${NAME}" --json 2>/dev/null | grep -o '"bytes":[0-9]*' | cut -d: -f2 || echo 0)"
-if [[ "$REMOTE_SIZE" != "$LOCAL_SIZE" ]]; then
-    err "ขนาดปลายทางไม่ตรง: บนเครื่อง $LOCAL_SIZE ไบต์ · บน R2 $REMOTE_SIZE ไบต์ — ถือว่าล้มเหลว"
-    exit 1
-fi
-log "ยืนยันแล้ว: R2:${BUCKET}/${NAME} = $REMOTE_SIZE ไบต์ ตรงกับต้นทาง"
+log "Uploading $NAME ($LOCAL_SIZE bytes)"
+upload "$FILE" "$REMOTE" || fail 'Archive upload failed; local copy retained'
+log 'Reading back the entire remote object for SHA-256 verification'
+REMOTE_HASH="$(rclone cat "$REMOTE" "${COMMON[@]}" | sha256sum | cut -d ' ' -f 1)" \
+    || fail 'Remote read-back failed; local copy retained'
+[[ "$REMOTE_HASH" == "$LOCAL_HASH" ]] || fail 'Remote SHA-256 mismatch; local copy retained'
+[[ "$(sha256sum "$FILE" | cut -d ' ' -f 1)" == "$LOCAL_HASH" ]] \
+    || fail 'Local archive changed during upload; no verification receipt written'
 
-# ── ลบของเก่าฝั่ง R2 ให้ตรงกับนโยบายฝั่งเครื่อง ────────────────────────────
-# ใช้ min-age เพื่อไม่ให้เผลอลบไฟล์ที่เพิ่งอัปไป และจับเฉพาะชื่อของเราเอง
-log "ลบไฟล์เก่าเกิน ${KEEP_DAYS} วันบน R2"
-rclone delete "R2:${BUCKET}" --min-age "${KEEP_DAYS}d" \
-    --include 'tpix-chain-*.tar.gz.gpg' --rmdirs 2>&1 || warn "ลบของเก่าไม่สำเร็จ (ไม่ถือว่าการสำรองล้มเหลว)"
-
-REMAIN="$(rclone lsf "R2:${BUCKET}" --include 'tpix-chain-*.tar.gz.gpg' 2>/dev/null | wc -l)"
-log "เสร็จ — ตอนนี้บน R2 มีไฟล์สำรอง $REMAIN ใบ"
+upload "$TMP_DIR/manifest" "${REMOTE}.sha256" || fail 'Manifest upload failed'
+rclone cat "${REMOTE}.sha256" "${COMMON[@]}" > "$TMP_DIR/remote-manifest" || fail 'Manifest read-back failed'
+cmp -s "$TMP_DIR/manifest" "$TMP_DIR/remote-manifest" || fail 'Remote manifest mismatch'
+printf 'sha256=%s\nbytes=%s\nremote=%s\nverified_at=%s\n' \
+    "$LOCAL_HASH" "$LOCAL_SIZE" "$REMOTE" "$(date -u +%FT%TZ)" > "$TMP_DIR/receipt"
+install -m 600 "$TMP_DIR/receipt" "${FILE}.r2-verified"
+log "Verified archive + manifest: $REMOTE (SHA-256 $LOCAL_HASH)"
+log 'No remote pruning performed; configure retention in R2 separately'
