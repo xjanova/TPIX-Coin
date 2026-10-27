@@ -46,6 +46,9 @@ masternode-ui/dist/
 
 # Keystore
 *.keystore
+
+# กุญแจด่านยืนยันซอร์สของ explorer — มีแค่ .example ใน repo
+infrastructure/blockscout/tpix-verify-key.map
 *.jks
 
 # Symbolication related

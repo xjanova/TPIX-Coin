@@ -9,6 +9,7 @@
     "deploy:wtpix": "npx hardhat run scripts/deploy-wtpix.js --network tpix",
     "deploy:bonding-curve": "npx hardhat run scripts/deploy-bonding-curve.js --network tpix",
     "deploy:bridge-minter": "npx hardhat run scripts/deploy-bridge-minter.js --network tpix",
+    "verify:explorer": "node scripts/verify-blockscout.js",
     "verify:sources": "node scripts/verify-sources.js",
     "verify:recheck": "node scripts/verify-sources.js --recheck",
     "deploy:noderegistry": "npx hardhat run scripts/deploy-noderegistry.js --network tpix",

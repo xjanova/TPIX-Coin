@@ -12,6 +12,9 @@
  *   - Contracts must be compiled (`npx hardhat compile`) before running
  *   - `constructor_arguments.json` may live next to this script to supply ABI-encoded args per contract
  *
+ *   - env TPIX_VERIFY_KEY (not needed for --recheck) — the explorer gates public verification,
+ *     see scripts/lib/explorer-verify-key.js
+ *
  * Blockscout API reference:
  *   https://docs.blockscout.com/for-users/api/rpc-endpoints/contract
  */
@@ -19,9 +22,11 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { verifyKeyHeaders, gateRejected } = require('./lib/explorer-verify-key');
 
 const REGISTRY_PATH = path.join(__dirname, '..', 'deployed-contracts.json');
-const EXPLORER_API = process.env.EXPLORER_API || 'https://explorer.tpix.online/api';
+// Trailing slash matters: nginx answers /api with a 301 to /api/ and https.request does not follow it
+const EXPLORER_API = (process.env.EXPLORER_API || 'https://explorer.tpix.online/api/').replace(/\/*$/, '/');
 
 // --- simple argument parsing ---
 const args = process.argv.slice(2);
@@ -54,7 +59,7 @@ function httpGet(url) {
     });
 }
 
-function httpPost(url, form) {
+function httpPost(url, form, extraHeaders) {
     return new Promise((resolve, reject) => {
         const body = new URLSearchParams(form).toString();
         const u = new URL(url);
@@ -66,11 +71,14 @@ function httpPost(url, form) {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(body),
+                ...extraHeaders,
             },
         }, (res) => {
             let data = '';
             res.on('data', (c) => (data += c));
             res.on('end', () => {
+                const rejected = gateRejected(res.statusCode);
+                if (rejected) return reject(new Error(rejected));
                 try {
                     resolve(JSON.parse(data));
                 } catch (e) {
@@ -144,7 +152,7 @@ async function verifyContract(contract) {
     };
 
     console.log('   ⏳ Submitting source to explorer...');
-    const res = await httpPost(EXPLORER_API, form);
+    const res = await httpPost(EXPLORER_API, form, verifyKeyHeaders());
 
     if (res.status === '1') {
         console.log(`   ✅ Submitted — verification GUID: ${res.result}`);

@@ -243,18 +243,26 @@ curl https://explorer.tpix.online/api/v2/tokens
 
 ### Verify smart contract
 
-Use the verification UI at `https://explorer.tpix.online/contract-verification` or the API:
+Public verification is closed (since 2026-10-27). Source verification is a paid
+TPIX Token Factory service (1,000 TPIX) — tpix.online submits it after the on-chain fee is confirmed.
+
+nginx in front of Blockscout rejects with `403` any request without a valid `X-TPIX-Verify-Key` header to:
+
+- `POST /api/v2/smart-contracts/<address>/verification/...`
+- `POST /api/` (Etherscan-style), and `GET /api/?action=verify*`
+
+Reading stays open: contract pages, `GET /api/v2/smart-contracts/<address>`, `checkverifystatus`.
+Gate files: `infrastructure/blockscout/08-tpix-verify-gate.conf`, `tpix-verify-gate-locations.conf`,
+`tpix-verify-key.map.example`.
+
+Verifying the system's own contracts (team only — key is the same value as `BLOCKSCOUT_VERIFY_KEY` in tpix.online's `.env`):
 
 ```bash
-curl -X POST https://explorer.tpix.online/api/v2/smart-contracts/verification \
-  -H "Content-Type: application/json" \
-  -d '{
-    "address": "0x...",
-    "compiler_version": "v0.8.20",
-    "source_code": "...",
-    "contract_name": "MyContract"
-  }'
+cd contracts
+TPIX_VERIFY_KEY=... npx hardhat verify-explorer TPIXDEXFactory   # or: npm run verify:explorer -- TPIXDEXFactory
 ```
+
+`npx hardhat verify` (hardhat-verify) cannot send the header, so it does not work against this explorer.
 
 ---
 
