@@ -109,9 +109,6 @@ enum MnRevert {
   unknown,
 }
 
-/// ปัญหาของช่อง endpoint
-enum MnEndpointError { empty, tooLong, format, port, local }
-
 /// ความพร้อมของระบบสเตค
 enum MnAvailability {
   /// เว็บยังไม่ประกาศที่อยู่สัญญา (ยังไม่ deploy)
@@ -386,7 +383,6 @@ class MasterNodeService {
 
   /// หน้าดาวน์โหลดแอปรุ่นล่าสุด (เมื่อเจอสัญญาที่แอปรุ่นนี้ยังไม่รู้จัก)
   static const downloadUrl = 'https://tpix.online/download';
-  static const int maxEndpointLength = 100;
   static const _timeout = Duration(seconds: 10);
 
   /// เทสต์เปลี่ยนเป็น MockClient ได้
@@ -547,14 +543,8 @@ class MasterNodeService {
   // Calldata สำหรับเขียน
   // ================================================================
 
-  /// Bind the displayed terms and expiry into the signed transaction.
-  static Uint8List encodeRegister(MnTier tier, String endpoint, {
-    required BigInt maxLockDays,
-    required BigInt maxSlashBps,
-    required BigInt deadline,
-  }) => _fn('registerNode').encodeCall([
-    BigInt.from(tier.id), endpoint, maxLockDays, maxSlashBps, deadline,
-  ]);
+  // ไม่มี registerNode — สมัคร/สเตคโหนดทำที่เว็บเท่านั้น (เจ้าของสั่ง 2026-10-27)
+  // แอปเหลือแค่ของคนที่มีโหนดอยู่แล้ว: รับรางวัล / ถอนสเตค / ถอนส่วนที่เหลือหลังโดนปรับ
 
   static Uint8List encodeDeregister() => _fn('deregisterNode').encodeCall(const []);
   static Uint8List encodeClaim() => _fn('claimRewards').encodeCall(const []);
@@ -565,12 +555,10 @@ class MasterNodeService {
   // ค่าแก๊ส
   // ================================================================
   //
-  // วัดจริงจากสัญญา (ทีมสัญญา): registerNode ครั้งแรก ~367k (endpoint 17 ตัว) ถึง ~430k
-  // (100 ตัว), claimRewards ~158k, deregisterNode ~114k
+  // วัดจริงจากสัญญา (ทีมสัญญา): claimRewards ~158k, deregisterNode ~114k
   // ค่าแก๊สเชนนี้เป็น 0 → ตั้งเผื่อเยอะไม่เสียเงิน แต่ตั้งน้อยไป = ธุรกรรม out-of-gas เสียเปล่า
   // เลยใช้ ประเมินจริง ×1.3 แต่ไม่ต่ำกว่าพื้นของแต่ละฟังก์ชัน
 
-  static const gasFloorRegister = 600000;
   static const gasFloorClaim = 250000;
   static const gasFloorDeregister = 250000;
   static const gasFloorWithdrawSlashed = 200000;
@@ -812,61 +800,6 @@ class MasterNodeService {
     } on MnContractMismatchException {
       return null;
     }
-  }
-
-  // ================================================================
-  // ตรวจ endpoint (host:port)
-  // ================================================================
-
-  /// null = ผ่าน — สัญญานับความยาวเป็นไบต์ จึงรับเฉพาะ ASCII (1 ตัว = 1 ไบต์)
-  static MnEndpointError? validateEndpoint(String raw) {
-    final s = raw.trim();
-    if (s.isEmpty) return MnEndpointError.empty;
-    if (s.length > maxEndpointLength) return MnEndpointError.tooLong;
-
-    String host;
-    String port;
-    final v6 = RegExp(r'^\[([0-9a-fA-F:.]+)\]:([0-9]+)$').firstMatch(s);
-    if (v6 != null) {
-      host = v6.group(1)!;
-      port = v6.group(2)!;
-      if (!host.contains(':')) return MnEndpointError.format;
-      if (host == '::1' || host == '::') return MnEndpointError.local;
-    } else {
-      final m = RegExp(r'^([A-Za-z0-9.-]+):([0-9]+)$').firstMatch(s);
-      if (m == null) return MnEndpointError.format;
-      host = m.group(1)!;
-      port = m.group(2)!;
-      if (!_isHostname(host)) return MnEndpointError.format;
-      final lower = host.toLowerCase();
-      if (lower == 'localhost' ||
-          lower.endsWith('.localhost') ||
-          lower == '0.0.0.0' ||
-          lower.startsWith('127.')) {
-        // เครือข่ายเข้าไม่ถึง = สเตคไปก็ไม่ได้อัปไทม์
-        return MnEndpointError.local;
-      }
-    }
-    final p = int.tryParse(port);
-    if (port.length > 5 || p == null || p < 1 || p > 65535) {
-      return MnEndpointError.port;
-    }
-    return null;
-  }
-
-  static bool _isHostname(String host) {
-    if (host.length > 253 || host.startsWith('.') || host.endsWith('.')) return false;
-    final labels = host.split('.');
-    // ตัวเลขล้วนทุกช่วง = ต้องเป็น IPv4 ที่ถูกต้อง
-    if (labels.every((l) => RegExp(r'^[0-9]+$').hasMatch(l))) {
-      if (labels.length != 4) return false;
-      return labels.every((l) {
-        final n = int.tryParse(l);
-        return n != null && n >= 0 && n <= 255 && (l.length == 1 || !l.startsWith('0'));
-      });
-    }
-    final label = RegExp(r'^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$');
-    return labels.every(label.hasMatch);
   }
 
   // ================================================================
