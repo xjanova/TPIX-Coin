@@ -43,6 +43,8 @@ VALIDATOR="${TPIX_BACKUP_VALIDATOR:-tpix-validator-4}"
 VALIDATOR_DATA="${TPIX_BACKUP_VALIDATOR_DATA:-$CHAIN_DIR/data/validator-4}"
 RPC="${TPIX_RPC_URL:-http://127.0.0.1:8545}"
 KEEP_DAYS="${TPIX_BACKUP_KEEP_DAYS:-14}"
+# Opt-in count retention requires verified offsite copies for every removal.
+KEEP_COUNT="${TPIX_BACKUP_KEEP_COUNT:-0}"
 # เพดานเวลาขั้นบีบอัด+เข้ารหัส (ปกติราว 1.5 นาที) — เกินนี้ถือว่าค้าง ยอมทิ้งรอบนี้
 # ดีกว่าถือคิวบำรุงรักษาไว้ทั้งคืน เพราะตลอดเวลาที่คิวถูกถือ watchdog จะข้ามการตรวจ
 PIPE_TIMEOUT="${TPIX_BACKUP_TIMEOUT:-1200}"
@@ -309,7 +311,16 @@ fi
 # ── 7. ลบไฟล์เก่า ─────────────────────────────────────────────────────────
 # จับเฉพาะ .gpg โดยตั้งใจ — ไฟล์ดิบไม่ควรมีอยู่เลย ถ้ามีต้องให้คนไปดูว่าเกิดอะไร
 # (แจ้งไว้แล้วด้วย backup_plaintext_left ตอนต้น) ไม่ใช่ปล่อยให้หายเงียบตามอายุ
-find "$BACKUP_DIR" -maxdepth 1 -name 'tpix-chain-*.tar.gz.gpg' -mtime "+$KEEP_DAYS" -print -delete 2>/dev/null | \
-    while read -r old; do log "ลบไฟล์เก่า $old"; done
+if [[ "$KEEP_COUNT" != 0 ]]; then
+    [[ "$KEEP_COUNT" =~ ^[0-9]+$ && "$KEEP_COUNT" -ge 2 ]] || fail "ต้องเก็บ backup ในเครื่องอย่างน้อย 2 ชุด"
+    [[ -n "$UPLOAD_CMD" ]] || fail "ห้ามลดจำนวน backup ในเครื่องเมื่อยังไม่ได้ส่งออกนอกเครื่อง"
+    PRUNER="${TPIX_BACKUP_PRUNER:-/usr/local/sbin/tpix-backup-prune-verified}"
+    [[ -x "$PRUNER" ]] || fail "ไม่พบตัวตรวจ backup ก่อนลบ: $PRUNER"
+    "$PRUNER" --directory "$BACKUP_DIR" --keep "$KEEP_COUNT" --apply \
+        || fail "ตรวจหรือลบ backup เก่าไม่สำเร็จ — ตรวจสำเนา R2 และ receipt ก่อนลองใหม่"
+else
+    find "$BACKUP_DIR" -maxdepth 1 -name 'tpix-chain-*.tar.gz.gpg' -mtime "+$KEEP_DAYS" -print -delete 2>/dev/null | \
+        while read -r old; do log "ลบไฟล์เก่า $old"; done
+fi
 
 log "เสร็จสิ้น"

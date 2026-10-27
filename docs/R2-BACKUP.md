@@ -58,3 +58,33 @@ bash infrastructure/scripts/tests/setup-r2-quoting.test.sh
 ```
 
 The tests use temporary files and a fake rclone; they cannot reach R2 or validators.
+
+## Keep two verified local archives
+
+After a successful isolated restore drill and migration of historical archives,
+install `backup-prune-verified.py` as executable
+`/usr/local/sbin/tpix-backup-prune-verified`. Source the root-only backup environment
+and run it first without `--apply` to review the candidate list and reclaimed bytes.
+It verifies every archive, including the two retained copies, before any deletion.
+
+The pruner requires a private mode-600 receipt owned by its effective user, an
+unchanged local SHA-256, a matching remote checksum manifest, matching remote object
+size, and a recent **server** modification time. It rejects receipts/objects older
+than 29 days to leave a margin inside the 30-day lock. Source timestamps stored in
+S3 metadata must not be used for this check. It refuses symlinks, concurrent uploads
+and changes to the archive set after validation.
+
+For nightly count retention, set `TPIX_BACKUP_KEEP_COUNT=2` in the root-only backup
+environment after enabling the uploader and installing the pruner. The default
+value `0` preserves the original age-based `TPIX_BACKUP_KEEP_DAYS` policy. With count
+retention enabled, missing verification or unavailable R2 blocks local removal.
+The R2 lifecycle remains independent of local retention. Keep the 30-day bucket
+lock enabled; the object token deliberately cannot inspect or change bucket policy.
+
+```sh
+python3 -m unittest discover -s infrastructure/scripts/tests -p 'test_*.py' -v
+# On the server, after sourcing its protected environment:
+/usr/local/sbin/tpix-backup-prune-verified --keep 2 --plan-output /root/tpix-prune-plan.json
+# Review the plan, then explicitly apply:
+/usr/local/sbin/tpix-backup-prune-verified --keep 2 --apply
+```

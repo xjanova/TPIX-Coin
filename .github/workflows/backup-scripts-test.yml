@@ -1,10 +1,10 @@
 name: Backup scripts
 on:
   pull_request:
-    paths: ['infrastructure/scripts/*backup*.sh', 'infrastructure/scripts/tests/**', '.github/workflows/backup-scripts-test.yml']
+    paths: ['infrastructure/scripts/*backup*.sh', 'infrastructure/scripts/*backup*.py', 'infrastructure/scripts/tests/**', '.github/workflows/backup-scripts-test.yml']
   push:
     branches: [main]
-    paths: ['infrastructure/scripts/*backup*.sh', 'infrastructure/scripts/tests/**', '.github/workflows/backup-scripts-test.yml']
+    paths: ['infrastructure/scripts/*backup*.sh', 'infrastructure/scripts/*backup*.py', 'infrastructure/scripts/tests/**', '.github/workflows/backup-scripts-test.yml']
 permissions:
   contents: read
 jobs:
@@ -16,5 +16,7 @@ jobs:
         run: |
           bash -n infrastructure/scripts/backup-upload-r2.sh
           bash -n infrastructure/scripts/setup-r2-backup.sh
+          bash -n infrastructure/scripts/backup-chain.sh
           bash infrastructure/scripts/tests/backup-upload-r2.test.sh
           bash infrastructure/scripts/tests/setup-r2-quoting.test.sh
+          python3 -m unittest discover -s infrastructure/scripts/tests -p 'test_*.py' -v
