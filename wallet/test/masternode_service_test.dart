@@ -22,10 +22,6 @@ import 'package:web3dart/crypto.dart' show bytesToHex;
 
 // ── ค่าจาก ethers v6.16 (Interface.encodeFunctionData / encodeFunctionResult) ──
 
-const _registerSentinel = '0xc135492f000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000005a00000000000000000000000000000000000000000000000000000000000003e8000000000000000000000000000000000000000000000000000000006b49d45800000000000000000000000000000000000000000000000000000000000000113230332e302e3131332e31303a38353435000000000000000000000000000000';
-
-const _registerGuardian = '0xc135492f000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000005a00000000000000000000000000000000000000000000000000000000000003e8000000000000000000000000000000000000000000000000000000006b49d45800000000000000000000000000000000000000000000000000000000000000166e6f64652e747069782e6f6e6c696e653a333033303300000000000000000000';
-
 const _operator = '0x1234567890abcdef1234567890abcdef12345678';
 
 /// runtime bytecode จริงของ NodeRegistryV2 ที่ deploy แล้ว (TPIX-Coin 026f5f9)
@@ -232,16 +228,6 @@ void main() {
   });
 
   group('ABI encode (เทียบกับ ethers)', () {
-    test('registerNode(Sentinel=1, endpoint) ตรงกับ ethers', () {
-      expect(_hex(MasterNodeService.encodeRegister(MnTier.sentinel, '203.0.113.10:8545', maxLockDays: BigInt.from(90), maxSlashBps: BigInt.from(1000), deadline: BigInt.from(1800000600))),
-          _registerSentinel);
-    });
-
-    test('registerNode(Guardian=0, hostname:port) ตรงกับ ethers', () {
-      expect(_hex(MasterNodeService.encodeRegister(MnTier.guardian, 'node.tpix.online:30303', maxLockDays: BigInt.from(90), maxSlashBps: BigInt.from(1000), deadline: BigInt.from(1800000600))),
-          _registerGuardian);
-    });
-
     test('ฟังก์ชันไม่มีพารามิเตอร์ = selector ล้วน', () {
       expect(_hex(MasterNodeService.encodeClaim()), '0x372500ab');
       expect(_hex(MasterNodeService.encodeDeregister()), '0x18b1c081');
@@ -254,14 +240,16 @@ void main() {
       expect(MnTier.light.id, 2);
       expect(MnTier.validator.id, 3);
 
-      // การ์ดเรียงตามสเตค (Light ก่อน) แต่ calldata ต้องยังเป็นเลข enum ของระดับนั้น
+      // การ์ดเรียงตามสเตค (Light ก่อน) — ลำดับแสดงผลเท่านั้น ไม่ใช่เลข enum
       final order = _snap().displayTiers.map((t) => t.tier).toList();
       expect(order, [MnTier.light, MnTier.sentinel, MnTier.guardian, MnTier.validator]);
-      for (final t in order) {
-        final hex = _hex(MasterNodeService.encodeRegister(t, '1.2.3.4:1', maxLockDays: BigInt.from(90), maxSlashBps: BigInt.from(1000), deadline: BigInt.from(1800000600)));
-        final tierWord = BigInt.parse(hex.substring(10, 74), radix: 16).toInt();
-        expect(tierWord, t.id, reason: '${t.label} ต้องส่ง ${t.id}');
-      }
+    });
+
+    test('แอปไม่มีโค้ดสร้าง registerNode — สมัครที่เว็บเท่านั้น', () {
+      final src = File('lib/services/masternode_service.dart').readAsStringSync();
+      expect(src.contains("_fn('registerNode')"), isFalse);
+      final screen = File('lib/screens/masternode_screen.dart').readAsStringSync();
+      expect(screen.contains('encodeRegister'), isFalse);
     });
   });
 
@@ -521,57 +509,6 @@ void main() {
     });
   });
 
-  group('ตรวจ endpoint', () {
-    final cases = <String, MnEndpointError?>{
-      '203.0.113.10:8545': null,
-      ' node.tpix.online:30303 ': null,
-      'validator-1.example.co.th:443': null,
-      '[2001:db8::1]:8545': null,
-      '': MnEndpointError.empty,
-      '   ': MnEndpointError.empty,
-      '203.0.113.10': MnEndpointError.format,
-      'http://203.0.113.10:8545': MnEndpointError.format,
-      '203.0.113.10:8545/rpc': MnEndpointError.format,
-      '256.1.1.1:8545': MnEndpointError.format,
-      '1.2.3:8545': MnEndpointError.format,
-      '-bad.example:80': MnEndpointError.format,
-      'โหนด.example:80': MnEndpointError.format,
-      '203.0.113.10:0': MnEndpointError.port,
-      '203.0.113.10:65536': MnEndpointError.port,
-      '203.0.113.10:0080808': MnEndpointError.port,
-      'localhost:8545': MnEndpointError.local,
-      '127.0.0.1:8545': MnEndpointError.local,
-      '0.0.0.0:8545': MnEndpointError.local,
-      '[::1]:8545': MnEndpointError.local,
-    };
-    cases.forEach((input, expected) {
-      test('"$input" → ${expected?.name ?? 'ผ่าน'}', () {
-        expect(MasterNodeService.validateEndpoint(input), expected);
-      });
-    });
-
-    test('ยาว 100 ตัวผ่าน / 101 ตัวไม่ผ่าน (สัญญานับเป็นไบต์)', () {
-      String host(int len) {
-        // ป้ายละไม่เกิน 63 ตัว คั่นด้วยจุด
-        final parts = <String>[];
-        var left = len;
-        while (left > 0) {
-          final n = left > 60 ? 60 : left;
-          parts.add('a' * n);
-          left -= n + 1;
-        }
-        return parts.join('.');
-      }
-
-      final ok = '${host(95)}:8545'; // 95 + 5
-      expect(ok.length, lessThanOrEqualTo(100));
-      expect(MasterNodeService.validateEndpoint(ok), isNull);
-      final tooLong = '${'a' * 60}.${'b' * 35}:85450';
-      expect(tooLong.length, 102);
-      expect(MasterNodeService.validateEndpoint(tooLong), MnEndpointError.tooLong);
-    });
-  });
-
   group('ข้อความ revert → เหตุผล', () {
     final cases = <String, MnRevert>{
       'execution reverted: Registration paused': MnRevert.paused,
@@ -610,8 +547,8 @@ void main() {
     });
 
     test('gasLimit = max(ประเมิน×1.3 ปัดขึ้น, พื้น)', () {
-      expect(MasterNodeService.gasLimit(367423, MasterNodeService.gasFloorRegister), 600000);
-      expect(MasterNodeService.gasLimit(500000, MasterNodeService.gasFloorRegister), 650000);
+      expect(MasterNodeService.gasLimit(367423, 600000), 600000);
+      expect(MasterNodeService.gasLimit(500000, 600000), 650000);
       expect(MasterNodeService.gasLimit(158170, MasterNodeService.gasFloorClaim), 250000);
       expect(MasterNodeService.gasLimit(1000001, 0), 1300002);
     });
@@ -925,7 +862,6 @@ void main() {
       for (final r in MnRevert.values)
         if (r != MnRevert.unknown) 'mn.revert.${r.name}',
       for (final s in MnStatus.values) 'mn.status.${s.name}',
-      for (final e in MnEndpointError.values) 'mn.endpointErr.${e.name}',
     };
     final missing = <String>[];
     for (final k in keys) {

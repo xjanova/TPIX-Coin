@@ -1,4 +1,7 @@
-/// TPIX Wallet — มาสเตอร์โหนด: ดูระดับ สเตค รับรางวัล ถอน จากกระเป๋าในแอป
+/// TPIX Wallet — มาสเตอร์โหนด: ดูระดับ + ปุ่มไปเปิดโหนดที่เว็บ, รับรางวัล/ถอน จากกระเป๋าในแอป
+///
+/// สมัคร/สเตคโหนดใหม่ทำที่เว็บ tpix.online เท่านั้น (เจ้าของสั่ง 2026-10-27) — แอปไม่มีโค้ดสร้าง registerNode
+/// คนที่มีโหนดอยู่แล้วยังรับรางวัล / ถอนสเตค / ถอนส่วนที่เหลือหลังโดนปรับ ในแอปได้
 ///
 /// ด่านความปลอดภัย (เรียงตามลำดับที่ผู้ใช้เจอ):
 ///   1. เว็บยังไม่ประกาศสัญญา → โชว์ "ยังไม่เปิด" ไม่มีปุ่มเขียนเลย
@@ -47,7 +50,7 @@ part 'masternode_obsidian.dart';
 
 enum _Phase { loading, error, notDeployed, unverified, unknownCode, ready }
 
-enum _Action { stake, claim, unstake, withdraw }
+enum _Action { claim, unstake, withdraw }
 
 final _dateFmt = DateFormat('yyyy-MM-dd HH:mm');
 
@@ -78,7 +81,6 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
   /// กันกดซ้อน "ตั้งแต่แตะปุ่ม" จนจบ (รวมช่วงกล่องยืนยัน/สแกนนิ้ว/PIN/รอเชน)
   bool _busy = false;
   _Action? _sending;
-  MnTier? _sendingTier;
 
   // ── ธีม Obsidian (แสดงผลเท่านั้น) ──
   /// ระดับที่เลือกดูบนแท็บ — null = ค่าเริ่มต้น (ระดับของโหนดตัวเอง หรือระดับแรกในรายการ)
@@ -121,7 +123,7 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
         _snapshot = null;
       }
     });
-    // ยอดล่าสุดไว้เช็กว่าพอสเตคไหม (ไม่ throw — ล้มก็คงยอดเดิม)
+    // ยอดล่าสุดไว้โชว์เทียบขั้นต่ำของแต่ละระดับ (ไม่ throw — ล้มก็คงยอดเดิม)
     unawaited(wallet.refreshBalance());
 
     try {
@@ -278,44 +280,6 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
     }
   }
 
-  Future<void> _stake(MnTierInfo info) => _guard(() async {
-        final snap = _snapshot;
-        if (snap == null || !_ownerStillActive(snap)) return;
-        final l = context.read<LocaleProvider>();
-        final wallet = context.read<WalletProvider>();
-        final block = snap.registerBlock(info.tier, wallet.balanceWei);
-        if (block != null) {
-          _snack(_blockText(block, l, info: info), error: true);
-          return;
-        }
-        final deadline = BigInt.from(DateTime.now().millisecondsSinceEpoch ~/ 1000 + 600);
-        final endpoint = await showModalBottomSheet<String>(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (_) => _StakeSheet(
-            info: info,
-            registry: snap.registry,
-            fromLabel: _fromLabel(wallet, snap.owner),
-            poolFunded: snap.poolFunded,
-          ),
-        );
-        if (endpoint == null || !mounted) return;
-        await _authorizeAndSend(
-          snap: snap,
-          action: _Action.stake,
-          tier: info.tier,
-          // ★ ต้องเท่ากับ minStake ของระดับนั้นพอดี — สัญญารุ่นใหม่ไม่รับเกิน
-          value: info.minStake,
-          data: MasterNodeService.encodeRegister(info.tier, endpoint,
-            maxLockDays: info.lockDays,
-            maxSlashBps: info.slashPercentBps,
-            deadline: deadline,
-          ),
-          gasFloor: MasterNodeService.gasFloorRegister,
-        );
-      });
-
   Future<void> _claim() => _guard(() async {
         final snap = _snapshot;
         if (snap == null || !_ownerStillActive(snap)) return;
@@ -419,16 +383,11 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
     required _Action action,
     required Uint8List data,
     required int gasFloor,
-    MnTier? tier,
-    BigInt? value,
   }) async {
     final l = context.read<LocaleProvider>();
     final wallet = context.read<WalletProvider>();
 
-    setState(() {
-      _sending = action;
-      _sendingTier = tier;
-    });
+    setState(() => _sending = action);
     var sent = false;
     try {
       // ด่านแรก: สัญญาที่จะส่งเงินเข้าต้องยังเป็น bytecode ที่แอปตรึงไว้ (จำผลไว้ทั้งรอบ)
@@ -441,7 +400,6 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
       final estimated = await MasterNodeService.estimateGas(
         registry: snap.registry,
         from: snap.owner,
-        value: value,
         data: data,
       );
       if (!mounted) return;
@@ -456,7 +414,6 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
         rpcUrl: ChainConfig.tpix.rpcUrl,
         chainId: MasterNodeService.chainId,
         toAddress: snap.registry,
-        value: value,
         data: data,
         maxGas: MasterNodeService.gasLimit(estimated, gasFloor),
         gasPrice: BigInt.zero, // TPIX Chain ไม่มีค่าแก๊ส
@@ -487,10 +444,7 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
       _snack(_friendlyError(e, l), error: true);
     } finally {
       if (mounted) {
-        setState(() {
-          _sending = null;
-          _sendingTier = null;
-        });
+        setState(() => _sending = null);
       }
     }
     if (!mounted) return;
@@ -688,6 +642,8 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
                 _myNodeCard(snap, l),
                 const SizedBox(height: TpixGap.xl),
               ],
+              _webOnlyCard(l),
+              const SizedBox(height: TpixGap.xl),
               _sectionTitle(l.t('mn.tiers')),
               const SizedBox(height: TpixGap.sm),
               for (final t in snap.displayTiers) ...[
@@ -886,6 +842,40 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
           );
   }
 
+  /// โฆษณา: เปิดโหนดได้ที่เว็บเท่านั้น
+  Widget _webOnlyCard(LocaleProvider l) {
+    final c = AppColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(TpixGap.lg),
+      decoration: adaptiveGlassCard(context, borderRadius: TpixRadius.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.language_rounded, color: AppTheme.primary, size: 22),
+              const SizedBox(width: TpixGap.sm),
+              Expanded(
+                child: Text(l.t('mn.webOnlyTitle'),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text)),
+              ),
+            ],
+          ),
+          const SizedBox(height: TpixGap.sm),
+          Text(l.t('mn.webOnlyBody'),
+              style: TextStyle(fontSize: 13, height: 1.5, color: c.textSec)),
+          const SizedBox(height: TpixGap.md),
+          _actionButton(
+            label: l.t('mn.openNodeOnWeb'),
+            enabled: true,
+            loading: false,
+            onTap: _openWebsite,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _myNodeCard(MnSnapshot snap, LocaleProvider l) {
     final c = AppColors.of(context);
     final node = snap.node;
@@ -1024,24 +1014,18 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
               valueColor: info.isFull ? AppTheme.danger : null),
           if (showButton) ...[
             const SizedBox(height: TpixGap.md),
-            if (info.tier == MnTier.validator) ...[
-              _actionButton(
-                label: l.t('mn.openWebsite'),
-                enabled: true,
-                loading: false,
-                onTap: _openWebsite,
-                outlined: true,
-              ),
-              _reason(_blockText(MnBlock.validatorWebsiteOnly, l)),
-            ] else ...[
-              _actionButton(
-                label: l.t('mn.stakeButton'),
-                enabled: block == null,
-                loading: _sending == _Action.stake && _sendingTier == info.tier,
-                onTap: () => _stake(info),
-              ),
-              if (block != null) _reason(_blockText(block, l, info: info)),
-            ],
+            // สมัครได้ที่เว็บเท่านั้น — ปุ่มพาไปเว็บ ไม่มีปุ่มสเตคในแอป
+            _actionButton(
+              label: l.t(info.tier == MnTier.validator ? 'mn.openWebsite' : 'mn.openNodeOnWeb'),
+              enabled: true,
+              loading: false,
+              onTap: _openWebsite,
+              outlined: true,
+            ),
+            if (info.tier == MnTier.validator)
+              _reason(_blockText(MnBlock.validatorWebsiteOnly, l))
+            else if (block != null && block != MnBlock.validatorWebsiteOnly)
+              _reason(_blockText(block, l, info: info)),
           ],
         ],
       ),
@@ -1070,140 +1054,6 @@ class _MasterNodeScreenState extends State<MasterNodeScreen> {
 }
 
 // ================================================================
-// แผ่นสเตค — กรอก endpoint + ยืนยันทุกรายละเอียดในที่เดียว
-// ================================================================
-
-class _StakeSheet extends StatefulWidget {
-  final MnTierInfo info;
-  final String registry;
-  final String fromLabel;
-
-  /// กองรางวัลมีเงินไหม — ไม่มี = เตือนว่าสเตคตอนนี้ยังไม่ได้รางวัลจริง
-  final bool poolFunded;
-
-  const _StakeSheet({
-    required this.info,
-    required this.registry,
-    required this.fromLabel,
-    required this.poolFunded,
-  });
-
-  @override
-  State<_StakeSheet> createState() => _StakeSheetState();
-}
-
-class _StakeSheetState extends State<_StakeSheet> {
-  final _endpoint = TextEditingController();
-  MnEndpointError? _error;
-
-  @override
-  void dispose() {
-    _endpoint.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final err = MasterNodeService.validateEndpoint(_endpoint.text);
-    if (err != null) {
-      setState(() => _error = err);
-      return;
-    }
-    Navigator.pop(context, _endpoint.text.trim());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.watch<LocaleProvider>();
-    final c = AppColors.of(context);
-    final info = widget.info;
-    final lockDays = info.lockDays.toInt();
-    final unlockEst = DateTime.now().add(Duration(days: lockDays));
-    return _SheetFrame(
-      title: l.t('mn.stakeTitle').replaceAll('{tier}', info.tier.label),
-      children: [
-        Text(l.t('mn.endpoint'), style: TextStyle(fontSize: 13, color: c.textSec)),
-        const SizedBox(height: TpixGap.xs),
-        TextField(
-          controller: _endpoint,
-          autofocus: true,
-          keyboardType: TextInputType.url,
-          autocorrect: false,
-          enableSuggestions: false,
-          maxLength: MasterNodeService.maxEndpointLength,
-          // ASCII เท่านั้น — สัญญานับความยาวเป็นไบต์
-          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9.\-:\[\]]'))],
-          style: _isObsidian(context)
-              ? ObsidianStyle.of(context).mono(fontSize: 14, color: ObsidianColors.text)
-              : TextStyle(color: c.text, fontSize: 14, fontFamily: 'monospace'),
-          onChanged: (_) {
-            if (_error != null) setState(() => _error = null);
-          },
-          onSubmitted: (_) => _submit(),
-          decoration: _isObsidian(context)
-              ? _obsEndpointDecoration(context, l, _error)
-              : InputDecoration(
-            hintText: '203.0.113.10:8545',
-            hintStyle: TextStyle(color: c.textMuted),
-            errorText: _error == null ? null : l.t('mn.endpointErr.${_error!.name}'),
-            helperText: l.t('mn.endpointHelp'),
-            helperMaxLines: 2,
-            helperStyle: TextStyle(color: c.textMuted, fontSize: 11),
-            filled: true,
-            fillColor: c.glassColor,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(TpixRadius.sm),
-              borderSide: BorderSide(color: c.glassBorder),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(TpixRadius.sm),
-              borderSide: BorderSide(color: c.glassBorder),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(TpixRadius.sm),
-              borderSide: const BorderSide(color: AppTheme.primary),
-            ),
-          ),
-        ),
-        const SizedBox(height: TpixGap.sm),
-        _ConfirmRow(label: l.t('mn.tier'), value: info.tier.label),
-        // จำนวนเต็มทุกหลัก — นี่คือ msg.value ที่จะส่งจริง
-        _ConfirmRow(
-          label: l.t('send.confirmAmount'),
-          value: '${MasterNodeService.formatTpix(info.minStake, maxDecimals: 18)} TPIX',
-          valueColor: AppTheme.primary,
-        ),
-        _ConfirmRow(
-            label: l.t('mn.lockDays'), value: l.t('mn.days').replaceAll('{n}', '$lockDays')),
-        _ConfirmRow(label: l.t('mn.unlockEst'), value: _dateFmt.format(unlockEst)),
-        _ConfirmRow(label: l.t('send.from'), value: widget.fromLabel),
-        _ConfirmRow(label: l.t('mn.contract'), value: widget.registry),
-        _ConfirmRow(label: l.t('send.network'), value: 'TPIX Chain (4289)'),
-        _ConfirmRow(
-          label: l.t('send.gasFee').replaceAll(': ', ''),
-          value: l.t('send.gasFreeVal'),
-          valueColor: AppTheme.success,
-        ),
-        if (!widget.poolFunded) _Note(text: l.t('mn.stakePoolEmptyNote'), color: c.brandWarm),
-        _Note(text: l.t('mn.lockWarn').replaceAll('{n}', '$lockDays'), color: c.brandWarm),
-        if (info.slashPercentBps > BigInt.zero)
-          _Note(
-            text: l.t('mn.slashWarn').replaceAll(
-                '{pct}', MasterNodeService.formatBps(info.slashPercentBps.toInt())),
-            color: c.brandWarm,
-          ),
-        const SizedBox(height: TpixGap.xl),
-        _SheetButtons(
-          cancelLabel: l.t('send.cancel'),
-          confirmLabel: l.t('mn.confirmStake'),
-          onCancel: () => Navigator.pop(context),
-          onConfirm: _submit,
-        ),
-      ],
-    );
-  }
-}
-
-// ================================================================
 // ชิ้นส่วนแผ่นยืนยัน
 // ================================================================
 
@@ -1218,7 +1068,6 @@ class _SheetFrame extends StatelessWidget {
     if (_isObsidian(context)) return ObsidianModalSheet(title: title, children: children);
     final c = AppColors.of(context);
     return Padding(
-      // ดันขึ้นพ้นคีย์บอร์ด (ช่อง endpoint)
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Container(
         constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.9),

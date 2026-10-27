@@ -1,6 +1,6 @@
 /// TPIX Wallet — เทสต์หน้ามาสเตอร์โหนด (สถานะที่ไม่มีปุ่มเขียน)
 ///
-/// ต้องไม่มีทางกดสเตคได้เมื่อ: เว็บยังไม่ประกาศสัญญา / ติดต่อเว็บไม่ได้
+/// สมัคร/สเตคทำที่เว็บเท่านั้น — และต้องไม่มีปุ่มไปเปิดโหนดเมื่อ: เว็บยังไม่ประกาศสัญญา / ติดต่อเว็บไม่ได้
 /// และกรณีติดต่อไม่ได้ต้องมีปุ่มลองใหม่ ไม่ใช่หน้าว่างหรือ Exception ดิบ
 /// และสัญญาที่ bytecode ไม่ตรงกับที่ตรึงไว้ = ให้อัปเดตแอป ไม่มีปุ่มสเตค
 library;
@@ -70,7 +70,7 @@ void main() {
     final l = LocaleProvider();
     expect(find.text(l.t('mn.unknownCodeTitle')), findsOneWidget);
     expect(find.text(l.t('mn.updateApp')), findsOneWidget);
-    expect(find.text(l.t('mn.stakeButton')), findsNothing);
+    expect(find.text(l.t('mn.openNodeOnWeb')), findsNothing);
     expect(find.text(l.t('mn.openWebsite')), findsNothing,
         reason: 'สัญญาที่แอปไม่รู้จัก — ห้ามชี้ไปสเตคที่เว็บแทน');
   });
@@ -85,7 +85,7 @@ void main() {
     final l = LocaleProvider();
     expect(find.text(l.t('mn.notDeployedTitle')), findsOneWidget);
     expect(find.text(l.t('mn.openWebsite')), findsOneWidget);
-    expect(find.text(l.t('mn.stakeButton')), findsNothing);
+    expect(find.text(l.t('mn.openNodeOnWeb')), findsNothing);
   });
 
   testWidgets('ติดต่อเว็บไม่ได้ → ข้อความเครือข่าย + ปุ่มลองใหม่ (ลองแล้วโหลดใหม่จริง)',
@@ -101,7 +101,7 @@ void main() {
 
     final l = LocaleProvider();
     expect(find.text(l.t('mn.errNetwork')), findsOneWidget);
-    expect(find.text(l.t('mn.stakeButton')), findsNothing);
+    expect(find.text(l.t('mn.openNodeOnWeb')), findsNothing);
     expect(calls, 1);
 
     await tester.tap(find.text(l.t('mn.retry')));

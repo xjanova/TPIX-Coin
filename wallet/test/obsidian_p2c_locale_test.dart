@@ -25,16 +25,11 @@ void main() {
             .map((m) => m.group(1)!),
       for (final f in ActivityFilter.values) 'obs.act.f.${f.name}',
       for (final t in MnTier.values) 'obs.mn.tag.${t.name}',
-      // เหตุผลของปุ่มสเตค (registerBlock) — Validator มีปุ่มของตัวเอง
+      // ป้ายปุ่มหลักเมื่อกระเป๋านี้มีโหนดอยู่แล้ว (registerBlock) — นอกนั้นปุ่มพาไปเว็บ
       for (final b in const [
-        MnBlock.paused,
         MnBlock.hasNode,
         MnBlock.claimFirst,
         MnBlock.restakeWaitsForPool,
-        MnBlock.unavailable,
-        MnBlock.full,
-        MnBlock.balanceUnknown,
-        MnBlock.insufficientBalance,
       ])
         'obs.mn.cta.${b.name}',
     };

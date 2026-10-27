@@ -1,12 +1,13 @@
 // TPIX Wallet — หน้ามาสเตอร์โหนดธีม Obsidian (ตาม A-Node.dc.html)
 //
 // เป็น part ของ masternode_screen.dart — ไฟล์นี้ "วาด" อย่างเดียว:
-//   ทุกปุ่มเรียกตัวจัดการเดิม (_stake / _claim / _unstake / _withdrawSlashed / _load)
+//   ทุกปุ่มเรียกตัวจัดการเดิม (_openWebsite / _claim / _unstake / _withdrawSlashed / _load)
 //   ทุกเงื่อนไขปุ่มมาจาก MnSnapshot เดิม (registerBlock / claimBlock / unstakeBlock / aprCapToShow)
 //   ตัวเลขทุกตัวมาจากเชน (getTierInfo / tierAprCapBps / availableRewardFunds) — ไม่มีเลขตายตัวจาก mock
 //
 // ด่านความปลอดภัยที่หน้าตาต้องไม่ทำหาย:
-//   - สัญญายังไม่ประกาศ / ตรวจไม่ผ่าน / โค้ดไม่รู้จัก (ให้อัปเดตแอป) / ติดต่อไม่ได้ = ไม่มีปุ่มสเตค
+//   - สมัคร/สเตคโหนดใหม่ทำที่เว็บเท่านั้น — ปุ่มหลักพาไปเว็บ ไม่มีปุ่มสเตคในแอป (เจ้าของสั่ง 2026-10-27)
+//   - สัญญายังไม่ประกาศ / ตรวจไม่ผ่าน / โค้ดไม่รู้จัก (ให้อัปเดตแอป) / ติดต่อไม่ได้ = ไม่มีปุ่มเขียน
 //   - กองรางวัลว่าง = ไม่โชว์ APR (โชว์ "รอเติมพูล") + บอกตรง ๆ ว่ายังไม่มีรางวัลจ่ายจริง
 //   - ปิดรับลงทะเบียน = แถบเตือน + ปุ่มกดไม่ได้พร้อมเหตุผล
 //   - Validator ต้อง KYC ผ่านเว็บ — ปุ่มพาไปเว็บ ไม่ใช่ปุ่มสเตค
@@ -25,32 +26,6 @@ Color? _obsValueColor(Color? c) {
   if (c == AppTheme.success) return ObsidianColors.successSoft;
   if (c == AppTheme.primary) return ObsidianColors.cyan;
   return c;
-}
-
-/// ช่องกรอก endpoint แบบยุบลง (ObsidianSurface.field)
-InputDecoration _obsEndpointDecoration(BuildContext context, LocaleProvider l, MnEndpointError? error) {
-  final st = ObsidianStyle.of(context);
-  OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
-    borderRadius: BorderRadius.circular(16),
-    borderSide: BorderSide(color: c, width: w),
-  );
-  return InputDecoration(
-    hintText: '203.0.113.10:8545',
-    hintStyle: st.mono(fontSize: 14, color: ObsidianColors.textMuted),
-    errorText: error == null ? null : l.t('mn.endpointErr.${error.name}'),
-    errorStyle: st.ui(fontSize: 12, color: ObsidianColors.dangerSoft),
-    helperText: l.t('mn.endpointHelp'),
-    helperMaxLines: 2,
-    helperStyle: st.ui(fontSize: 11.5, color: ObsidianColors.textMuted),
-    counterStyle: st.ui(fontSize: 11, color: ObsidianColors.textMuted),
-    filled: true,
-    fillColor: const Color(0xFF0B0C11),
-    border: border(const Color(0x14FFFFFF)),
-    enabledBorder: border(const Color(0x14FFFFFF)),
-    focusedBorder: border(ObsidianColors.cyan, 1.5),
-    errorBorder: border(ObsidianColors.danger),
-    focusedErrorBorder: border(ObsidianColors.danger, 1.5),
-  );
 }
 
 /// ปุ่มยืนยันรายการเสี่ยง (ถอนสเตค) — เข้มทึบ + วงขอบแดง + ตัวอักษรแดงอ่อน
@@ -378,11 +353,13 @@ extension _ObsidianMasterNode on _MasterNodeScreenState {
       ),
       const SizedBox(height: 14),
       _obsPoolRow(snap, l),
-      // ปุ่มกดไม่ได้ต้องบอกเหตุผล (Validator อธิบายในการ์ดแล้ว)
+      // เหตุผลที่สมัครไม่ได้ตอนนี้ (บอกไว้ก่อนไปเว็บ — Validator อธิบายในการ์ดแล้ว)
       if (block != null && block != MnBlock.validatorWebsiteOnly) ...[
         const SizedBox(height: 8),
         _obsReason(_blockText(block, l, info: info)),
       ],
+      const SizedBox(height: 14),
+      _obsWebOnlyPanel(l),
       const SizedBox(height: 18),
       _obsFooter(snap, l),
     ];
@@ -764,6 +741,34 @@ extension _ObsidianMasterNode on _MasterNodeScreenState {
     );
   }
 
+  /// โฆษณา: เปิดโหนดได้ที่เว็บเท่านั้น (ปุ่มไปเว็บอยู่ที่ปุ่มหลักล่างจอ)
+  Widget _obsWebOnlyPanel(LocaleProvider l) {
+    final st = ObsidianStyle.of(context);
+    return ObsidianPanel(
+      surface: ObsidianSurface.panel.copyWith(radius: 20),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon3D(ObsidianIcons.network, size: 34),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l.t('mn.webOnlyTitle'),
+                    style: st.ui(fontSize: 14, fontWeight: FontWeight.w600, color: ObsidianColors.text)),
+                const SizedBox(height: 4),
+                Text(l.t('mn.webOnlyBody'),
+                    style: st.ui(fontSize: 12, height: 1.55, color: ObsidianColors.textSec)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _obsFooter(MnSnapshot snap, LocaleProvider l) {
     final st = ObsidianStyle.of(context);
     return Padding(
@@ -801,25 +806,22 @@ extension _ObsidianMasterNode on _MasterNodeScreenState {
       return ObsidianCta(label: l.t('obs.mn.ctaKyc'), glow: art.rim, onPressed: _sending == null ? _openWebsite : null);
     }
 
+    // กระเป๋านี้มีโหนด/รางวัลค้างอยู่ = สัญญาไม่รับสมัครเพิ่ม ไม่ว่าจากแอปหรือเว็บ — บอกเหตุผลแทนพาไปเว็บ
     final block = snap.registerBlock(selected, wallet.balanceWei);
-    final loading = _sending == _Action.stake && _sendingTier == selected;
-    if (block == null) {
+    if (block == MnBlock.hasNode || block == MnBlock.claimFirst || block == MnBlock.restakeWaitsForPool) {
+      final labelKey = 'obs.mn.cta.${block!.name}';
+      final label = l.t(labelKey);
       return ObsidianCta(
-        label: l.t('obs.mn.ctaStake').replaceAll('{amount}', MasterNodeService.formatTpix(info.minStake)),
-        glow: art.rim,
-        loading: loading,
-        // กำลังส่งรายการอื่น = กดไม่ได้ (กันส่งซ้อน nonce)
-        onPressed: _sending == null ? () => _stake(info) : null,
-        onDisabledTap: () => _snack(l.t('obs.mn.cta.busy')),
+        label: label == labelKey ? l.t('mn.openNodeOnWeb') : label,
+        onPressed: null,
+        onDisabledTap: () => _snack(_blockText(block, l, info: info), error: true),
       );
     }
-    final labelKey = 'obs.mn.cta.${block.name}';
-    final label = l.t(labelKey);
     return ObsidianCta(
-      label: label == labelKey ? l.t('mn.stakeButton') : label,
-      onPressed: null,
-      // ปุ่มกดไม่ได้ต้องบอกเหตุผล — แตะแล้วขึ้นข้อความเต็ม
-      onDisabledTap: () => _snack(_blockText(block, l, info: info), error: true),
+      label: l.t('obs.mn.ctaWeb'),
+      glow: art.rim,
+      onPressed: _sending == null ? _openWebsite : null,
+      onDisabledTap: () => _snack(l.t('obs.mn.cta.busy')),
     );
   }
 

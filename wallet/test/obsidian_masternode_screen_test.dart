@@ -3,10 +3,10 @@
 /// ล็อกไว้:
 ///   1. กองรางวัลว่าง = ไม่มีตัวเลข APR บนจอ (โชว์ "รอเติมพูล") + บอกว่ายังไม่มีรางวัลจ่ายจริง
 ///   2. กองมีเงิน = โชว์เพดาน APR จากสัญญา
-///   3. จำนวนบนปุ่มสเตค = minStake จากเชนพอดี (ไม่ใช่ตัวเลขตัวอย่างใน mock)
-///   4. ปิดรับลงทะเบียน = แถบเตือน + ปุ่มกดไม่ได้ (แตะแล้วได้เหตุผล ไม่เปิดแผ่นสเตค)
-///   5. Validator = ปุ่มพาไปเว็บ (KYC) ไม่มีปุ่มสเตค
-///   6. ยอดไม่พอ = ปุ่มกดไม่ได้พร้อมเหตุผล
+///   3. สมัคร/สเตคโหนดใหม่ทำที่เว็บเท่านั้น — ปุ่มหลักพาไปเว็บ ไม่มีปุ่มสเตค/แผ่นสเตคในแอป
+///   4. ปิดรับลงทะเบียน / ยอดไม่พอ = บอกเหตุผล แต่ยังไม่มีทางสเตคในแอป
+///   5. Validator = ปุ่มพาไปเว็บ (KYC)
+///   6. มีโหนดอยู่แล้ว = ยังรับรางวัล / ถอนสเตคในแอปได้
 ///   7. สัญญาโค้ดไม่รู้จัก / ยังไม่เปิด / ติดต่อไม่ได้ = ไม่มีปุ่มสเตค
 ///
 /// Developed by Xman Studio
@@ -42,8 +42,27 @@ http.Response _ok(Object? r) => http.Response(jsonEncode({'jsonrpc': '2.0', 'id'
 
 final _emptyNode = '0x${'0' * 62}20${'0' * 64 * 10}${'0' * 61}1a0${'0' * 64 * 2}${'0' * 64}';
 
+/// โหนด Sentinel ที่ active อยู่ · พ้นล็อกแล้ว (unlockAt 2026-01-07) · endpoint "203.0.113.10:8545"
+const _activeNode =
+    '0x0000000000000000000000000000000000000000000000000000000000000020'
+    '0000000000000000000000001234567890abcdef1234567890abcdef12345678'
+    '0000000000000000000000000000000000000000000000000000000000000001'
+    '0000000000000000000000000000000000000000000000000000000000000001'
+    '00000000000000000000000000000000000000000000152d02c7e14af6800000'
+    '0000000000000000000000000000000000000000000000000000000068e77800'
+    '00000000000000000000000000000000000000000000000000000000695e1f00'
+    '0000000000000000000000000000000000000000000000000000000068e779f4'
+    '000000000000000000000000000000000000000000000000ad78ebc5ac620000'
+    '000000000000000000000000000000000000000000000000000000000000267a'
+    'abababababababababababababababababababababababababababababababab'
+    '00000000000000000000000000000000000000000000000000000000000001a0'
+    '0000000000000000000000000000000000000000000000000000000000000000'
+    '0000000000000000000000000000000000000000000000000000000000000000'
+    '0000000000000000000000000000000000000000000000000000000000000011'
+    '3230332e302e3131332e31303a38353435000000000000000000000000000000';
+
 /// เชนปลอม — minStake ตาม tier id (Guardian=0, Sentinel=1, Light=2, Validator=3) ไม่ใช่ตัวเลขของ mock
-RpcClient _chain({required BigInt pool, bool paused = false}) {
+RpcClient _chain({required BigInt pool, bool paused = false, bool hasNode = false}) {
   const mins = [123456, 23456, 3456, 7654321];
   return RpcClient(['https://rpc.test'], httpClient: MockClient((req) async {
     final body = jsonDecode(req.body) as Map<String, dynamic>;
@@ -61,10 +80,10 @@ RpcClient _chain({required BigInt pool, bool paused = false}) {
       case '0x9abbbd3b': // registrationPaused
         return _ok('0x${_word(paused ? BigInt.one : BigInt.zero)}');
       case '0x582115fb': // getNodeInfo
-        return _ok(_emptyNode);
+        return _ok(hasNode ? _activeNode : _emptyNode);
       case '0xf40f0f52': // pendingReward
       case '0x9a78ea4a': // claimableNow
-        return _ok('0x${_word(BigInt.zero)}');
+        return _ok('0x${_word(hasNode ? _t(5) : BigInt.zero)}');
       case '0xd0377094': // availableRewardFunds
         return _ok('0x${_word(pool)}');
     }
@@ -105,9 +124,10 @@ Widget _app(WalletProvider w) => MultiProvider(
       ),
     );
 
-Future<void> _open(WidgetTester tester, {required BigInt pool, bool paused = false, BigInt? balance}) async {
+Future<void> _open(WidgetTester tester,
+    {required BigInt pool, bool paused = false, bool hasNode = false, BigInt? balance}) async {
   MasterNodeService.clientFactory = () => _config();
-  RpcClient.overrideForChain(4289, _chain(pool: pool, paused: paused));
+  RpcClient.overrideForChain(4289, _chain(pool: pool, paused: paused, hasNode: hasNode));
   // จอสูงพอให้ทั้งหน้าถูกสร้าง (ListView สร้างเฉพาะที่ใกล้จอ)
   tester.view.physicalSize = const Size(1170, 3600);
   tester.view.devicePixelRatio = 3;
@@ -142,30 +162,33 @@ void main() {
     expect(find.text(l.t('obs.mn.poolEmpty')), findsOneWidget);
   });
 
-  testWidgets('กองมีเงิน → เพดาน APR จากสัญญา + จำนวนบนปุ่ม = minStake จากเชน', (tester) async {
+  testWidgets('กองมีเงิน → เพดาน APR จากสัญญา · ปุ่มหลักพาไปเว็บ ไม่มีปุ่มสเตค', (tester) async {
     await _open(tester, pool: _t(1000));
-    // ระดับแรก = สเตคน้อยสุด = Light (id 2) → 3,456 TPIX จากเชน
     expect(find.text('12.34%'), findsOneWidget);
-    expect(find.text('Stake 3,456 TPIX'), findsOneWidget);
-    expect(find.text('Stake 10,000 TPIX'), findsNothing, reason: 'ห้ามใช้ตัวเลขตัวอย่างจาก mock');
+    expect(find.text(l.t('obs.mn.ctaWeb')), findsOneWidget);
+    expect(find.text(l.t('mn.webOnlyTitle')), findsOneWidget);
+    expect(find.textContaining('Stake '), findsNothing);
   });
 
-  testWidgets('ยอดไม่พอ → ปุ่มกดไม่ได้ + เหตุผล · แตะแล้วไม่เปิดแผ่นสเตค', (tester) async {
+  testWidgets('แตะปุ่มหลัก → ไม่เปิดแผ่นสเตคในแอป', (tester) async {
+    await _open(tester, pool: _t(1000), balance: _t(5000));
+    await tester.tap(find.text(l.t('obs.mn.ctaWeb')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+  });
+
+  testWidgets('ยอดไม่พอ → บอกเหตุผล · ปุ่มหลักยังพาไปเว็บ', (tester) async {
     await _open(tester, pool: _t(1000), balance: _t(100));
-    expect(find.text(l.t('obs.mn.cta.insufficientBalance')), findsOneWidget);
-    await tester.tap(find.text(l.t('obs.mn.cta.insufficientBalance')));
-    await tester.pump();
-    expect(find.text(l.t('mn.endpoint')), findsNothing);
+    expect(find.textContaining('3,456'), findsWidgets);
+    expect(find.text(l.t('obs.mn.ctaWeb')), findsOneWidget);
+    expect(find.textContaining('Stake '), findsNothing);
   });
 
-  testWidgets('ปิดรับลงทะเบียน → แถบเตือน + ปุ่มกดไม่ได้', (tester) async {
+  testWidgets('ปิดรับลงทะเบียน → แถบเตือน · ไม่มีปุ่มสเตค', (tester) async {
     await _open(tester, pool: _t(1000), paused: true);
     expect(find.text(l.t('mn.block.paused')), findsWidgets);
-    expect(find.text(l.t('obs.mn.cta.paused')), findsOneWidget);
     expect(find.textContaining('Stake '), findsNothing);
-    await tester.tap(find.text(l.t('obs.mn.cta.paused')));
-    await tester.pump();
-    expect(find.text(l.t('mn.endpoint')), findsNothing);
   });
 
   testWidgets('Validator → ปุ่มสมัครผ่านเว็บ (KYC) ไม่มีปุ่มสเตค', (tester) async {
@@ -176,13 +199,18 @@ void main() {
     expect(find.textContaining('Stake '), findsNothing);
   });
 
-  testWidgets('ยอดพอ → กดปุ่มสเตค = แผ่นยืนยันที่มีจำนวนเต็มทุกหลัก + ที่อยู่สัญญา', (tester) async {
-    await _open(tester, pool: _t(1000), balance: _t(5000));
-    await tester.tap(find.text('Stake 3,456 TPIX'));
+  testWidgets('มีโหนดอยู่แล้ว → รับรางวัล / ถอนสเตคในแอปได้ · สมัครเพิ่มไม่ได้', (tester) async {
+    await _open(tester, pool: _t(1000), hasNode: true);
+    expect(find.text(l.t('mn.myNode')), findsOneWidget);
+    expect(find.text(l.t('mn.claim')), findsWidgets);
+    expect(find.text(l.t('mn.unstake')), findsOneWidget);
+    expect(find.text(l.t('obs.mn.cta.hasNode')), findsWidgets);
+    expect(find.text(l.t('obs.mn.ctaWeb')), findsNothing);
+
+    await tester.tap(find.text(l.t('mn.unstake')));
     await tester.pumpAndSettle();
-    expect(find.text(l.t('mn.endpoint')), findsOneWidget);
     final sheet = find.byType(BottomSheet);
-    expect(find.descendant(of: sheet, matching: find.text('3,456 TPIX')), findsOneWidget);
+    expect(find.descendant(of: sheet, matching: find.text(l.t('mn.confirmUnstakeTitle'))), findsOneWidget);
     expect(find.descendant(of: sheet, matching: find.text(_registry)), findsOneWidget);
   });
 
