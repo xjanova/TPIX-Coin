@@ -7,6 +7,8 @@
 #
 # ก่อนรัน: สร้างเหรียญ IDTC ผ่าน TPIX Token Factory แล้ว (standard: ไม่มี mint/pause/blacklist/auto-burn)
 #          และกระเป๋าที่ถือเหรียญทั้ง 1.1T ต้องมี USDT บนเชน TPIX ≥ 10 และ TPIX ≥ 100 สำหรับเปิดพูล
+#          (IDTC ตัวจริง 2026-10-27: 0x798923aeb2692bbd27cfb0505bf7c94f6cf4e288 · ถือโดย 0x3da3776e0AB0F442c181aa031f47FA83696859AF)
+# ทุก tx รอขึ้นบล็อกก่อนส่งใบถัดไป (~1 ใบ/2 วิ) — ต่ำกว่าด่าน RPC 10 ใบ/10 วิ ไม่ต้องหน่วงเพิ่ม
 #
 # ทำตามลำดับ (หยุดทันทีถ้าขั้นไหนไม่ผ่าน · รันซ้ำได้ ขั้นที่เสร็จแล้วจะถูกข้าม):
 #   1. ถามคีย์กระเป๋าที่ถือ IDTC แบบซ่อน (ไม่ขึ้นจอ ไม่เข้า history ไม่ลงไฟล์)
@@ -18,6 +20,8 @@
 # Developed by Xman Studio
 
 $ErrorActionPreference = 'Stop'
+# npx พิมพ์ "npm notice" (มี npm รุ่นใหม่) ลง stderr — ปิดไว้ ไม่ให้ปนผลลัพธ์
+$env:NPM_CONFIG_UPDATE_NOTIFIER = 'false'
 
 function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color }
 function AskAddress($label, $envName) {
@@ -56,7 +60,9 @@ $plainKey = ($plainKey -replace '[\s"''`]', '')
 if ($plainKey -match '^[0-9a-fA-F]{64}$') { $plainKey = "0x$plainKey" }
 if ($plainKey -notmatch '^0x[0-9a-fA-F]{64}$') { Say "รูปแบบคีย์ไม่ถูกต้อง" Red; $plainKey = $null; exit 1 }
 $env:DEPLOYER_KEY = $plainKey
-try { $holder = (node -e "const { Wallet } = require('ethers'); console.log(new Wallet(process.env.DEPLOYER_KEY).address)" 2>$null | Select-Object -First 1) } finally { $env:DEPLOYER_KEY = $null }
+# 'Continue' ชั่วคราว: PS 5.1 + 'Stop' ทำให้บรรทัด stderr ของ native exe (แม้ 2>$null) เป็น error ร้ายแรง
+$ErrorActionPreference = 'Continue'
+try { $holder = (node -e "const { Wallet } = require('ethers'); console.log(new Wallet(process.env.DEPLOYER_KEY).address)" 2>$null | Select-Object -First 1) } finally { $env:DEPLOYER_KEY = $null; $ErrorActionPreference = 'Stop' }
 if (-not $holder) { Say "แปลงคีย์เป็นที่อยู่ไม่ได้" Red; $plainKey = $null; exit 1 }
 Say "  กระเป๋า: $holder" Cyan
 
@@ -84,10 +90,20 @@ Say "  พูล IDTC/USDT 10 USDT + IDTC/TPIX 100 TPIX ที่ราคา pr
 Say ""
 Say "ขั้นที่ 3/5  ซ้อมทั้งสายบนเครื่อง (ไม่แตะเชนจริง)" Yellow
 ClearEnv   # ค่าที่ตั้งไว้ล่วงหน้า (เช่น TOKEN ของเชนจริง) ต้องไม่หลุดเข้ารอบซ้อม — เก็บไว้ในตัวแปรแล้ว
-npx hardhat run scripts/launch-token.js 2>&1 | Select-Object -Last 4 | ForEach-Object { Say "    $_" DarkGray }
-if ($LASTEXITCODE -ne 0) { Say "ซ้อม launch-token ไม่ผ่าน — หยุด" Red; $plainKey = $null; exit 1 }
-npx hardhat run scripts/launch-pools.js 2>&1 | Select-Object -Last 4 | ForEach-Object { Say "    $_" DarkGray }
-if ($LASTEXITCODE -ne 0) { Say "ซ้อม launch-pools ไม่ผ่าน — หยุด" Red; $plainKey = $null; exit 1 }
+# Windows PowerShell 5.1 + 'Stop': บรรทัดใดก็ตามที่ native exe เขียนลง stderr (คำเตือน npm/hardhat) กลายเป็น
+# error ร้ายแรงเมื่อใช้ 2>&1 → รอบซ้อมหยุดทั้งที่ผ่าน ขั้นนี้จึงใช้ 'Continue' แล้วตัดสินจาก exit code จริง
+foreach ($dry in 'launch-token.js', 'launch-pools.js') {
+    $ErrorActionPreference = 'Continue'
+    $out = @(npx hardhat run "scripts/$dry" 2>&1 | ForEach-Object { "$_" })
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    $out | Select-Object -Last 4 | ForEach-Object { Say "    $_" DarkGray }
+    if ($code -ne 0) {
+        Say "ซ้อม $dry ไม่ผ่าน — หยุด (ยังไม่มีอะไรขึ้นเชน)" Red
+        $out | Select-Object -Last 20 | ForEach-Object { Say "    $_" DarkGray }
+        $plainKey = $null; exit 1
+    }
+}
 
 # ─── 4) ของจริง ─────────────────────────────────────────────────────────────
 Say ""
