@@ -1,6 +1,7 @@
 require("@nomicfoundation/hardhat-ethers");
 require("@nomicfoundation/hardhat-chai-matchers");
 require("@nomicfoundation/hardhat-network-helpers");
+const { task } = require("hardhat/config");
 
 const fs = require("fs");
 const path = require("path");
@@ -60,6 +61,23 @@ function tokenFactoryOverrides() {
   walk(root);
   return out;
 }
+
+/**
+ * ยืนยันซอร์สบน explorer.tpix.online — `npx hardhat verify-explorer [ชื่อสัญญา...]`
+ *
+ * ไม่ใช้ `npx hardhat verify` (hardhat-verify): explorer ปิดช่อง verify สาธารณะแล้ว
+ * ต้องแนบ header X-TPIX-Verify-Key ซึ่งปลั๊กอินนั้นตั้ง header เองไม่ได้
+ * task นี้เรียก scripts/verify-blockscout.js (standard JSON input จาก build-info จริง + แนบกุญแจ)
+ * ต้องตั้ง env TPIX_VERIFY_KEY — ดู scripts/lib/explorer-verify-key.js
+ */
+task("verify-explorer", "Verify deployed-contracts.json entries on explorer.tpix.online (sends X-TPIX-Verify-Key)")
+  .addOptionalVariadicPositionalParam("names", "contract names from deployed-contracts.json (default: every unverified one)", [])
+  .setAction(async ({ names }) => {
+    const { spawnSync } = require("child_process");
+    const script = path.join(__dirname, "scripts", "verify-blockscout.js");
+    const { status } = spawnSync(process.execPath, [script, ...names], { stdio: "inherit" });
+    if (status !== 0) process.exitCode = status ?? 1;
+  });
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {

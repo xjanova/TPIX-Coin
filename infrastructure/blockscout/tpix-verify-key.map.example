@@ -1,0 +1,5 @@
+# ติดตั้งเป็น /etc/nginx/tpix-verify-key.map (root:root 600) — ห้าม commit ไฟล์จริง
+# บรรทัดเดียว: กุญแจ (ค่าเดียวกับ BLOCKSCOUT_VERIFY_KEY ใน .env ของ tpix.online) ตามด้วย 1
+#   sudo install -o root -g root -m 600 /dev/null /etc/nginx/tpix-verify-key.map
+#   echo '"<key>" 1;' | sudo tee /etc/nginx/tpix-verify-key.map >/dev/null
+"<64-hex-key>" 1;

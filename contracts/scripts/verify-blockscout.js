@@ -12,6 +12,7 @@
  *   node scripts/verify-blockscout.js TPIXDEXFactory  # เฉพาะชื่อที่ระบุ
  *
  * Env: EXPLORER_URL (ค่าปริยาย https://explorer.tpix.online) · TPIX_RPC_URL (ค่าปริยาย rpc1)
+ *      TPIX_VERIFY_KEY (จำเป็น) — explorer ปิดช่อง verify สาธารณะ ดู scripts/lib/explorer-verify-key.js
  *
  * Developed by Xman Studio
  */
@@ -19,6 +20,7 @@
 const fs = require("fs");
 const path = require("path");
 const { ethers } = require("ethers");
+const { verifyKeyHeaders, gateRejected } = require("./lib/explorer-verify-key");
 
 const ROOT = path.join(__dirname, "..");
 const REGISTRY_PATH = path.join(ROOT, "deployed-contracts.json");
@@ -57,10 +59,12 @@ async function isVerified(address) {
     return body.is_verified === true;
 }
 
-async function submit(address, buildInfo, artifact) {
+async function submit(address, buildInfo, artifact, keyHeaders) {
     const form = new FormData();
     form.append("compiler_version", `v${buildInfo.solcLongVersion}`);
-    form.append("contract_name", `${artifact.sourceName}:${artifact.contractName}`);
+    // ชื่อเปล่า ๆ ไม่ใช่ "<path>:<ชื่อ>" — แบบมี path Blockscout v6 เทียบ bytecode ผ่าน
+    // แต่หยิบสัญญาตัวแรกในไฟล์ (เช่น Ownable) ไปบันทึกแล้วพังที่ contract_code_md5 (เจอกับ IDTC 2026-10-27)
+    form.append("contract_name", artifact.contractName);
     form.append("autodetect_constructor_args", "true");
     form.append("license_type", "mit");
     form.append(
@@ -71,10 +75,11 @@ async function submit(address, buildInfo, artifact) {
 
     const res = await fetch(`${EXPLORER}/api/v2/smart-contracts/${address}/verification/via/standard-input`, {
         method: "POST",
+        headers: keyHeaders,
         body: form,
     });
     const text = await res.text();
-    if (!res.ok) throw new Error(`explorer ตอบ HTTP ${res.status}: ${text.slice(0, 200)}`);
+    if (!res.ok) throw new Error(gateRejected(res.status) || `explorer ตอบ HTTP ${res.status}: ${text.slice(0, 200)}`);
 }
 
 async function main() {
@@ -85,6 +90,15 @@ async function main() {
     const targets = (registry.contracts || []).filter((c) => (only.length ? only.includes(c.name) : c.verified !== true));
     if (targets.length === 0) {
         console.log("ไม่มีสัญญาที่ต้อง verify");
+        return;
+    }
+
+    let keyHeaders;
+    try {
+        keyHeaders = verifyKeyHeaders();
+    } catch (error) {
+        console.error(`❌ ${error.message}`);
+        process.exitCode = 1;
         return;
     }
 
@@ -102,7 +116,7 @@ async function main() {
             if (code === "0x") throw new Error("ไม่มีโค้ดบนเชน");
 
             const { artifact, buildInfo } = findArtifact(entry, code);
-            await submit(entry.address, buildInfo, artifact);
+            await submit(entry.address, buildInfo, artifact, keyHeaders);
 
             // Blockscout compile เทียบในคิวของมันเอง — รอผลสูงสุด ~90 วินาที
             let ok = false;
