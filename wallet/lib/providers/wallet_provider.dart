@@ -8,6 +8,7 @@ import '../models/token_list.dart';
 import '../models/tx_record.dart';
 import '../services/biometric_service.dart';
 import '../services/db_service.dart';
+import '../services/explorer_token_service.dart';
 import '../services/price_service.dart';
 import '../services/rpc_client.dart';
 import '../services/swap_service.dart';
@@ -156,9 +157,13 @@ class WalletProvider extends ChangeNotifier {
         dexLogos: _defaultTokenLogos,
       );
 
-  /// ยืนยันแล้ว / ไม่ยืนยัน / ชื่อเลียนแบบตัวที่ยืนยันแล้ว (ใช้ติดป้าย)
-  TokenTrust tokenTrust(TokenInfo token) =>
-      TokenTrustService.trustOf(token, TokenListService.current);
+  /// ยืนยันแล้ว / ยืนยันซอร์สโค้ด / ไม่ยืนยัน / ชื่อเลียนแบบ (ใช้ติดป้าย)
+  /// — กฎเดียวกับหน้าเพิ่มโทเค็น: เหรียญที่เพิ่มจากรายการของ explorer ได้ป้ายเดียวกันบนหน้าโฮม
+  TokenTrust tokenTrust(TokenInfo token) => TokenTrustService.trustOf(
+        token,
+        TokenListService.current,
+        explorer: ExplorerTokenService.current,
+      );
 
   // Chain getters
   int get activeChainId => _activeChainId;
@@ -690,11 +695,15 @@ class WalletProvider extends ChangeNotifier {
   }
 
   /// โหลดรายการโทเค็นที่ยืนยันแล้ว (แคชในเครื่องก่อน เก่าเกิน 6 ชม.ค่อยดึงใหม่)
+  /// + รายการจาก explorer ตามแคช 1 ชม. ของมันเอง (ไม่บังคับดึงใหม่จากตรงนี้ — ปุ่มลองใหม่อยู่ที่หน้าเพิ่มโทเค็น)
   /// — ได้ชุดใหม่ก็วาดโลโก้/ป้ายใหม่ · ไม่ผูกกับกระเป๋าใบไหน · ไม่ throw
   Future<void> refreshTokenList({bool force = false}) async {
-    final before = TokenListService.current;
-    final after = await TokenListService.load(forceRefresh: force);
-    if (_disposed || identical(before, after)) return;
+    final list = TokenListService.current, explorer = ExplorerTokenService.current;
+    final (listAfter, explorerAfter) = await (
+      TokenListService.load(forceRefresh: force),
+      ExplorerTokenService.load(),
+    ).wait;
+    if (_disposed || (identical(list, listAfter) && identical(explorer, explorerAfter))) return;
     notifyListeners();
   }
 

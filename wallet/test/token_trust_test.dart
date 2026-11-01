@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tpix_wallet/models/chain_config.dart';
+import 'package:tpix_wallet/models/explorer_token_list.dart';
 import 'package:tpix_wallet/models/token_info.dart';
 import 'package:tpix_wallet/models/token_list.dart';
 import 'package:tpix_wallet/services/token_trust.dart';
@@ -287,6 +288,153 @@ void main() {
         TokenTrustService.resolveLogo(_token(bscUsdt.address.toLowerCase(), chainId: 56)),
         bscUsdt.logoUrl,
       );
+    });
+  });
+
+  // ── รายการจาก explorer: ยืนยันซอร์สโค้ด ≠ ยืนยันแล้ว · ของปลอมที่ verify แล้วยังโดนเตือน ──
+  group('explorer', () {
+    const lp = '0x3684e0ebd1bd7ef7b7783e695639badcd04bc4f0';
+    const fooA = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const fooB = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    final at = DateTime(2026, 11, 1);
+    ExplorerToken et(String address, String name, String symbol, {String? logo}) =>
+        ExplorerToken(address: address, name: name, symbol: symbol, logoUri: logo, checkedAt: at);
+    final explorer = ExplorerTokenList([
+      et(_idtc, 'IDTC Token', 'IDTC', logo: 'https://explorer.test/idtc.png'),
+      et(lp, 'TPIX LP Token', 'TPIX-LP', logo: 'https://explorer.test/lp.png'),
+      // USDT ปลอมที่จ่ายค่า verify ซอร์สโค้ดแล้ว
+      et(_fake, 'Tether USD', 'USDT', logo: 'https://explorer.test/usdt-copy.png'),
+      // สองตัวชื่อเดียวกัน ไม่มีตัวไหนอยู่ในรายการที่อนุมัติ
+      et(fooA, 'Foo Coin', 'FOO'),
+      et(fooB, 'Foo Coin', 'F00'),
+    ]);
+    TokenTrustResult classify(String address, String name, String symbol, {TokenList? list}) =>
+        TokenTrustService.classify(
+          address: address,
+          name: name,
+          symbol: symbol,
+          decimals: 18,
+          list: list ?? _list,
+          explorer: explorer,
+        );
+
+    test('อยู่บน explorer อย่างเดียว → ยืนยันซอร์สโค้ด (ไม่ใช่ "ยืนยันแล้ว") · ต้องรอแอดมินอนุมัติ เพิ่มทีเดียวไม่ได้ · โลโก้จาก explorer',
+        () {
+      final r = classify(lp, 'TPIX LP Token', 'TPIX-LP');
+      expect(r.trust, TokenTrust.sourceVerified);
+      expect(r.isVerified, isFalse);
+      expect(r.canQuickAdd, isFalse);
+      expect(r.trustedLogo, 'https://explorer.test/lp.png');
+    });
+
+    test('isPickable: ต้องอยู่ทั้งในรายการที่อนุมัติและบน explorer · ขาดข้อมูลด่านไหน = ไม่ผ่าน', () {
+      bool pick(String a, {TokenList? approved, ExplorerTokenList? on}) =>
+          TokenTrustService.isPickable(a, approved: approved, explorer: on);
+      expect(pick(_idtc, approved: _list, on: explorer), isTrue);
+      expect(pick(_idtc.toUpperCase().replaceFirst('0X', '0x'), approved: _list, on: explorer), isTrue,
+          reason: 'ไม่สนตัวพิมพ์');
+      expect(pick(lp, approved: _list, on: explorer), isFalse, reason: 'verify แล้วแต่แอดมินยังไม่อนุมัติ');
+      expect(pick(_usdt, approved: _list, on: explorer), isFalse, reason: 'อนุมัติแล้วแต่ไม่อยู่บน explorer');
+      expect(pick(_idtc, on: explorer), isFalse, reason: 'โหลดรายการที่อนุมัติไม่ได้');
+      expect(pick(_idtc, approved: _list), isFalse, reason: 'โหลด explorer ไม่ได้');
+      // USDT ในตัวแอปได้ "ยืนยันแล้ว" แต่ไม่นับเป็นการอนุมัติ
+      final withUsdt = ExplorerTokenList([...explorer.tokens, et(_usdt, 'Tether USD', 'USDT')]);
+      expect(TokenTrustService.verifiedFor(_usdt, null), isNotNull);
+      expect(pick(_usdt, approved: TokenList(name: 'empty', tokens: const []), on: withUsdt), isFalse);
+    });
+
+    test('บนสัญญาไม่ตรงกับ explorer → mismatch (เพิ่มทีเดียวไม่ได้)', () {
+      final r = classify(lp, 'TPIX LP Token', 'LP2');
+      expect(r.trust, TokenTrust.sourceVerified);
+      expect(r.mismatches, {TokenMetaField.symbol});
+      expect(r.canQuickAdd, isFalse);
+    });
+
+    test('อยู่ในรายการที่อนุมัติด้วย → ยืนยันแล้ว · โลโก้จากรายการชนะ explorer', () {
+      final r = classify(_idtc, 'IDTC Token', 'IDTC');
+      expect(r.trust, TokenTrust.verified);
+      expect(r.trustedLogo, _idtcLogo);
+    });
+
+    test('USDT ปลอมที่ verify บน explorer → ยังเป็นของปลอม (verify ไม่ลบล้างคำเตือน) · ไม่ได้โลโก้', () {
+      final r = classify(_fake, 'Tether USD', 'USDT');
+      expect(r.trust, TokenTrust.lookalike);
+      expect(r.lookalikes.map((t) => t.address.toLowerCase()), [_usdt]);
+      expect(r.explorerTwins, isEmpty, reason: 'ตัวจริงบอกไว้ใน lookalikes แล้ว ไม่บอกซ้ำ');
+      expect(r.explorer, isNotNull);
+      expect(r.trustedLogo, isNull);
+      expect(r.canQuickAdd, isFalse);
+    });
+
+    test('ชื่อซ้ำกันบน explorer (ไม่มีตัวไหนอนุมัติ) → เลียนแบบทั้งคู่ แยกได้ด้วยที่อยู่', () {
+      final a = classify(fooA, 'Foo Coin', 'FOO');
+      final b = classify(fooB, 'Foo Coin', 'F00');
+      expect(a.trust, TokenTrust.lookalike);
+      expect(b.trust, TokenTrust.lookalike);
+      expect(a.explorerTwins.map((t) => t.key), [fooB]);
+      expect(b.explorerTwins.map((t) => t.key), [fooA]);
+      expect(TokenTrustService.trustOfExplorer(explorer.byAddress(fooA)!, list: _list, explorer: explorer),
+          TokenTrust.lookalike);
+    });
+
+    test('ไม่อยู่บน explorer แต่ชื่อซ้ำตัวบน explorer → เลียนแบบ (เข้มขึ้นจากเดิมที่เป็นแค่ไม่ยืนยัน)', () {
+      const other = '0xcccccccccccccccccccccccccccccccccccccccc';
+      final r = classify(other, 'TPIX LP Token', 'TPIX-LP');
+      expect(r.trust, TokenTrust.lookalike);
+      expect(r.explorerTwins.map((t) => t.key), [lp]);
+      expect(r.explorer, isNull);
+    });
+
+    test('พูล TPIX DEX ที่พิสูจน์บนเชนแล้ว: ชื่อซ้ำกันเองไม่ใช่ของเลียนแบบ · LP ปลอมชื่อเดียวกันยังโดนเตือน', () {
+      const poolA = '0x1111111111111111111111111111111111111111';
+      const poolB = '0x2222222222222222222222222222222222222222';
+      const fakeLp = '0x3333333333333333333333333333333333333333';
+      ExplorerToken lpToken(String address, {bool pool = false}) => ExplorerToken(
+          address: address, name: 'TPIX LP Token', symbol: 'TPIX-LP', checkedAt: at, dexPool: pool);
+      final pools = ExplorerTokenList([
+        lpToken(poolA, pool: true),
+        lpToken(poolB, pool: true),
+        lpToken(fakeLp), // verify ซอร์สโค้ดแล้วแต่พิสูจน์ไม่ผ่าน
+      ]);
+      TokenTrustResult lpClassify(String address) => TokenTrustService.classify(
+          address: address, name: 'TPIX LP Token', symbol: 'TPIX-LP', decimals: 18, list: _list, explorer: pools);
+
+      for (final p in [poolA, poolB]) {
+        final r = lpClassify(p);
+        expect(r.trust, TokenTrust.sourceVerified, reason: p);
+        expect(r.canQuickAdd, isFalse, reason: 'พูลจริงก็ต้องรอแอดมินอนุมัติก่อนขึ้นรายการเพิ่มทีเดียว');
+        expect(r.explorerTwins, isEmpty);
+      }
+      final fake = lpClassify(fakeLp);
+      expect(fake.trust, TokenTrust.lookalike);
+      expect(fake.explorerTwins.map((t) => t.key), unorderedEquals([poolA, poolB]));
+      expect(lpClassify('0x4444444444444444444444444444444444444444').trust, TokenTrust.lookalike,
+          reason: 'ไม่อยู่บน explorer + ชื่อเหมือนพูล = เลียนแบบ');
+      // หน้าโฮมใช้ trustOf — ต้องได้ผลเดียวกัน
+      final saved = TokenInfo(
+          contractAddress: poolA, name: 'TPIX LP Token', symbol: 'TPIX-LP', walletSlot: 1, chainId: 4289);
+      expect(TokenTrustService.trustOf(saved, _list, explorer: pools), TokenTrust.sourceVerified);
+      expect(TokenTrustService.trustOf(saved, _list), TokenTrust.unverified, reason: 'ไม่ส่งรายการ explorer = ผลเดิม');
+    });
+
+    test('ไม่มีรายการจาก explorer → ผลเหมือนเดิมทุกข้อ', () {
+      expect(_classify(lp, 'TPIX LP Token', 'TPIX-LP', list: _list).trust, TokenTrust.unverified);
+      expect(_classify(_fake, 'Tether USD', 'USDT', list: _list).trust, TokenTrust.lookalike);
+    });
+
+    test('โลโก้ในรายการ: อนุมัติ → explorer → ในตัวแอป · ตัวเลียนแบบไม่มีโลโก้', () {
+      String? logo(String address) {
+        final t = explorer.byAddress(address)!;
+        return TokenTrustService.explorerLogo(
+          t,
+          TokenTrustService.trustOfExplorer(t, list: _list, explorer: explorer),
+          _list,
+        );
+      }
+
+      expect(logo(_idtc), _idtcLogo);
+      expect(logo(lp), 'https://explorer.test/lp.png');
+      expect(logo(_fake), isNull);
     });
   });
 }

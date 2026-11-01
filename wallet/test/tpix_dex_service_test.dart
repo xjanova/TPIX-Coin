@@ -348,6 +348,38 @@ void main() {
       await TpixDexService.verifyChain();
     });
   });
+
+  // ทุกพูลชื่อ "TPIX LP Token" — แยกพูลจริงจากของปลอมด้วย factory ตัวจริงเท่านั้น
+  group('isDexPool — พิสูจน์พูลบนเชน', () {
+    test('พูลจริง (factory.getPair ชี้กลับมา) → true · ที่อยู่ตัวพิมพ์ใหญ่ก็ได้', () async {
+      final pool = chain.poolAddress(dexWtpix, dexUsdt);
+      expect(await TpixDexService.isDexPool(pool), isTrue);
+      expect(await TpixDexService.isDexPool(pool.toUpperCase().replaceFirst('0X', '0x')), isTrue);
+    });
+
+    test('LP ปลอมที่ตอบ token0/token1 ของพูลจริง → false (factory ชี้ไปพูลตัวจริง)', () async {
+      final fake = '0x${'e7' * 20}';
+      chain.fakeLps[fake] = (dexUsdt, dexWtpix);
+      expect(await TpixDexService.isDexPool(fake), isFalse);
+      // อ้างคู่ที่ไม่มีพูล → factory ตอบศูนย์ → false
+      chain.fakeLps[fake] = (dexToken, dexUsdt);
+      expect(await TpixDexService.isDexPool(fake), isFalse);
+    });
+
+    test('ตรวจไม่ได้ → null ไม่ใช่ผ่าน: สัญญาไม่ตอบ token0 · ทะเบียนไม่พร้อม · เชนล่ม · ที่อยู่ผิดรูป = false', () async {
+      expect(await TpixDexService.isDexPool(dexToken), isNull, reason: 'เหรียญธรรมดาไม่มี token0()');
+      expect(await TpixDexService.isDexPool('0x1234'), isFalse);
+
+      final pool = chain.poolAddress(dexWtpix, dexUsdt);
+      RpcClient.overrideForChain(4289, RpcClient(['https://rpc.fake.test'], httpClient: _deadHttp()));
+      expect(await TpixDexService.isDexPool(pool), isNull);
+
+      RpcClient.overrideForChain(4289, chain.rpc.client);
+      TpixDexService.resetCache();
+      site.config = dexConfig(ready: false);
+      expect(await TpixDexService.isDexPool(pool), isNull);
+    });
+  });
 }
 
 /// http ที่ส่งไม่ถึงทุกครั้ง (โหนดล่ม/ถูกบล็อก)

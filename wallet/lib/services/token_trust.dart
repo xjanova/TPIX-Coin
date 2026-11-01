@@ -1,6 +1,7 @@
 import 'package:web3dart/web3dart.dart' show EthereumAddress;
 
 import '../models/chain_config.dart';
+import '../models/explorer_token_list.dart';
 import '../models/token_info.dart';
 import '../models/token_list.dart';
 import 'token_list_service.dart';
@@ -10,10 +11,18 @@ enum TokenTrust {
   /// อยู่ในรายการที่แอดมินอนุมัติ (tokenlist.json) หรือค่าในตัวแอป
   verified,
 
+  /// ไม่อยู่ในรายการที่แอดมินอนุมัติ แต่ explorer ยืนยันซอร์สโค้ดแล้ว + ไม่ถูกทำเครื่องหมาย scam
+  /// + ไม่มีชื่อซ้ำ (ยกเว้นพูล TPIX DEX ที่พิสูจน์บนเชนแล้ว — ทุกพูลชื่อเดียวกัน)
+  /// — ซอร์สโค้ดตรงกับสัญญา ≠ เหรียญปลอดภัย (บน explorer นี้ใครจ่ายค่าบริการก็
+  /// ยืนยันได้) จึงไม่ได้ป้าย "ยืนยันแล้ว" ยังเตือนให้ตรวจที่อยู่ และไม่ขึ้นรายการเพิ่มทีเดียว
+  /// (ต้องรอแอดมินอนุมัติ — ระหว่างนั้นวางที่อยู่สัญญาเพิ่มเองได้)
+  sourceVerified,
+
   /// ไม่อยู่ในรายการ — ใครก็สร้างโทเค็นชื่ออะไรก็ได้ ให้ผู้ใช้ระวัง
   unverified,
 
   /// ไม่อยู่ในรายการ แต่ชื่อ/สัญลักษณ์เหมือนตัวที่ยืนยันแล้ว = น่าจะเป็นของปลอม
+  /// (รวมถึงชื่อซ้ำกับเหรียญอื่นบน explorer — ยืนยันซอร์สโค้ดทั้งคู่ก็ไม่รู้ว่าตัวไหนจริง)
   lookalike,
 }
 
@@ -32,6 +41,12 @@ class TokenTrustResult {
   /// ตัวที่ยืนยันแล้วซึ่งชื่อ/สัญลักษณ์ซ้ำ (lookalike เท่านั้น)
   final List<TokenDef> lookalikes;
 
+  /// ข้อมูลของที่อยู่นี้ในรายการจาก explorer (null = ไม่อยู่ / ไม่ได้ส่งรายการมา)
+  final ExplorerToken? explorer;
+
+  /// เหรียญอื่นบน explorer (คนละที่อยู่) ที่ชื่อ/สัญลักษณ์ซ้ำ — lookalike เท่านั้น
+  final List<ExplorerToken> explorerTwins;
+
   /// ตรวจกับรายการจากเซิร์ฟเวอร์ได้ไหม (false = เทียบได้แค่ค่าในตัวแอป)
   final bool listAvailable;
 
@@ -41,9 +56,23 @@ class TokenTrustResult {
     this.listed,
     this.mismatches = const {},
     this.lookalikes = const [],
+    this.explorer,
+    this.explorerTwins = const [],
   });
 
   bool get isVerified => trust == TokenTrust.verified;
+
+  /// เพิ่มจากรายการได้ในทีเดียว: ยืนยันแล้ว และบนสัญญาตรงกับข้อมูลที่ประกาศ
+  /// (ผู้เรียกต้องเช็ก [TokenTrustService.isPickable] ด้วย — ค่าในตัวแอปก็ได้ "ยืนยันแล้ว"
+  /// แต่ไม่นับเป็นการอนุมัติของแอดมิน)
+  bool get canQuickAdd => trust == TokenTrust.verified && mismatches.isEmpty;
+
+  /// โลโก้ที่ให้ใช้ได้ — ตัวไม่ยืนยัน/เลียนแบบห้ามยืมโลโก้ของใคร (กันปลอมตัว)
+  String? get trustedLogo => switch (trust) {
+        TokenTrust.verified => listed?.logoUrl ?? explorer?.logoUri,
+        TokenTrust.sourceVerified => explorer?.logoUri,
+        TokenTrust.unverified || TokenTrust.lookalike => null,
+      };
 }
 
 /// ตัดสินว่าโทเค็นยืนยันแล้ว/ไม่ยืนยัน/เลียนแบบ + เลือกโลโก้ (pure — เทสต์ได้)
@@ -69,6 +98,14 @@ class TokenTrustService {
     return byAddr.values.toList();
   }
 
+  /// ขึ้นรายการเพิ่มทีเดียวได้ไหม — ต้องผ่านทั้งสองด่าน:
+  /// 1. แอดมินอนุมัติ: อยู่ใน tokenlist.json ชุดที่ยังไม่หมดอายุ ([TokenListService.approved])
+  ///    ค่าในตัวแอปไม่นับ — แอดมินถอนเหรียญออกจากรายการแล้วต้องหายจากทุกเครื่อง
+  /// 2. explorer: อยู่ในหน้า /tokens + ยืนยันซอร์สโค้ด + ไม่ถูกทำเครื่องหมาย scam ([explorer])
+  /// ด่านไหนไม่มีข้อมูล (null) = ไม่ผ่าน
+  static bool isPickable(String address, {TokenList? approved, ExplorerTokenList? explorer}) =>
+      (approved?.contains(address) ?? false) && (explorer?.contains(address) ?? false);
+
   /// ข้อมูลที่ยืนยันแล้วของที่อยู่นี้ (null = ไม่อยู่ในรายการ)
   static TokenDef? verifiedFor(String address, TokenList? list) {
     final key = address.toLowerCase();
@@ -81,20 +118,28 @@ class TokenTrustService {
   }
 
   /// จัดประเภทโทเค็นบน TPIX Chain จากข้อมูลที่อ่านจากสัญญา
+  ///
+  /// ลำดับ: รายการที่แอดมินอนุมัติ/ค่าในตัวแอป (ยืนยันแล้ว) → พูล TPIX DEX ที่พิสูจน์บนเชนแล้ว
+  /// (ยืนยันซอร์สโค้ด) → ชื่อซ้ำตัวที่ยืนยันแล้ว หรือซ้ำเหรียญอื่นบน explorer (เลียนแบบ)
+  /// → อยู่ใน [explorer] (ยืนยันซอร์สโค้ด) → ไม่ยืนยัน
+  /// การยืนยันซอร์สโค้ดบน explorer ไม่ลบล้างคำเตือนของปลอม
   static TokenTrustResult classify({
     required String address,
     required String name,
     required String symbol,
     required int decimals,
     TokenList? list,
+    ExplorerTokenList? explorer,
   }) {
     final listAvailable = list != null;
+    final onExplorer = explorer?.byAddress(address);
     final listed = verifiedFor(address, list);
     if (listed != null) {
       return TokenTrustResult(
         trust: TokenTrust.verified,
         listAvailable: listAvailable,
         listed: listed,
+        explorer: onExplorer,
         mismatches: {
           if (_norm(listed.name) != _norm(name)) TokenMetaField.name,
           if (_norm(listed.symbol) != _norm(symbol)) TokenMetaField.symbol,
@@ -103,20 +148,64 @@ class TokenTrustService {
       );
     }
 
+    // พูลของ TPIX DEX ที่พิสูจน์บนเชนแล้ว: ชื่อ "TPIX LP Token" ตายตัวในโค้ดของพูล ทุกพูลจึงชื่อซ้ำกัน
+    // — ไม่ใช่ของเลียนแบบ (ของปลอมชื่อเดียวกันพิสูจน์ไม่ผ่าน เพราะ factory ตัวจริงไม่ชี้มาที่มัน)
+    if (onExplorer != null && onExplorer.dexPool) {
+      return _sourceVerified(onExplorer, name, symbol, listAvailable);
+    }
+
+    final skeletons = {skeleton(name), skeleton(symbol)}..remove('');
     final index = _skeletonIndex(list);
-    final lookalikes = <TokenDef>{
-      for (final s in {skeleton(name), skeleton(symbol)})
-        if (s.isNotEmpty) ...?index[s],
+    final lookalikes = <TokenDef>{for (final s in skeletons) ...?index[s]}.toList();
+    // ตัวที่อยู่ใน lookalikes แล้วไม่ต้องบอกซ้ำ
+    final known = {for (final t in lookalikes) t.address.toLowerCase()};
+    final twinIndex = _explorerSkeletonIndex(explorer);
+    final twins = <ExplorerToken>{
+      for (final s in skeletons)
+        for (final t in twinIndex[s] ?? const <ExplorerToken>[])
+          if (t.key != address.toLowerCase() && !known.contains(t.key)) t,
     }.toList();
-    return TokenTrustResult(
-      trust: lookalikes.isEmpty ? TokenTrust.unverified : TokenTrust.lookalike,
-      listAvailable: listAvailable,
-      lookalikes: lookalikes,
-    );
+    if (lookalikes.isNotEmpty || twins.isNotEmpty) {
+      return TokenTrustResult(
+        trust: TokenTrust.lookalike,
+        listAvailable: listAvailable,
+        lookalikes: lookalikes,
+        explorer: onExplorer,
+        explorerTwins: twins,
+      );
+    }
+    if (onExplorer != null) return _sourceVerified(onExplorer, name, symbol, listAvailable);
+    return TokenTrustResult(trust: TokenTrust.unverified, listAvailable: listAvailable);
   }
 
+  /// explorer อ่านชื่อจากสัญญาเอง — ไม่ตรงกัน = ข้อมูลเก่าหรือสัญญาเปลี่ยน ต้องให้ผู้ใช้เห็น
+  /// (ทศนิยมไม่เทียบ: ไม่ใช้ค่าจาก explorer เลย)
+  static TokenTrustResult _sourceVerified(
+          ExplorerToken onExplorer, String name, String symbol, bool listAvailable) =>
+      TokenTrustResult(
+        trust: TokenTrust.sourceVerified,
+        listAvailable: listAvailable,
+        explorer: onExplorer,
+        mismatches: {
+          if (_norm(onExplorer.name) != _norm(name)) TokenMetaField.name,
+          if (_norm(onExplorer.symbol) != _norm(symbol)) TokenMetaField.symbol,
+        },
+      );
+
+  /// ประเภทของเหรียญในรายการจาก explorer (ป้ายในหน้าเพิ่มโทเค็น — ใช้ชื่อตามที่ explorer ประกาศ)
+  static TokenTrust trustOfExplorer(ExplorerToken token, {TokenList? list, required ExplorerTokenList explorer}) =>
+      classify(
+        address: token.address,
+        name: token.name,
+        symbol: token.symbol,
+        // ทศนิยมมีผลแค่การเทียบ mismatch ไม่มีผลกับประเภท
+        decimals: verifiedFor(token.address, list)?.decimals ?? 0,
+        list: list,
+        explorer: explorer,
+      ).trust;
+
   /// ประเภทของโทเค็นที่บันทึกไว้แล้ว (ใช้ติดป้ายในรายการโทเค็น)
-  static TokenTrust trustOf(TokenInfo token, TokenList? list) {
+  static TokenTrust trustOf(TokenInfo token, TokenList? list, {ExplorerTokenList? explorer}) {
     if (token.chainId != _tpixChainId) return TokenTrust.unverified;
     return classify(
       address: token.contractAddress,
@@ -124,7 +213,39 @@ class TokenTrustService {
       symbol: token.symbol,
       decimals: token.decimals,
       list: list,
+      explorer: explorer,
     ).trust;
+  }
+
+  /// โลโก้ของเหรียญในรายการจาก explorer: รายการที่แอดมินอนุมัติ → explorer → ค่าในตัวแอป
+  /// ตัวเลียนแบบไม่ได้โลโก้ (แม้ explorer จะมี — ใครก็อัปโหลดโลโก้ USDT ให้เหรียญตัวเองได้)
+  static String? explorerLogo(ExplorerToken token, TokenTrust trust, TokenList? list) {
+    if (trust == TokenTrust.lookalike || trust == TokenTrust.unverified) return null;
+    for (final url in [
+      list?.byAddress(token.key)?.logoUri,
+      token.logoUri,
+      verifiedFor(token.key, null)?.logoUrl,
+    ]) {
+      if (isHttpsUrl(url)) return url;
+    }
+    return null;
+  }
+
+  // โครงชื่อของเหรียญบน explorer → เหรียญนั้น (คำนวณครั้งเดียวต่อรายการ)
+  static ExplorerTokenList? _explorerIndexed;
+  static Map<String, List<ExplorerToken>> _explorerIndex = const {};
+
+  static Map<String, List<ExplorerToken>> _explorerSkeletonIndex(ExplorerTokenList? explorer) {
+    if (explorer == null) return const {};
+    if (identical(explorer, _explorerIndexed)) return _explorerIndex;
+    final index = <String, List<ExplorerToken>>{};
+    for (final t in explorer.tokens) {
+      for (final s in {skeleton(t.name), skeleton(t.symbol)}) {
+        if (s.isNotEmpty) (index[s] ??= []).add(t);
+      }
+    }
+    _explorerIndexed = explorer;
+    return _explorerIndex = index;
   }
 
   static String _norm(String s) => s.trim().toLowerCase();
