@@ -18,6 +18,8 @@
  *      Blockscout มีปุ่ม MetaMask แค่ในหน้ารายละเอียดเหรียญ หน้ารายการไม่มี
  *   4. แถบ "ลงทะเบียนอยู่บน" พร้อมโลโก้ทะเบียนเชนใน footer ทุกหน้า
  *      NEXT_PUBLIC_FOOTER_LINKS (tpix-footer-links.json) ใส่ได้แค่ลิงก์ตัวหนังสือ
+ *   5. ป้าย ✓ Verified หลังชื่อเหรียญ (หน้า /tokens และหน้า /token/0x…)
+ *      เมื่อสัญญายืนยันซอร์สแล้ว — กฎเดียวกับ TPIX Wallet
  *
  * ทำไมต้องดึงยอดจาก RPC เอง ไม่ใช้ API ของ Blockscout
  *   Blockscout ค้นพบ address จาก block/transaction เท่านั้น กระเป๋าที่ได้เงิน
@@ -313,6 +315,191 @@
     });
   }
 
+  /* ── ป้าย Verified หลังชื่อเหรียญ (/tokens และหน้า /token/0x…) ─────────────── */
+
+  /* กฎเดียวกับ TPIX Wallet (wallet/lib/services/explorer_token_service.dart):
+   * GET /api/v2/addresses/<addr> ตอบ 200 และ is_verified=true · is_scam=false ·
+   * is_contract=true · hash ตรงกับที่อยู่ — ขาดข้อใดหรือตรวจไม่ได้ = ไม่มีป้าย (fail closed)
+   * ป้ายบอกแค่ว่าซอร์สตรงกับสัญญาบนเชน ไม่ได้รับรองว่าเหรียญปลอดภัย */
+  var ADDR = /^0x[0-9a-fA-F]{40}$/;
+  var TOKEN_PAGE = /^\/token\/(0x[0-9a-fA-F]{40})\/?$/;
+  var VERIFY_TTL = 10 * 60 * 1000;          // ได้คำตอบชัด (ผ่าน/ไม่ผ่าน) เก็บ 10 นาที
+  var VERIFY_RETRY = 60 * 1000;             // ตรวจไม่ได้ เก็บ 60 วินาทีแล้วค่อยถามใหม่
+  var VERIFY_TIMEOUT = 8000;
+  var VERIFY_MAX = 4;                       // ยิง API พร้อมกันไม่เกิน 4 — /tokens มีได้ 50 แถวต่อหน้า
+  var VERIFY_TIP = 'ยืนยันซอร์สโค้ดแล้ว — ซอร์สโค้ดตรงกับสัญญาบนเชน (ไม่ได้รับรองว่าเหรียญปลอดภัย) · ' +
+    'Verified source — code matches the on-chain contract (not a safety endorsement)';
+  var verifyCache = {};                     // ที่อยู่ตัวเล็ก → { done, ok, until }
+  var verifyQueue = [];
+  var verifyActive = 0;
+
+  function verifyStyles() {
+    if (document.getElementById('tpix-verified-css')) return;
+    var s = document.createElement('style');
+    s.id = 'tpix-verified-css';
+    s.textContent = [
+      /* ค่าตั้งต้นคือธีมสว่าง — ธีมมืด Blockscout ใส่ body.chakra-ui-dark และ html[data-theme=dark] */
+      '.tpix-verified{flex:none;display:inline-flex;align-items:center;gap:3px;vertical-align:middle;margin-left:6px;',
+      '  height:20px;padding:0 6px;border-radius:10px;border:1px solid rgba(22,101,52,.4);background:rgba(22,163,74,.1);',
+      '  color:#166534;font:600 11px/1 system-ui,sans-serif;white-space:nowrap;cursor:help;user-select:none}',
+      '.tpix-verified svg{width:12px;height:12px;flex:none;display:block}',
+      '.chakra-ui-dark .tpix-verified,[data-theme=dark] .tpix-verified{border-color:rgba(74,222,128,.45);',
+      '  background:rgba(74,222,128,.12);color:#4ade80}',
+      '.tpix-verified-lg{height:24px;padding:0 8px;border-radius:12px;font-size:12px;margin-left:10px}',
+      '.tpix-verified-lg svg{width:14px;height:14px}',
+      /* จอมือถือเหลือแต่ไอคอน — ชื่อเหรียญไม่ต้องถูกตัดสั้นลงเพราะป้าย */
+      '@media (max-width:480px){.tpix-verified .tpix-verified-t{display:none}',
+      '  .tpix-verified{padding:0 3px}.tpix-verified-lg{padding:0 4px}}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  /* true = ผ่าน · false = explorer ตอบชัดว่าไม่ผ่าน · null = ตรวจไม่ได้
+   * 404 นับเป็นคำตอบชัด (explorer ไม่รู้จักที่อยู่นี้) ตรงกับฝั่งกระเป๋า
+   * ฟิลด์หาย/ผิดชนิด/hash ไม่ตรง = ตรวจไม่ได้ ไม่ใช่ผ่าน */
+  function verdict(addr, status, j) {
+    if (status === 404) return false;
+    if (status !== 200 || !j || typeof j !== 'object') return null;
+    if (typeof j.hash !== 'string' || j.hash.toLowerCase() !== addr.toLowerCase()) return null;
+    if (typeof j.is_verified !== 'boolean' || typeof j.is_scam !== 'boolean' ||
+        typeof j.is_contract !== 'boolean') return null;
+    return j.is_verified === true && j.is_scam === false && j.is_contract === true;
+  }
+
+  /* ไม่ reject เลย — ล่ม/429/หมดเวลา/JSON เสีย ได้ null ทั้งหมด
+   * ไม่มี AbortController ก็ยังเลิกรอที่ 8 วินาที (คำขอค้างต่อแต่ไม่กินช่องคิว) */
+  function fetchVerified(addr) {
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer;
+    var late = new Promise(function (resolve) {
+      timer = setTimeout(function () { if (ctl) ctl.abort(); resolve(null); }, VERIFY_TIMEOUT);
+    });
+    var req = Promise.resolve().then(function () {
+      return fetch('/api/v2/addresses/' + addr, {
+        headers: { Accept: 'application/json' },
+        signal: ctl ? ctl.signal : undefined
+      });
+    }).then(function (r) {
+      if (r.status !== 200) return verdict(addr, r.status, null);
+      return r.json().then(function (j) { return verdict(addr, 200, j); });
+    }).catch(function () { return null; });
+    return Promise.race([req, late]).then(function (v) { clearTimeout(timer); return v; });
+  }
+
+  function verifyPump() {
+    while (verifyActive < VERIFY_MAX && verifyQueue.length) verifyQueue.shift()();
+  }
+
+  function queued(job) {
+    return new Promise(function (resolve) {
+      verifyQueue.push(function () {
+        verifyActive++;
+        job().then(resolve, function () { resolve(null); }).then(function () {
+          verifyActive--;
+          verifyPump();
+        });
+      });
+      verifyPump();
+    });
+  }
+
+  /* อ่านผลจากแคชทันทีไม่รอ — ยังไม่เคยถามหรือหมดอายุจึงยิงขอ 1 ครั้งต่อที่อยู่
+   * กำลังรออยู่ก็คืนผลเดิม React วาดแถวใหม่กี่รอบก็ไม่ยิงซ้ำ
+   * ระหว่างถามซ้ำตอนหมดอายุใช้ผลเดิมไปก่อน ป้ายจะได้ไม่กะพริบ — ถ้าถามซ้ำแล้วพลาด ป้ายหาย */
+  function isVerified(addr) {
+    if (!ADDR.test(addr)) return false;
+    var key = addr.toLowerCase(), e = verifyCache[key];
+    if (e && (!e.done || Date.now() < e.until)) return e.ok;
+    var next = verifyCache[key] = { done: false, ok: !!(e && e.ok), until: 0 };
+    queued(function () { return fetchVerified(key); }).then(function (v) {
+      next.done = true;
+      next.ok = v === true;
+      next.until = Date.now() + (v === null ? VERIFY_RETRY : VERIFY_TTL);
+      badges();                               // วาดตามผลทันที ไม่ต้องรอ DOM ขยับ
+    });
+    return next.ok;
+  }
+
+  /* สร้างด้วย createElement/textContent ล้วน — ไม่มีข้อความจาก API ลงป้ายเลย */
+  function verifiedBadge(key, big) {
+    verifyStyles();
+    var NS = 'http://www.w3.org/2000/svg';
+    var s = document.createElement('span');
+    s.className = 'tpix-verified' + (big ? ' tpix-verified-lg' : '');
+    s.setAttribute('data-tpix-addr', key);
+    s.setAttribute('role', 'img');
+    s.setAttribute('aria-label', VERIFY_TIP);
+    s.title = VERIFY_TIP;
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', 'M3.5 8.5l3 3 6-7');
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', 'currentColor');
+    p.setAttribute('stroke-width', '2.2');
+    p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(p);
+    var t = document.createElement('span');
+    t.className = 'tpix-verified-t';
+    t.textContent = 'Verified';
+    s.appendChild(svg);
+    s.appendChild(t);
+    return s;
+  }
+
+  /* ป้ายจำที่อยู่ไว้ใน data-tpix-addr — ใส่ซ้ำไม่ได้ และแถวที่ React เอาไปแสดงเหรียญอื่น
+   * ป้ายเก่าจะถูกถอดตามที่อยู่ ไม่ใช่ดูแค่ว่ามีป้ายแล้ว
+   * วางต่อท้ายลูกของ React แต่ก่อนปุ่ม + ของเรา → ลิงก์ · ป้าย · ปุ่ม +
+   * ป้ายไม่ใช่ <a> — onWatch ยังหาลิงก์เหรียญใน parentElement ของปุ่มเจอเหมือนเดิม */
+  function placeBadge(box, key, ok, big) {
+    var keep = null, btn = null;
+    [].slice.call(box.children).forEach(function (c) {
+      if (c.classList.contains('tpix-watch')) btn = c;
+      if (!c.classList.contains('tpix-verified')) return;
+      if (ok && !keep && c.getAttribute('data-tpix-addr') === key) keep = c;
+      else c.remove();
+    });
+    if (ok && !keep) box.insertBefore(verifiedBadge(key, big), btn);
+  }
+
+  function listBadges() {
+    document.querySelectorAll('main a[href^="/token/0x"]').forEach(function (a) {
+      var m = TOKEN_LINK.exec(a.getAttribute('href') || '');
+      if (!m || !a.parentElement) return;
+      placeBadge(a.parentElement, m[1].toLowerCase(), isVerified(m[1]), false);
+    });
+  }
+
+  /* แถวชื่อเหรียญคือ flex ตัวแรกเหนือ <h1> (โลโก้ · skeleton > h1) */
+  function titleRow(h1) {
+    for (var el = h1.parentElement, i = 0; el && i < 2; el = el.parentElement, i++) {
+      if (/flex/.test(getComputedStyle(el).display)) return el;
+    }
+    return null;
+  }
+
+  /* ที่อยู่เอาจาก URL ไม่ใช่จากหัวเรื่อง — ถามได้ตั้งแต่ยังโหลดชื่อไม่เสร็จ
+   * <h1> มาจาก SSR ต้องรอ hydrate ก่อนแตะ (ดู hydrated()) */
+  function pageBadge() {
+    var m = TOKEN_PAGE.exec(location.pathname);
+    if (!m) return;
+    var ok = isVerified(m[1]);
+    var h1 = document.querySelector('main h1');
+    var row = h1 && titleRow(h1);
+    if (!row || !hydrated(row)) return;
+    placeBadge(row, m[1].toLowerCase(), ok, true);
+  }
+
+  function badges() {
+    var stale = '.tpix-verified';
+    if (isTokens()) { listBadges(); stale = '.tpix-verified-lg'; }
+    else if (isTokenPage()) { pageBadge(); stale = '.tpix-verified:not(.tpix-verified-lg)'; }
+    document.querySelectorAll(stale).forEach(function (b) { b.remove(); });   // ค้างจากหน้าก่อน
+  }
+
   /* ── ทะเบียนเชนใน footer ───────────────────────────────────────────────── */
 
   /* ใส่เฉพาะที่ตรวจแล้วว่ามีหน้า chain 4289 จริง (ethereum-lists/chains PR #8148)
@@ -415,6 +602,7 @@
 
   function isHome() { return location.pathname === '/' || location.pathname === ''; }
   function isTokens() { return /^\/tokens\/?$/.test(location.pathname); }
+  function isTokenPage() { return TOKEN_PAGE.test(location.pathname); }   // ?tab=… อยู่ใน search ไม่กระทบ
 
   function apply() {
     branding();
@@ -422,6 +610,7 @@
     if (isHome()) render();
     else { var b = document.querySelector('.tpix-treasury'); if (b) b.remove(); }
     if (isTokens()) addWatchButtons();
+    badges();                                 // หลังปุ่ม + — ป้ายแทรกก่อนปุ่มได้ทันที
   }
 
   function boot() {
