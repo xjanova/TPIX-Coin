@@ -19,22 +19,28 @@ class ExplorerToken {
   /// เวลาที่ตรวจ verify ผ่านล่าสุด — เกินอายุ (ExplorerTokenService.maxAge) = ไม่ใช้
   final DateTime checkedAt;
 
+  /// พิสูจน์บนเชนแล้วว่าเป็นพูลของ TPIX DEX (TpixDexService.isDexPool) — ทุกพูลชื่อ
+  /// "TPIX LP Token" เหมือนกันหมด ธงนี้ทำให้ไม่ถูกนับเป็นของเลียนแบบกันเอง
+  final bool dexPool;
+
   const ExplorerToken({
     required this.address,
     required this.name,
     required this.symbol,
     required this.checkedAt,
     this.logoUri,
+    this.dexPool = false,
   });
 
   String get key => address.toLowerCase();
 
-  ExplorerToken copyWith({DateTime? checkedAt}) => ExplorerToken(
+  ExplorerToken copyWith({DateTime? checkedAt, bool? dexPool}) => ExplorerToken(
         address: address,
         name: name,
         symbol: symbol,
         logoUri: logoUri,
         checkedAt: checkedAt ?? this.checkedAt,
+        dexPool: dexPool ?? this.dexPool,
       );
 
   Map<String, dynamic> toJson() => {
@@ -43,6 +49,7 @@ class ExplorerToken {
         'symbol': symbol,
         if (logoUri != null) 'logo': logoUri,
         'checkedAt': checkedAt.millisecondsSinceEpoch,
+        if (dexPool) 'pool': true,
       };
 }
 

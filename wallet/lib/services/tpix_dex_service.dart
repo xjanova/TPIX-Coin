@@ -763,6 +763,36 @@ class TpixDexService {
     }
   }
 
+  /// เป็นพูลของ TPIX DEX จริงไหม: อ่าน token0()/token1() จากสัญญา แล้ว factory.getPair(token0, token1)
+  /// ต้องชี้กลับมาที่ที่อยู่นี้ — ใครก็ deploy สัญญาชื่อ "TPIX LP Token" ที่ตอบ token0/token1 ได้
+  /// แต่ factory ตัวจริง (จากทะเบียน /dex/config) ชี้ไปที่พูลตัวจริงเท่านั้น
+  ///
+  /// true = ใช่ · false = factory ชี้ไปที่อื่น (ไม่ใช่แน่นอน) · null = ตรวจไม่ได้ (ทะเบียน/เชนล่ม,
+  /// สัญญาไม่ตอบ token0/token1) — ผู้เรียกต้องไม่ถือว่าผ่าน · ไม่ throw
+  static Future<bool?> isDexPool(String address) async {
+    final pool = contractAddress(address);
+    if (pool == null) return false;
+    try {
+      final cfg = await loadConfig();
+      final factory = cfg.factory;
+      if (!cfg.usable || factory == null) return null;
+      final t0 = await _call(pool, 'token0', const []);
+      final t1 = await _call(pool, 'token1', const []);
+      final a = t0 == null || t0.isEmpty ? null : t0.first;
+      final b = t1 == null || t1.isEmpty ? null : t1.first;
+      if (a is! EthereumAddress || b is! EthereumAddress) return null;
+      final p = await _call(factory, 'getPair', [a, b]);
+      final pair = p == null || p.isEmpty ? null : p.first;
+      if (pair is! EthereumAddress) return null;
+      return pair.hex.toLowerCase() == pool;
+    } on TpixDexException {
+      return null;
+    } catch (e) {
+      debugPrint('TpixDexService.isDexPool: ${e.runtimeType}');
+      return null;
+    }
+  }
+
   // ── ธุรกรรม ──
 
   /// calldata approve router **เท่ากับยอดของไม้นี้พอดี** (ไม่ใช่ไม่จำกัด)
@@ -822,6 +852,7 @@ const String _abiJson = '''
  {"type":"function","name":"swapExactTokensForTokens","stateMutability":"nonpayable","inputs":[{"name":"amountIn","type":"uint256"},{"name":"amountOutMin","type":"uint256"},{"name":"path","type":"address[]"},{"name":"to","type":"address"},{"name":"deadline","type":"uint256"}],"outputs":[{"name":"amounts","type":"uint256[]"}]},
  {"type":"function","name":"getPair","stateMutability":"view","inputs":[{"name":"","type":"address"},{"name":"","type":"address"}],"outputs":[{"name":"","type":"address"}]},
  {"type":"function","name":"token0","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]},
+ {"type":"function","name":"token1","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"address"}]},
  {"type":"function","name":"getReserves","stateMutability":"view","inputs":[],"outputs":[{"name":"_reserve0","type":"uint112"},{"name":"_reserve1","type":"uint112"},{"name":"_blockTimestampLast","type":"uint32"}]}
 ]
 ''';

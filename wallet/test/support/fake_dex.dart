@@ -29,6 +29,7 @@ const selAllowance = '0xdd62ed3e';
 const selGetAmountsOut = '0xd06ca61f';
 const selGetPair = '0xe6a43905';
 const selToken0 = '0x0dfe1681';
+const selToken1 = '0xd21220a7';
 const selGetReserves = '0x0902f1ac';
 const selApprove = '0x095ea7b3';
 const selSwapEthForTokens = '0x7ff36ab5';
@@ -124,9 +125,10 @@ class FakeDexSite {
 }
 
 class _Pool {
-  _Pool(this.address, this.token0, this.reserve0, this.reserve1);
+  _Pool(this.address, this.token0, this.token1, this.reserve0, this.reserve1);
   final String address;
   final String token0;
+  final String token1;
   BigInt reserve0;
   BigInt reserve1;
 }
@@ -159,13 +161,21 @@ class FakeDexChain {
   final List<String> rawTxs = [];
   int _poolSeq = 0;
 
+  /// สัญญาที่ตอบ token0/token1 เหมือนพูล แต่ factory ไม่รู้จัก (LP ปลอม) — ที่อยู่ → (token0, token1)
+  final Map<String, (String, String)> fakeLps = {};
+
   void addPool(String a, String b, BigInt reserveA, BigInt reserveB) {
     final x = a.toLowerCase();
     final y = b.toLowerCase();
     final token0 = x.compareTo(y) < 0 ? x : y;
+    final token1 = token0 == x ? y : x;
     final addr = '0x${(++_poolSeq).toRadixString(16).padLeft(2, '0') * 20}';
-    _pools[_key(x, y)] = _Pool(addr, token0, token0 == x ? reserveA : reserveB, token0 == x ? reserveB : reserveA);
+    _pools[_key(x, y)] =
+        _Pool(addr, token0, token1, token0 == x ? reserveA : reserveB, token0 == x ? reserveB : reserveA);
   }
+
+  /// ที่อยู่พูลของคู่ a/b (ต้องมีพูลแล้ว)
+  String poolAddress(String a, String b) => _pools[_key(a.toLowerCase(), b.toLowerCase())]!.address;
 
   static String _key(String a, String b) => a.compareTo(b) < 0 ? '$a|$b' : '$b|$a';
 
@@ -241,8 +251,15 @@ class FakeDexChain {
       },
       selToken0: (to, data) {
         final p = _poolAt(to);
-        if (p == null) throw const FakeRpcError('execution reverted');
-        return '0x${_addrWord(p.token0)}';
+        final fake = fakeLps[to];
+        if (p == null && fake == null) throw const FakeRpcError('execution reverted');
+        return '0x${_addrWord(p?.token0 ?? fake!.$1)}';
+      },
+      selToken1: (to, data) {
+        final p = _poolAt(to);
+        final fake = fakeLps[to];
+        if (p == null && fake == null) throw const FakeRpcError('execution reverted');
+        return '0x${_addrWord(p?.token1 ?? fake!.$2)}';
       },
       selGetReserves: (to, data) {
         final p = _poolAt(to);

@@ -12,7 +12,8 @@ enum TokenTrust {
   verified,
 
   /// ไม่อยู่ในรายการที่แอดมินอนุมัติ แต่ explorer ยืนยันซอร์สโค้ดแล้ว + ไม่ถูกทำเครื่องหมาย scam
-  /// + ไม่มีชื่อซ้ำ — ซอร์สโค้ดตรงกับสัญญา ≠ เหรียญปลอดภัย (บน explorer นี้ใครจ่ายค่าบริการก็
+  /// + ไม่มีชื่อซ้ำ (ยกเว้นพูล TPIX DEX ที่พิสูจน์บนเชนแล้ว — ทุกพูลชื่อเดียวกัน)
+  /// — ซอร์สโค้ดตรงกับสัญญา ≠ เหรียญปลอดภัย (บน explorer นี้ใครจ่ายค่าบริการก็
   /// ยืนยันได้) จึงไม่ได้ป้าย "ยืนยันแล้ว" และยังเตือนให้ตรวจที่อยู่
   sourceVerified,
 
@@ -108,8 +109,9 @@ class TokenTrustService {
 
   /// จัดประเภทโทเค็นบน TPIX Chain จากข้อมูลที่อ่านจากสัญญา
   ///
-  /// ลำดับ: รายการที่แอดมินอนุมัติ/ค่าในตัวแอป (ยืนยันแล้ว) → ชื่อซ้ำตัวที่ยืนยันแล้ว หรือซ้ำเหรียญอื่น
-  /// บน explorer (เลียนแบบ) → อยู่ใน [explorer] (ยืนยันซอร์สโค้ด) → ไม่ยืนยัน
+  /// ลำดับ: รายการที่แอดมินอนุมัติ/ค่าในตัวแอป (ยืนยันแล้ว) → พูล TPIX DEX ที่พิสูจน์บนเชนแล้ว
+  /// (ยืนยันซอร์สโค้ด) → ชื่อซ้ำตัวที่ยืนยันแล้ว หรือซ้ำเหรียญอื่นบน explorer (เลียนแบบ)
+  /// → อยู่ใน [explorer] (ยืนยันซอร์สโค้ด) → ไม่ยืนยัน
   /// การยืนยันซอร์สโค้ดบน explorer ไม่ลบล้างคำเตือนของปลอม
   static TokenTrustResult classify({
     required String address,
@@ -136,6 +138,12 @@ class TokenTrustService {
       );
     }
 
+    // พูลของ TPIX DEX ที่พิสูจน์บนเชนแล้ว: ชื่อ "TPIX LP Token" ตายตัวในโค้ดของพูล ทุกพูลจึงชื่อซ้ำกัน
+    // — ไม่ใช่ของเลียนแบบ (ของปลอมชื่อเดียวกันพิสูจน์ไม่ผ่าน เพราะ factory ตัวจริงไม่ชี้มาที่มัน)
+    if (onExplorer != null && onExplorer.dexPool) {
+      return _sourceVerified(onExplorer, name, symbol, listAvailable);
+    }
+
     final skeletons = {skeleton(name), skeleton(symbol)}..remove('');
     final index = _skeletonIndex(list);
     final lookalikes = <TokenDef>{for (final s in skeletons) ...?index[s]}.toList();
@@ -156,10 +164,15 @@ class TokenTrustService {
         explorerTwins: twins,
       );
     }
-    if (onExplorer != null) {
-      // explorer อ่านชื่อจากสัญญาเอง — ไม่ตรงกัน = ข้อมูลเก่าหรือสัญญาเปลี่ยน ต้องให้ผู้ใช้เห็น
-      // (ทศนิยมไม่เทียบ: ไม่ใช้ค่าจาก explorer เลย)
-      return TokenTrustResult(
+    if (onExplorer != null) return _sourceVerified(onExplorer, name, symbol, listAvailable);
+    return TokenTrustResult(trust: TokenTrust.unverified, listAvailable: listAvailable);
+  }
+
+  /// explorer อ่านชื่อจากสัญญาเอง — ไม่ตรงกัน = ข้อมูลเก่าหรือสัญญาเปลี่ยน ต้องให้ผู้ใช้เห็น
+  /// (ทศนิยมไม่เทียบ: ไม่ใช้ค่าจาก explorer เลย)
+  static TokenTrustResult _sourceVerified(
+          ExplorerToken onExplorer, String name, String symbol, bool listAvailable) =>
+      TokenTrustResult(
         trust: TokenTrust.sourceVerified,
         listAvailable: listAvailable,
         explorer: onExplorer,
@@ -168,9 +181,6 @@ class TokenTrustService {
           if (_norm(onExplorer.symbol) != _norm(symbol)) TokenMetaField.symbol,
         },
       );
-    }
-    return TokenTrustResult(trust: TokenTrust.unverified, listAvailable: listAvailable);
-  }
 
   /// ประเภทของเหรียญในรายการจาก explorer (ป้ายในหน้าเพิ่มโทเค็น — ใช้ชื่อตามที่ explorer ประกาศ)
   static TokenTrust trustOfExplorer(ExplorerToken token, {TokenList? list, required ExplorerTokenList explorer}) =>

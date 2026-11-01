@@ -53,6 +53,10 @@ const _listOnly = '0x3333333333333333333333333333333333333333';
 const _fooA = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _fooB = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
+/// พูลที่สองของ TPIX DEX (ชื่อ "TPIX LP Token" เหมือนทุกพูล) + LP ปลอมชื่อเดียวกัน
+const _lp2 = '0x4444444444444444444444444444444444444444';
+const _fakeLp = '0x5555555555555555555555555555555555555555';
+
 /// กระเป๋าที่ยังไม่ได้ปลดล็อกในเทสต์ = ช่อง -1
 const _slot = -1;
 
@@ -99,9 +103,13 @@ Completer<void>? _explorerGate;
 int _explorerRequests = 0;
 DateTime _now = DateTime(2026, 11, 1, 12);
 
+/// พูลที่ "เชน" พิสูจน์ได้ว่าเป็นพูลของ TPIX DEX — ที่เหลือตรวจไม่ได้ (= ไม่ใช่พูล)
+Set<String> _provenPools = {};
+
 /// explorer ปลอม: /api/v2/tokens หน้าเดียว + /api/v2/addresses/{ที่อยู่}
 void _serveExplorer() {
   ExplorerTokenService.clock = () => _now;
+  ExplorerTokenService.poolProver = (a) async => _provenPools.contains(a.toLowerCase()) ? true : null;
   ExplorerTokenService.clientFactory = () => MockClient((req) async {
         _explorerRequests++;
         if (_explorerGate != null) await _explorerGate!.future;
@@ -302,6 +310,7 @@ void main() {
     _explorerGate = null;
     _explorerRequests = 0;
     _now = DateTime(2026, 11, 1, 12);
+    _provenPools = {};
     _nameCalls.clear();
     _restartExplorer();
     _mockChain({
@@ -310,6 +319,8 @@ void main() {
       _fakeUsdt: const _Contract('Tether USD', 'USDT', 6),
       ChainConfig.tpixUsdtAddress.toLowerCase(): const _Contract('Tether USD', 'USDT', 6),
       _lp: const _Contract('TPIX LP Token', 'TPIX-LP', 18),
+      _lp2: const _Contract('TPIX LP Token', 'TPIX-LP', 18),
+      _fakeLp: const _Contract('TPIX LP Token', 'TPIX-LP', 18),
       _fooA: const _Contract('Foo Coin', 'FOO', 18),
       _fooB: const _Contract('Foo Coin', 'F00', 18),
     });
@@ -456,6 +467,27 @@ void main() {
       expect(find.textContaining(_fooB), findsOneWidget, reason: 'บอกที่อยู่ของอีกตัวให้เทียบ');
       expect(find.text(l.t('token.twinNote')), findsOneWidget);
       expect(await _savedAddresses(tester), isNot(contains(_fooA)));
+    });
+
+    testWidgets('หลายพูล TPIX DEX ชื่อเดียวกัน: พิสูจน์บนเชนผ่าน → ไม่เตือน แตะ + เพิ่มได้ · LP ปลอมชื่อเดียวกันยังเตือน',
+        (tester) async {
+      _coins = const [
+        _Coin(_lp, 'TPIX LP Token', 'TPIX-LP'),
+        _Coin(_lp2, 'TPIX LP Token', 'TPIX-LP'),
+        _Coin(_fakeLp, 'TPIX LP Token', 'TPIX-LP'), // verify ซอร์สโค้ดแล้ว แต่ไม่ใช่พูลของ factory
+      ];
+      _provenPools = {_lp, _lp2};
+      await _open(tester);
+      expect(find.text('TPIX-LP'), findsNWidgets(3));
+      expect(find.byIcon(Icons.task_alt_rounded), findsNWidgets(2));
+      expect(find.byIcon(Icons.gpp_maybe_rounded), findsOneWidget);
+      expect(find.textContaining('0x5555...5555'), findsOneWidget, reason: 'แยกได้ด้วยที่อยู่');
+
+      await tester.tap(find.byKey(const ValueKey('quick-add-$_lp2')));
+      await tester.pump();
+      await _drain(tester);
+      expect(find.text(l.t('token.lookalikeTitle')), findsNothing);
+      expect(await _savedAddresses(tester), contains(_lp2));
     });
 
     testWidgets('ช่องที่อยู่ (monospace) มีฟอนต์ไทยสำรอง — hint ภาษาไทยไม่เป็นกล่อง', (tester) async {

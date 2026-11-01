@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/explorer_token_list.dart';
 import 'token_list_service.dart';
+import 'tpix_dex_service.dart';
 
 /// ผลตรวจ verify ของสัญญาหนึ่งตัว
 enum ExplorerVerdict {
@@ -41,6 +42,8 @@ class ExplorerTokenPage {
 /// - ดึงหน้า /tokens หน้าใดไม่ได้ → ไม่แตะชุดเดิม (ไม่รู้ว่าครบไหม)
 /// - ค่าจาก explorer เชื่อไม่ได้: ตรวจที่อยู่ (checksum), ชื่อ/สัญลักษณ์ผ่านตัวทำความสะอาดเดียวกับ
 ///   ข้อมูลบนเชน, โลโก้ https เท่านั้น, ไม่เก็บทศนิยม (ตอนเพิ่มอ่านจากสัญญาเสมอ)
+/// - พูล TPIX DEX ชื่อ "TPIX LP Token" ซ้ำกันทุกพูล → พิสูจน์บนเชนด้วย [poolProver] ได้ธง dexPool
+///   (ไม่โดนนับเป็นของเลียนแบบกันเอง) · ตรวจไม่ได้ = ใช้ผลรอบก่อน ไม่เคยผ่าน = ไม่ใช่พูล
 /// - จำกัด [maxPages] หน้า · [maxTokens] เหรียญ · ขนาด body · ถามรายสัญญาพร้อมกัน [concurrency] ตัว
 /// - แคชลงเครื่อง ภายใน [ttl] ไม่ยิง explorer ซ้ำ · ไม่มีเมธอดไหน throw
 class ExplorerTokenService {
@@ -67,6 +70,17 @@ class ExplorerTokenService {
   /// เท่ากับ TokenService.fetchTokenInfo — ชื่อจาก explorer เทียบกับชื่อบนสัญญาได้ตรงๆ
   static const maxNameLength = 64;
   static const maxSymbolLength = 32;
+
+  /// ชื่อ/สัญลักษณ์ตายตัวของพูล TPIX DEX (contracts/src/dex/amm/TPIXDEXPair.sol) — ตรงทั้งคู่จึงพิสูจน์บนเชน
+  static const lpName = 'TPIX LP Token';
+  static const lpSymbol = 'TPIX-LP';
+
+  /// พิสูจน์พูลได้ไม่เกินเท่านี้ต่อรอบ (ตัวละ 3 eth_call) — ที่เกินใช้ผลรอบก่อน
+  static const maxPoolChecks = 20;
+
+  /// พิสูจน์ว่าเป็นพูลของ TPIX DEX บนเชน — เทสต์เปลี่ยนได้
+  @visibleForTesting
+  static Future<bool?> Function(String address) poolProver = TpixDexService.isDexPool;
 
   static const _prefsKey = 'explorer_tokens_4289_v1';
   static final _epoch = DateTime.fromMillisecondsSinceEpoch(0);
@@ -204,7 +218,9 @@ class ExplorerTokenService {
             if (old != null) tokens.add(c.copyWith(checkedAt: old.checkedAt));
         }
       }
-      _all = ExplorerTokenList(tokens);
+      // พูลของ TPIX DEX ชื่อซ้ำกันทุกพูล — พิสูจน์บนเชนว่าตัวไหนเป็นพูลจริง
+      final pools = await _provePools(tokens, previous, watch);
+      _all = ExplorerTokenList([for (final t in tokens) t.copyWith(dexPool: pools.contains(t.key))]);
       _listAt = now;
       if (unknown == 0) {
         _fetchedAt = now;
@@ -272,6 +288,40 @@ class ExplorerTokenService {
     await Future.wait([for (var i = 0; i < concurrency; i++) worker()]);
     return out;
   }
+
+  /// พิสูจน์เฉพาะตัวที่ชื่อ+สัญลักษณ์ตรงกับพูล TPIX DEX · พร้อมกันไม่เกิน [concurrency] ตัว
+  /// ตรวจไม่ได้ / เกิน [maxPoolChecks] / เกินเวลารวม → ใช้ผลรอบก่อน (ไม่เคยพิสูจน์ผ่าน = ไม่ใช่พูล)
+  /// เชนตอบชัดว่าไม่ใช่ → ไม่ใช่ทันทีแม้เคยผ่าน
+  static Future<Set<String>> _provePools(
+    List<ExplorerToken> tokens,
+    ExplorerTokenList? previous,
+    Stopwatch watch,
+  ) async {
+    final candidates = tokens.where(looksLikePool).toList();
+    final out = <String>{};
+    var next = 0;
+    Future<void> worker() async {
+      while (next < candidates.length) {
+        final i = next++;
+        final t = candidates[i];
+        bool? proof;
+        if (i < maxPoolChecks && watch.elapsed < budget) {
+          try {
+            proof = await poolProver(t.address).timeout(timeout * 3);
+          } catch (e) {
+            debugPrint('ExplorerTokenService.pool: ${e.runtimeType}');
+          }
+        }
+        if (proof ?? previous?.byAddress(t.key)?.dexPool ?? false) out.add(t.key);
+      }
+    }
+
+    await Future.wait([for (var i = 0; i < concurrency; i++) worker()]);
+    return out;
+  }
+
+  /// ชื่อ+สัญลักษณ์ตรงกับพูล TPIX DEX — แค่ "หน้าตา" ยังไม่ใช่หลักฐาน (ต้องผ่าน [poolProver])
+  static bool looksLikePool(ExplorerToken t) => t.name == lpName && t.symbol == lpSymbol;
 
   static Future<ExplorerVerdict> _check(http.Client client, String address) async {
     final res = await _get(client, Uri.parse('$baseUrl/api/v2/addresses/$address'), maxAddressBytes);
@@ -421,7 +471,9 @@ class ExplorerTokenService {
         if (t == null || at is! int) continue;
         final checkedAt = DateTime.fromMillisecondsSinceEpoch(at);
         if (checkedAt.isAfter(now)) continue; // เวลาในอนาคต = แคชเพี้ยน
-        if (seen.add(t.key)) tokens.add(t.copyWith(checkedAt: checkedAt));
+        // ธงพูลรับเฉพาะตัวที่หน้าตาเป็นพูล — แก้แคชให้เหรียญอื่นเป็น "พูล" ไม่ได้
+        final pool = r['pool'] == true && looksLikePool(t);
+        if (seen.add(t.key)) tokens.add(t.copyWith(checkedAt: checkedAt, dexPool: pool));
       }
       _all ??= ExplorerTokenList(tokens);
       _listAt ??= DateTime.fromMillisecondsSinceEpoch(listAt);
@@ -465,6 +517,7 @@ class ExplorerTokenService {
     _usableAt = null;
     _usableUntil = null;
     clientFactory = http.Client.new;
+    poolProver = TpixDexService.isDexPool;
     clock = DateTime.now;
     timeout = const Duration(seconds: 8);
     budget = const Duration(seconds: 45);

@@ -368,6 +368,38 @@ void main() {
       expect(r.explorer, isNull);
     });
 
+    test('พูล TPIX DEX ที่พิสูจน์บนเชนแล้ว: ชื่อซ้ำกันเองไม่ใช่ของเลียนแบบ · LP ปลอมชื่อเดียวกันยังโดนเตือน', () {
+      const poolA = '0x1111111111111111111111111111111111111111';
+      const poolB = '0x2222222222222222222222222222222222222222';
+      const fakeLp = '0x3333333333333333333333333333333333333333';
+      ExplorerToken lpToken(String address, {bool pool = false}) => ExplorerToken(
+          address: address, name: 'TPIX LP Token', symbol: 'TPIX-LP', checkedAt: at, dexPool: pool);
+      final pools = ExplorerTokenList([
+        lpToken(poolA, pool: true),
+        lpToken(poolB, pool: true),
+        lpToken(fakeLp), // verify ซอร์สโค้ดแล้วแต่พิสูจน์ไม่ผ่าน
+      ]);
+      TokenTrustResult lpClassify(String address) => TokenTrustService.classify(
+          address: address, name: 'TPIX LP Token', symbol: 'TPIX-LP', decimals: 18, list: _list, explorer: pools);
+
+      for (final p in [poolA, poolB]) {
+        final r = lpClassify(p);
+        expect(r.trust, TokenTrust.sourceVerified, reason: p);
+        expect(r.canQuickAdd, isTrue);
+        expect(r.explorerTwins, isEmpty);
+      }
+      final fake = lpClassify(fakeLp);
+      expect(fake.trust, TokenTrust.lookalike);
+      expect(fake.explorerTwins.map((t) => t.key), unorderedEquals([poolA, poolB]));
+      expect(lpClassify('0x4444444444444444444444444444444444444444').trust, TokenTrust.lookalike,
+          reason: 'ไม่อยู่บน explorer + ชื่อเหมือนพูล = เลียนแบบ');
+      // หน้าโฮมใช้ trustOf — ต้องได้ผลเดียวกัน
+      final saved = TokenInfo(
+          contractAddress: poolA, name: 'TPIX LP Token', symbol: 'TPIX-LP', walletSlot: 1, chainId: 4289);
+      expect(TokenTrustService.trustOf(saved, _list, explorer: pools), TokenTrust.sourceVerified);
+      expect(TokenTrustService.trustOf(saved, _list), TokenTrust.unverified, reason: 'ไม่ส่งรายการ explorer = ผลเดิม');
+    });
+
     test('ไม่มีรายการจาก explorer → ผลเหมือนเดิมทุกข้อ', () {
       expect(_classify(lp, 'TPIX LP Token', 'TPIX-LP', list: _list).trust, TokenTrust.unverified);
       expect(_classify(_fake, 'Tether USD', 'USDT', list: _list).trust, TokenTrust.lookalike);

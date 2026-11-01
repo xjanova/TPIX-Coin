@@ -452,4 +452,101 @@ void main() {
       expect(explorer.addressRequests, ExplorerTokenService.maxTokens);
     });
   });
+
+  // ทุกพูลชื่อ "TPIX LP Token" — ธง dexPool มาจากการพิสูจน์บนเชนเท่านั้น
+  group('load — พูล TPIX DEX', () {
+    late Map<String, bool?> proofs;
+    late List<String> asked;
+
+    void addLp(String addr) =>
+        explorer.add(addr, name: ExplorerTokenService.lpName, symbol: ExplorerTokenService.lpSymbol);
+    bool pool(String addr) => ExplorerTokenService.current!.byAddress(addr)!.dexPool;
+
+    setUp(() {
+      proofs = {};
+      asked = [];
+      ExplorerTokenService.poolProver = (a) async {
+        asked.add(a.toLowerCase());
+        return proofs[a.toLowerCase()];
+      };
+    });
+
+    test('พิสูจน์เฉพาะตัวที่หน้าตาเป็นพูล · พูลจริงได้ธง · ของปลอมชื่อเดียวกันไม่ได้', () async {
+      addLp(_hex(1));
+      addLp(_hex(2));
+      explorer
+        ..add(_hex(3), name: ExplorerTokenService.lpName, symbol: 'LP2') // ชื่อตรงแต่สัญลักษณ์ไม่ตรง
+        ..add(_hex(4), symbol: 'AAA');
+      proofs[_hex(1)] = true;
+      proofs[_hex(2)] = false;
+      await ExplorerTokenService.load();
+      expect(asked..sort(), [_hex(1), _hex(2)]);
+      expect([for (var i = 1; i <= 4; i++) pool(_hex(i))], [true, false, false, false]);
+    });
+
+    test('ตรวจไม่ได้ (null / throw / หมดเวลา) → ใช้ผลรอบก่อน · ไม่เคยผ่าน = ไม่ใช่พูล', () async {
+      ExplorerTokenService.timeout = const Duration(milliseconds: 50);
+      addLp(_hex(1));
+      addLp(_hex(2));
+      proofs[_hex(1)] = true;
+      await ExplorerTokenService.load();
+      expect([pool(_hex(1)), pool(_hex(2))], [true, false]);
+
+      for (final broken in <Future<bool?> Function(String)>[
+        (_) async => null,
+        (_) async => throw StateError('rpc'),
+        (_) => Completer<bool?>().future, // ค้าง
+      ]) {
+        ExplorerTokenService.poolProver = broken;
+        now = now.add(const Duration(hours: 2));
+        await ExplorerTokenService.load();
+        expect([pool(_hex(1)), pool(_hex(2))], [true, false]);
+      }
+    });
+
+    test('เชนตอบชัดว่าไม่ใช่พูล → ตัดธงทันทีแม้เคยผ่าน', () async {
+      addLp(_hex(1));
+      proofs[_hex(1)] = true;
+      await ExplorerTokenService.load();
+      expect(pool(_hex(1)), isTrue);
+      proofs[_hex(1)] = false;
+      now = now.add(const Duration(hours: 2));
+      await ExplorerTokenService.load();
+      expect(pool(_hex(1)), isFalse);
+    });
+
+    test('ธงอยู่ในแคช (เปิดแอปใหม่ได้ทันทีไม่ต้องรอเชน) · แคชถูกแก้ให้เหรียญอื่นเป็นพูลไม่ได้', () async {
+      addLp(_hex(1));
+      proofs[_hex(1)] = true;
+      await ExplorerTokenService.load();
+      restartApp();
+      ExplorerTokenService.poolProver = (_) async => fail('ภายใน TTL ต้องไม่ถามเชน');
+      expect((await ExplorerTokenService.load())!.byAddress(_hex(1))!.dexPool, isTrue);
+
+      SharedPreferences.setMockInitialValues({
+        'explorer_tokens_4289_v1': jsonEncode({
+          'listAt': now.millisecondsSinceEpoch,
+          'fetchedAt': now.millisecondsSinceEpoch,
+          'tokens': [
+            {'address': _hex(5), 'name': 'Tether USD', 'symbol': 'USDT', 'pool': true, 'checkedAt': now.millisecondsSinceEpoch},
+          ],
+        }),
+      });
+      restartApp();
+      ExplorerTokenService.poolProver = (_) async => fail('ภายใน TTL ต้องไม่ถามเชน');
+      expect((await ExplorerTokenService.load())!.byAddress(_hex(5))!.dexPool, isFalse);
+    });
+
+    test('ถามเชนไม่เกิน 20 ตัวต่อรอบ — ตัวที่เกินใช้ผลรอบก่อน', () async {
+      for (var i = 1; i <= 25; i++) {
+        addLp(_hex(i));
+        proofs[_hex(i)] = true;
+      }
+      explorer.addressDelay = Duration.zero;
+      await ExplorerTokenService.load();
+      expect(asked, hasLength(ExplorerTokenService.maxPoolChecks));
+      final flagged = ExplorerTokenService.current!.tokens.where((t) => t.dexPool).length;
+      expect(flagged, ExplorerTokenService.maxPoolChecks);
+    });
+  });
 }
