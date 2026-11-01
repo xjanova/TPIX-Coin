@@ -318,12 +318,29 @@ void main() {
           explorer: explorer,
         );
 
-    test('อยู่บน explorer อย่างเดียว → ยืนยันซอร์สโค้ด (ไม่ใช่ "ยืนยันแล้ว") เพิ่มทีเดียวได้ · โลโก้จาก explorer', () {
+    test('อยู่บน explorer อย่างเดียว → ยืนยันซอร์สโค้ด (ไม่ใช่ "ยืนยันแล้ว") · ต้องรอแอดมินอนุมัติ เพิ่มทีเดียวไม่ได้ · โลโก้จาก explorer',
+        () {
       final r = classify(lp, 'TPIX LP Token', 'TPIX-LP');
       expect(r.trust, TokenTrust.sourceVerified);
       expect(r.isVerified, isFalse);
-      expect(r.canQuickAdd, isTrue);
+      expect(r.canQuickAdd, isFalse);
       expect(r.trustedLogo, 'https://explorer.test/lp.png');
+    });
+
+    test('isPickable: ต้องอยู่ทั้งในรายการที่อนุมัติและบน explorer · ขาดข้อมูลด่านไหน = ไม่ผ่าน', () {
+      bool pick(String a, {TokenList? approved, ExplorerTokenList? on}) =>
+          TokenTrustService.isPickable(a, approved: approved, explorer: on);
+      expect(pick(_idtc, approved: _list, on: explorer), isTrue);
+      expect(pick(_idtc.toUpperCase().replaceFirst('0X', '0x'), approved: _list, on: explorer), isTrue,
+          reason: 'ไม่สนตัวพิมพ์');
+      expect(pick(lp, approved: _list, on: explorer), isFalse, reason: 'verify แล้วแต่แอดมินยังไม่อนุมัติ');
+      expect(pick(_usdt, approved: _list, on: explorer), isFalse, reason: 'อนุมัติแล้วแต่ไม่อยู่บน explorer');
+      expect(pick(_idtc, on: explorer), isFalse, reason: 'โหลดรายการที่อนุมัติไม่ได้');
+      expect(pick(_idtc, approved: _list), isFalse, reason: 'โหลด explorer ไม่ได้');
+      // USDT ในตัวแอปได้ "ยืนยันแล้ว" แต่ไม่นับเป็นการอนุมัติ
+      final withUsdt = ExplorerTokenList([...explorer.tokens, et(_usdt, 'Tether USD', 'USDT')]);
+      expect(TokenTrustService.verifiedFor(_usdt, null), isNotNull);
+      expect(pick(_usdt, approved: TokenList(name: 'empty', tokens: const []), on: withUsdt), isFalse);
     });
 
     test('บนสัญญาไม่ตรงกับ explorer → mismatch (เพิ่มทีเดียวไม่ได้)', () {
@@ -385,7 +402,7 @@ void main() {
       for (final p in [poolA, poolB]) {
         final r = lpClassify(p);
         expect(r.trust, TokenTrust.sourceVerified, reason: p);
-        expect(r.canQuickAdd, isTrue);
+        expect(r.canQuickAdd, isFalse, reason: 'พูลจริงก็ต้องรอแอดมินอนุมัติก่อนขึ้นรายการเพิ่มทีเดียว');
         expect(r.explorerTwins, isEmpty);
       }
       final fake = lpClassify(fakeLp);

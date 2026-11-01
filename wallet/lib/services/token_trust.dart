@@ -14,7 +14,8 @@ enum TokenTrust {
   /// ไม่อยู่ในรายการที่แอดมินอนุมัติ แต่ explorer ยืนยันซอร์สโค้ดแล้ว + ไม่ถูกทำเครื่องหมาย scam
   /// + ไม่มีชื่อซ้ำ (ยกเว้นพูล TPIX DEX ที่พิสูจน์บนเชนแล้ว — ทุกพูลชื่อเดียวกัน)
   /// — ซอร์สโค้ดตรงกับสัญญา ≠ เหรียญปลอดภัย (บน explorer นี้ใครจ่ายค่าบริการก็
-  /// ยืนยันได้) จึงไม่ได้ป้าย "ยืนยันแล้ว" และยังเตือนให้ตรวจที่อยู่
+  /// ยืนยันได้) จึงไม่ได้ป้าย "ยืนยันแล้ว" ยังเตือนให้ตรวจที่อยู่ และไม่ขึ้นรายการเพิ่มทีเดียว
+  /// (ต้องรอแอดมินอนุมัติ — ระหว่างนั้นวางที่อยู่สัญญาเพิ่มเองได้)
   sourceVerified,
 
   /// ไม่อยู่ในรายการ — ใครก็สร้างโทเค็นชื่ออะไรก็ได้ ให้ผู้ใช้ระวัง
@@ -61,9 +62,10 @@ class TokenTrustResult {
 
   bool get isVerified => trust == TokenTrust.verified;
 
-  /// เพิ่มจากรายการได้ในทีเดียว: ยืนยันแล้ว / ยืนยันซอร์สโค้ด และบนสัญญาตรงกับข้อมูลที่ประกาศ
-  bool get canQuickAdd =>
-      (trust == TokenTrust.verified || trust == TokenTrust.sourceVerified) && mismatches.isEmpty;
+  /// เพิ่มจากรายการได้ในทีเดียว: ยืนยันแล้ว และบนสัญญาตรงกับข้อมูลที่ประกาศ
+  /// (ผู้เรียกต้องเช็ก [TokenTrustService.isPickable] ด้วย — ค่าในตัวแอปก็ได้ "ยืนยันแล้ว"
+  /// แต่ไม่นับเป็นการอนุมัติของแอดมิน)
+  bool get canQuickAdd => trust == TokenTrust.verified && mismatches.isEmpty;
 
   /// โลโก้ที่ให้ใช้ได้ — ตัวไม่ยืนยัน/เลียนแบบห้ามยืมโลโก้ของใคร (กันปลอมตัว)
   String? get trustedLogo => switch (trust) {
@@ -95,6 +97,14 @@ class TokenTrustService {
     }
     return byAddr.values.toList();
   }
+
+  /// ขึ้นรายการเพิ่มทีเดียวได้ไหม — ต้องผ่านทั้งสองด่าน:
+  /// 1. แอดมินอนุมัติ: อยู่ใน tokenlist.json ชุดที่ยังไม่หมดอายุ ([TokenListService.approved])
+  ///    ค่าในตัวแอปไม่นับ — แอดมินถอนเหรียญออกจากรายการแล้วต้องหายจากทุกเครื่อง
+  /// 2. explorer: อยู่ในหน้า /tokens + ยืนยันซอร์สโค้ด + ไม่ถูกทำเครื่องหมาย scam ([explorer])
+  /// ด่านไหนไม่มีข้อมูล (null) = ไม่ผ่าน
+  static bool isPickable(String address, {TokenList? approved, ExplorerTokenList? explorer}) =>
+      (approved?.contains(address) ?? false) && (explorer?.contains(address) ?? false);
 
   /// ข้อมูลที่ยืนยันแล้วของที่อยู่นี้ (null = ไม่อยู่ในรายการ)
   static TokenDef? verifiedFor(String address, TokenList? list) {

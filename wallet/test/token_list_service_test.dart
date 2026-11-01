@@ -298,6 +298,46 @@ void main() {
       expect(calls, 2);
     });
 
+    test('maxAge (หน้าเพิ่มโทเค็น 1 ชม.) → ดึงใหม่เร็วกว่า TTL ปกติ · ภายใน 1 ชม. ไม่ยิงซ้ำ', () async {
+      await TokenListService.load(maxAge: TokenListService.approvalTtl);
+      now = now.add(const Duration(minutes: 59));
+      await TokenListService.load(maxAge: TokenListService.approvalTtl);
+      expect(calls, 1);
+
+      now = now.add(const Duration(minutes: 2));
+      await TokenListService.load();
+      expect(calls, 1, reason: 'ค่าเริ่มต้นยังใช้ TTL 6 ชม.');
+      await TokenListService.load(maxAge: TokenListService.approvalTtl);
+      expect(calls, 2);
+    });
+
+    test('approved: ใช้ตัดสินการอนุมัติได้ไม่เกิน 24 ชม. หลังดึงสำเร็จ · current (ป้าย/โลโก้) ยังใช้ต่อได้', () async {
+      await TokenListService.load();
+      expect(TokenListService.approved, same(TokenListService.current));
+      expect(TokenListService.isStale, isFalse);
+
+      respond = () => http.Response('Service Unavailable', 503);
+      now = now.add(const Duration(hours: 23));
+      await TokenListService.load();
+      expect(TokenListService.approved, isNotNull);
+      expect(TokenListService.isStale, isTrue, reason: 'ดึงใหม่ไม่สำเร็จ แต่ยังมีชุดเดิม');
+
+      now = now.add(const Duration(hours: 1, minutes: 1));
+      expect(TokenListService.approved, isNull, reason: 'เก่าเกิน 24 ชม. = ตรวจการอนุมัติไม่ได้');
+      expect(TokenListService.current, isNotNull);
+
+      respond = () => http.Response(_listBody([_entry()]), 200);
+      await TokenListService.load(forceRefresh: true);
+      expect(TokenListService.approved, isNotNull);
+      expect(TokenListService.isStale, isFalse);
+    });
+
+    test('approved: นาฬิกาเครื่องถูกย้อนไปก่อนเวลาที่ดึง → ไม่นับ (fail closed)', () async {
+      await TokenListService.load();
+      now = now.subtract(const Duration(hours: 1));
+      expect(TokenListService.approved, isNull);
+    });
+
     test('เปิดแอปใหม่แบบออฟไลน์ (แคชยังไม่หมดอายุ) → ใช้ชุดในเครื่อง ไม่แตะเน็ต', () async {
       await TokenListService.load();
       restartApp();

@@ -11,6 +11,7 @@ import 'wallet_service.dart';
 /// รายการโทเค็นที่ยืนยันแล้วของ TPIX Chain (https://tpix.online/tokenlist.json)
 ///
 /// - มีแต่โทเค็นที่แอดมินอนุมัติ → ใช้ตัดสินว่า "ยืนยันแล้ว" + ใช้โลโก้/ชื่อจากที่นี่
+///   + เป็นด่านแรกของรายการเพิ่มทีเดียวในหน้าเพิ่มโทเค็น (ด่านที่สองคือ explorer — ดู [approved])
 /// - ทุกค่าตรวจก่อนใช้ (chainId 4289, ที่อยู่, ทศนิยม 0..36, ความยาวชื่อ/สัญลักษณ์,
 ///   โลโก้ https เท่านั้น, จำนวนไม่เกิน [maxTokens]) — ตัวที่ผิดรูปถูกข้ามทิ้ง ไม่เดา
 /// - แคชลงเครื่อง [ttl] ชั่วโมง — ออฟไลน์ก็ใช้ชุดที่แคชไว้ได้
@@ -23,6 +24,14 @@ class TokenListService {
 
   /// อายุของชุดที่ดึงมา — เกินนี้ค่อยดึงใหม่ (ระหว่างนั้นใช้ชุดเดิมไปก่อน)
   static const ttl = Duration(hours: 6);
+
+  /// หน้าเพิ่มโทเค็นดึงใหม่เมื่อชุดเก่ากว่านี้ — แอดมินอนุมัติ/ถอนเหรียญแล้วผู้ใช้เห็นผลภายในชั่วโมง
+  /// (เท่ากับแคชของ explorer)
+  static const approvalTtl = Duration(hours: 1);
+
+  /// ใช้ชุดนี้ตัดสิน "แอดมินอนุมัติแล้ว" ในรายการเพิ่มทีเดียวได้นานสุดเท่านี้หลังดึงสำเร็จ
+  /// เกินนี้ = ตรวจการอนุมัติไม่ได้ (fail closed — ไม่ใช่ใช้ชุดเก่าไปเรื่อยๆ)
+  static const approvalMaxAge = Duration(hours: 24);
 
   /// ดึงไม่สำเร็จแล้ว รอเท่านี้ก่อนลองใหม่ — กันยิงเซิร์ฟเวอร์ถี่ตอนเน็ตไม่ดี
   static const retryAfterFailure = Duration(minutes: 5);
@@ -58,18 +67,26 @@ class TokenListService {
   /// เวลาที่ดึงชุดปัจจุบันมาจากเซิร์ฟเวอร์ (รวมชุดที่โหลดจากแคช)
   static DateTime? get fetchedAt => _fetchedAt;
 
-  /// โหลดรายการ: แคชในเครื่องก่อน → ถ้าเก่ากว่า [ttl] ค่อยดึงใหม่
+  /// ชุดที่ใช้ตัดสินการอนุมัติของแอดมินได้ตอนนี้ — null = ไม่มี / เก่ากว่า [approvalMaxAge]
+  /// (ป้ายและโลโก้ใช้ [current] ต่อได้ แต่รายการเพิ่มทีเดียวต้องใช้ตัวนี้)
+  static TokenList? get approved => _isWithin(_fetchedAt, clock(), approvalMaxAge) ? _current : null;
+
+  /// ดึงรอบล่าสุดไม่สำเร็จ แต่ยังมีชุดเดิมให้ใช้ — ชุดที่โชว์อาจไม่ล่าสุด
+  static bool get isStale => _current != null && _lastFailureAt != null;
+
+  /// โหลดรายการ: แคชในเครื่องก่อน → ถ้าเก่ากว่า [maxAge] (ค่าเริ่มต้น [ttl]) ค่อยดึงใหม่
   ///
-  /// เรียกพร้อมกันหลายที่ = ยิงเน็ตครั้งเดียว · ไม่ throw · คืน [current] หลังโหลด
-  static Future<TokenList?> load({bool forceRefresh = false}) {
+  /// เรียกพร้อมกันหลายที่ = ยิงเน็ตครั้งเดียว (ตัวที่เรียกทีหลังได้ผลของตัวแรก) · ไม่ throw
+  /// · คืน [current] หลังโหลด
+  static Future<TokenList?> load({bool forceRefresh = false, Duration? maxAge}) {
     final running = _inflight;
     if (running != null) return running;
-    final future = _load(forceRefresh);
+    final future = _load(forceRefresh, maxAge ?? ttl);
     _inflight = future;
     return future.whenComplete(() => _inflight = null);
   }
 
-  static Future<TokenList?> _load(bool forceRefresh) async {
+  static Future<TokenList?> _load(bool forceRefresh, Duration maxAge) async {
     try {
       if (!_cacheLoaded) {
         _cacheLoaded = true;
@@ -77,7 +94,7 @@ class TokenListService {
       }
       final now = clock();
       if (!forceRefresh) {
-        if (_isWithin(_fetchedAt, now, ttl)) return _current;
+        if (_isWithin(_fetchedAt, now, maxAge)) return _current;
         if (_isWithin(_lastFailureAt, now, retryAfterFailure)) return _current;
       }
 

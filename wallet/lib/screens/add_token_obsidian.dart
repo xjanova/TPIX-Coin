@@ -298,8 +298,7 @@ extension _AddTokenObsidian on _AddTokenScreenState {
 
   Widget _obsVerifiedList(WalletProvider wallet, LocaleProvider l) {
     final st = ObsidianStyle.of(context);
-    final explorer = ExplorerTokenService.current;
-    final entries = _pickerEntries(wallet);
+    final entries = _pickerEntries();
     final added = _AddTokenScreenState._addedKeys(wallet);
     final shown = entries.take(_AddTokenScreenState._pickerLimit).toList();
     return ObsidianPanel(
@@ -328,14 +327,14 @@ extension _AddTokenObsidian on _AddTokenScreenState {
           ),
           const SizedBox(height: 6),
           // ไม่มีชุดที่ใช้ได้: กำลังโหลด (ครั้งแรก) หรือโหลดไม่ได้ → บอก + ลองใหม่ (ไม่ใช่รายการว่างเฉยๆ)
-          if (explorer == null)
+          if (!_AddTokenScreenState._pickerReady)
             _obsExplorerStatus(l, st)
           else ...[
             if (shown.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  l.t(explorer.isEmpty ? 'token.explorerEmpty' : 'token.listNoMatch'),
+                  l.t(_query.isEmpty || _pickerEntries(all: true).isEmpty ? 'token.explorerEmpty' : 'token.listNoMatch'),
                   style: st.ui(fontSize: 12.5, color: ObsidianColors.textMuted),
                 ),
               ),
@@ -348,7 +347,7 @@ extension _AddTokenObsidian on _AddTokenScreenState {
                   style: st.ui(fontSize: 11.5, color: ObsidianColors.textMuted),
                 ),
               ),
-            if (ExplorerTokenService.isStale) _obsStaleNote(l, st),
+            if (_AddTokenScreenState._listStale) _obsStaleNote(l, st),
           ],
         ],
       ),
@@ -379,7 +378,7 @@ extension _AddTokenObsidian on _AddTokenScreenState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ObsidianNotice(tone: ObsidianTone.warning, lines: [l.t('token.explorerUnavailable')]),
+          ObsidianNotice(tone: ObsidianTone.warning, lines: [l.t(_AddTokenScreenState._unavailableKey())]),
           const SizedBox(height: 10),
           ObsidianButton.secondary(
             key: const ValueKey('explorer-retry'),
@@ -392,7 +391,7 @@ extension _AddTokenObsidian on _AddTokenScreenState {
     );
   }
 
-  /// ชุดที่โชว์มาจากเครื่อง เพราะตรวจกับ explorer รอบล่าสุดไม่สำเร็จ
+  /// ชุดที่โชว์มาจากเครื่อง เพราะตรวจกับ explorer / รายการที่อนุมัติรอบล่าสุดไม่สำเร็จ
   Widget _obsStaleNote(LocaleProvider l, ObsidianStyle st) => Padding(
         padding: const EdgeInsets.only(top: 6),
         child: Row(

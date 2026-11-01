@@ -35,9 +35,11 @@ part 'add_token_obsidian.dart';
 ///   ถ้าบนสัญญาไม่ตรงกับรายการ → ใช้ของสัญญา + เตือน
 /// - ไม่อยู่ในรายการ → ยังเพิ่มได้ แต่เตือนชัดๆ · ชื่อซ้ำตัวที่ยืนยันแล้ว → เตือนของปลอม
 ///   และต้องกดยืนยันอีกชั้นก่อนเพิ่ม
-/// - รายการ "โทเค็นบน TPIX Chain" ด้านล่าง: มาจาก explorer เท่านั้น (อยู่ในหน้า /tokens +
-///   ยืนยันซอร์สโค้ด + ไม่ถูกทำเครื่องหมาย scam — ดู ExplorerTokenService) แตะ + เพิ่มได้ในทีเดียว
-///   tokenlist.json ไม่ได้เป็นแหล่งรายการแล้ว ใช้แค่ให้ป้าย "ยืนยันแล้ว" + โลโก้ + จับของปลอม
+/// - รายการ "โทเค็นบน TPIX Chain" ด้านล่าง: ต้องผ่านสองด่าน (TokenTrustService.isPickable)
+///   1. แอดมินอนุมัติแล้ว — อยู่ใน tokenlist.json (หน้าแอดมินของ tpix.online)
+///   2. explorer — อยู่ในหน้า /tokens + ยืนยันซอร์สโค้ด + ไม่ถูกทำเครื่องหมาย scam (ExplorerTokenService)
+///   แตะ + เพิ่มได้ในทีเดียว · เหรียญที่ verify แล้วแต่แอดมินยังไม่อนุมัติไม่ขึ้นรายการ
+///   (วางที่อยู่สัญญาเพิ่มเองได้ พร้อมป้าย "ยืนยันซอร์สโค้ด" และคำเตือน)
 class AddTokenScreen extends StatefulWidget {
   const AddTokenScreen({super.key});
 
@@ -45,7 +47,7 @@ class AddTokenScreen extends StatefulWidget {
   State<AddTokenScreen> createState() => _AddTokenScreenState();
 }
 
-/// แถวในรายการ "โทเค็นบน TPIX Chain" (ผ่านกฎของ explorer แล้วเท่านั้น)
+/// แถวในรายการ "โทเค็นบน TPIX Chain" (แอดมินอนุมัติ + ผ่านกฎของ explorer แล้วเท่านั้น)
 class _PickerItem {
   final ExplorerToken token;
   final TokenTrust trust;
@@ -85,7 +87,8 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   String _query = '';
   String? _quickAdding; // ที่อยู่ที่กำลังเพิ่มจากรายการ (ตัวเล็ก)
 
-  /// กำลังโหลดรายการจาก explorer — มีชุดในเครื่องอยู่แล้วก็โชว์ชุดนั้นไปก่อน ไม่ขึ้นตัวหมุน
+  /// กำลังโหลดรายการ (explorer + รายการที่แอดมินอนุมัติ) — มีชุดในเครื่องอยู่แล้วก็โชว์ชุดนั้นไปก่อน
+  /// ไม่ขึ้นตัวหมุน
   bool _explorerLoading = false;
 
   /// ทุกการค้นหาได้เลขใหม่ — ผลของการค้นหาเก่าที่กลับมาช้าถูกทิ้ง
@@ -95,18 +98,27 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   @override
   void initState() {
     super.initState();
-    // โหลดรายการที่ยืนยันแล้วเบื้องหลัง (มีแคชในเครื่องก็ได้ทันที) — ไม่บล็อกหน้าจอ
-    unawaited(context.read<WalletProvider>().refreshTokenList());
+    // โหลดเบื้องหลัง (มีแคชในเครื่องก็ได้ทันที) — ไม่บล็อกหน้าจอ
     _explorerLoading = true;
     unawaited(_loadExplorer());
+    // ต้องเรียกหลัง _loadExplorer: งานโหลดที่ค้างอยู่ใช้ร่วมกัน ตัวแรกเป็นคนกำหนดอายุแคช (1 ชม.)
+    // ตัวนี้แค่ให้หน้าโฮมวาดป้าย/โลโก้ใหม่เมื่อได้ชุดใหม่
+    unawaited(context.read<WalletProvider>().refreshTokenList());
   }
 
-  /// รายการจาก explorer (แคช 1 ชม.) — ออกจากหน้าระหว่างโหลดก็ไม่พัง งานโหลดเดินต่อจนแคชเสร็จ
+  /// รายการจาก explorer + รายการที่แอดมินอนุมัติ (แคช 1 ชม. ทั้งคู่ — อนุมัติ/ถอนแล้วเห็นผลภายในชั่วโมง)
+  /// ออกจากหน้าระหว่างโหลดก็ไม่พัง งานโหลดเดินต่อจนแคชเสร็จ
   Future<void> _loadExplorer({bool force = false}) async {
-    await ExplorerTokenService.load(forceRefresh: force);
+    await (
+      ExplorerTokenService.load(forceRefresh: force),
+      TokenListService.load(forceRefresh: force, maxAge: TokenListService.approvalTtl),
+    ).wait;
     if (!mounted) return;
     setState(() => _explorerLoading = false);
   }
+
+  /// มีข้อมูลครบทั้งสองด่านให้สร้างรายการได้ (ไม่ครบ = กล่องสถานะ + ลองใหม่ ไม่ใช่รายการว่าง)
+  static bool get _pickerReady => ExplorerTokenService.current != null && TokenListService.approved != null;
 
   void _retryExplorer() {
     if (_explorerLoading) return; // กดรัว = โหลดรอบเดียว
@@ -187,8 +199,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     if (!WalletService.isValidAddress(input)) {
       // พิมพ์ชื่อ/สัญลักษณ์ → ใช้กรองรายการด้านล่าง (มีผล = ไม่ใช่ข้อผิดพลาด)
       // รายการโหลดไม่ได้ → กล่องสถานะด้านล่างบอกเหตุผลอยู่แล้ว ไม่ขึ้นว่า "ที่อยู่ไม่ถูกต้อง"
-      if (!input.toLowerCase().startsWith('0x') &&
-          (ExplorerTokenService.current == null || _pickerEntries(wallet).isNotEmpty)) {
+      if (!input.toLowerCase().startsWith('0x') && (!_pickerReady || _pickerEntries().isNotEmpty)) {
         FocusScope.of(context).unfocus();
         return;
       }
@@ -366,8 +377,9 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     return ok == true;
   }
 
-  /// แตะ + ในรายการ: อ่านสัญญา → ยืนยันแล้ว/ยืนยันซอร์สโค้ด และตรงกับที่ประกาศ = เพิ่มเลย
-  /// ไม่ตรง / ชื่อซ้ำ / หลุดจากรายการระหว่างรอ = เปิดหน้าตรวจละเอียด (ผู้ใช้ต้องเห็นคำเตือนก่อน)
+  /// แตะ + ในรายการ: อ่านสัญญา → ยังผ่านทั้งสองด่าน + ยืนยันแล้ว + ตรงกับที่ประกาศ = เพิ่มเลย
+  /// ไม่ตรง / ชื่อซ้ำ / หลุดจากรายการระหว่างรอ (แอดมินถอน, explorer ถอน) = เปิดหน้าตรวจละเอียด
+  /// (ผู้ใช้ต้องเห็นคำเตือนก่อน)
   Future<void> _quickAdd(_PickerItem item) async {
     final key = item.key;
     if (_quickAdding != null || _isAdding) return; // double-tap guard
@@ -400,16 +412,18 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
         toast(l.t('token.notFound'));
         return;
       }
-      // ทศนิยมจากสัญญาเสมอ · รายการจาก explorer ชุดล่าสุด (หลุดระหว่างรอ = ไม่ผ่าน)
+      // ทศนิยมจากสัญญาเสมอ · ทั้งสองรายการใช้ชุดล่าสุด (หลุดระหว่างรอ = ไม่ผ่าน)
+      final explorer = ExplorerTokenService.current;
       final trust = TokenTrustService.classify(
         address: onChain.contractAddress,
         name: onChain.name,
         symbol: onChain.symbol,
         decimals: onChain.decimals,
         list: wallet.tokenList,
-        explorer: ExplorerTokenService.current,
+        explorer: explorer,
       );
-      if (!trust.canQuickAdd) {
+      final pickable = TokenTrustService.isPickable(key, approved: TokenListService.approved, explorer: explorer);
+      if (!pickable || !trust.canQuickAdd) {
         _setInput(item.address);
         unawaited(_search());
         return;
@@ -433,15 +447,16 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     }
   }
 
-  /// เหรียญจาก explorer (ผ่านกฎ verify แล้วเท่านั้น — ไม่มีค่าในตัวแอปหรือ tokenlist.json ปน)
-  /// กรองตามคำค้น · ตัวที่ชื่อซ้ำ/เลียนแบบไปอยู่ท้ายรายการ
-  List<_PickerItem> _pickerEntries(WalletProvider wallet) {
+  /// เหรียญที่ผ่านทั้งสองด่าน (แอดมินอนุมัติ + explorer) — ค่าในตัวแอปไม่ปน
+  /// กรองตามคำค้น ([all] = ไม่กรอง) · ตัวที่ชื่อซ้ำ/เลียนแบบไปอยู่ท้ายรายการ
+  List<_PickerItem> _pickerEntries({bool all = false}) {
     final explorer = ExplorerTokenService.current;
-    if (explorer == null) return const [];
-    final list = wallet.tokenList;
-    final q = _query.toLowerCase();
+    final list = TokenListService.approved;
+    if (explorer == null || list == null) return const [];
+    final q = all ? '' : _query.toLowerCase();
     final items = <_PickerItem>[];
     for (final t in explorer.tokens) {
+      if (!TokenTrustService.isPickable(t.key, approved: list, explorer: explorer)) continue;
       if (q.isNotEmpty &&
           !(t.symbol.toLowerCase().contains(q) || t.name.toLowerCase().contains(q) || t.key.startsWith(q))) {
         continue;
@@ -875,8 +890,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   // ── รายการโทเค็นที่ยืนยันแล้ว ──
 
   Widget _buildVerifiedList(WalletProvider wallet, LocaleProvider l, AppColors c) {
-    final explorer = ExplorerTokenService.current;
-    final entries = _pickerEntries(wallet);
+    final entries = _pickerEntries();
     final added = _addedKeys(wallet);
     final shown = entries.take(_pickerLimit).toList();
     return Container(
@@ -899,14 +913,14 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           Text(l.t('token.listSubtitle'), style: TextStyle(fontSize: 11, color: c.textMuted)),
           const SizedBox(height: TpixGap.sm),
           // ไม่มีชุดที่ใช้ได้: กำลังโหลด (ครั้งแรก) หรือโหลดไม่ได้ → บอก + ลองใหม่ (ไม่ใช่รายการว่างเฉยๆ)
-          if (explorer == null)
+          if (!_pickerReady)
             _buildExplorerStatus(l, c)
           else ...[
             if (shown.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  l.t(explorer.isEmpty ? 'token.explorerEmpty' : 'token.listNoMatch'),
+                  l.t(_query.isEmpty || _pickerEntries(all: true).isEmpty ? 'token.explorerEmpty' : 'token.listNoMatch'),
                   style: TextStyle(fontSize: 12, color: c.textMuted),
                 ),
               ),
@@ -921,12 +935,19 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                   style: TextStyle(fontSize: 11, color: c.textMuted),
                 ),
               ),
-            if (ExplorerTokenService.isStale) _buildStaleNote(l, c),
+            if (_listStale) _buildStaleNote(l, c),
           ],
         ],
       ),
     );
   }
+
+  /// ด่านไหนดึงรอบล่าสุดไม่สำเร็จ (โชว์ชุดในเครื่องอยู่) → บอกว่าอาจไม่ล่าสุด
+  static bool get _listStale => ExplorerTokenService.isStale || TokenListService.isStale;
+
+  /// ข้อความตอนสร้างรายการไม่ได้ — บอกว่าด่านไหนโหลดไม่ได้
+  static String _unavailableKey() =>
+      ExplorerTokenService.current == null ? 'token.explorerUnavailable' : 'token.approvedUnavailable';
 
   Widget _buildExplorerStatus(LocaleProvider l, AppColors c) {
     if (_explorerLoading) {
@@ -952,7 +973,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
               const Icon(Icons.cloud_off_rounded, color: AppTheme.warm, size: 18),
               const SizedBox(width: TpixGap.sm),
               Expanded(
-                child: Text(l.t('token.explorerUnavailable'), style: TextStyle(fontSize: 12, color: c.textSec, height: 1.4)),
+                child: Text(l.t(_unavailableKey()), style: TextStyle(fontSize: 12, color: c.textSec, height: 1.4)),
               ),
             ],
           ),
@@ -972,7 +993,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     );
   }
 
-  /// ชุดที่โชว์มาจากเครื่อง เพราะตรวจกับ explorer รอบล่าสุดไม่สำเร็จ
+  /// ชุดที่โชว์มาจากเครื่อง เพราะตรวจกับ explorer / รายการที่อนุมัติรอบล่าสุดไม่สำเร็จ
   Widget _buildStaleNote(LocaleProvider l, AppColors c) => Padding(
         padding: const EdgeInsets.only(top: 6),
         child: Row(
