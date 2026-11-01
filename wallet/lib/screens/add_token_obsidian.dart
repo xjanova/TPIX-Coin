@@ -1,7 +1,8 @@
 // TPIX Wallet — หน้าเพิ่มโทเค็นธีม Obsidian
 //
 // part ของ add_token_screen.dart โดยตั้งใจ: ค้นหา · อ่านสัญญา · จัดระดับความน่าเชื่อถือ · เพิ่มทีเดียว
-// · กันกดซ้ำ ใช้ของเดิมทั้งหมด — ไฟล์นี้เปลี่ยนแค่หน้าตา (คำเตือนของปลอม/ไม่ยืนยันครบทุกข้อเหมือนเดิม)
+// · กันกดซ้ำ · รายการจาก explorer ใช้ของเดิมทั้งหมด — ไฟล์นี้เปลี่ยนแค่หน้าตา
+// (คำเตือนของปลอม/ไม่ยืนยัน/ยืนยันแค่ซอร์สโค้ดครบทุกข้อเหมือนธีมเดิม)
 //
 // Developed by Xman Studio
 
@@ -99,11 +100,48 @@ extension _AddTokenObsidian on _AddTokenScreenState {
 
   // ── การ์ดตัวอย่างโทเค็น ──
 
+  /// ป้ายแคปซูลใต้ชื่อ — "ยืนยันแล้ว" (เขียว) / "ยืนยันซอร์สโค้ด" (ฟ้า คนละป้ายกัน)
+  Widget _obsTrustPill({
+    required IconData icon,
+    required String label,
+    required String hint,
+    required Color color,
+    required Color soft,
+  }) {
+    final st = ObsidianStyle.of(context);
+    return Tooltip(
+      message: hint,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: soft),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: st.ui(fontSize: 12, fontWeight: FontWeight.w600, color: soft),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _obsIdentity({
     required String name,
     required String symbol,
     required String? logoUrl,
-    required bool verified,
+    required TokenTrust? trust,
     required LocaleProvider l,
   }) {
     final st = ObsidianStyle.of(context);
@@ -126,26 +164,24 @@ extension _AddTokenObsidian on _AddTokenScreenState {
           symbol,
           style: st.ui(fontSize: 14, fontWeight: FontWeight.w600, color: ObsidianColors.cyan),
         ),
-        if (verified) ...[
+        if (trust == TokenTrust.verified) ...[
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: ObsidianColors.success.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: ObsidianColors.success.withValues(alpha: 0.35)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.verified, size: 14, color: ObsidianColors.successSoft),
-                const SizedBox(width: 5),
-                Text(
-                  l.t('token.verified'),
-                  style: st.ui(fontSize: 12, fontWeight: FontWeight.w600, color: ObsidianColors.successSoft),
-                ),
-              ],
-            ),
+          _obsTrustPill(
+            icon: Icons.verified,
+            label: l.t('token.verified'),
+            hint: l.t('token.verifiedHint'),
+            color: ObsidianColors.success,
+            soft: ObsidianColors.successSoft,
+          ),
+        ],
+        if (trust == TokenTrust.sourceVerified) ...[
+          const SizedBox(height: 8),
+          _obsTrustPill(
+            icon: Icons.task_alt_rounded,
+            label: l.t('token.sourceVerified'),
+            hint: l.t('token.sourceVerifiedHint'),
+            color: ObsidianColors.cyan,
+            soft: ObsidianColors.cyan,
           ),
         ],
         const SizedBox(height: 12),
@@ -161,7 +197,7 @@ extension _AddTokenObsidian on _AddTokenScreenState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _obsIdentity(name: def.name, symbol: def.symbol, logoUrl: def.logoUrl, verified: true, l: l),
+          _obsIdentity(name: def.name, symbol: def.symbol, logoUrl: def.logoUrl, trust: TokenTrust.verified, l: l),
           ObsidianKv(l.t('token.contractAddress'), _AddTokenScreenState._short(def.address), mono: true),
           ObsidianKv(l.t('token.decimalsLabel'), '${def.decimals}'),
           const SizedBox(height: 10),
@@ -197,7 +233,7 @@ extension _AddTokenObsidian on _AddTokenScreenState {
             name: token.name,
             symbol: token.symbol,
             logoUrl: token.logoUrl,
-            verified: trust?.isVerified ?? false,
+            trust: trust?.trust,
             l: l,
           ),
           ObsidianKv(l.t('token.contractAddress'), token.shortAddress, mono: true),
@@ -213,29 +249,29 @@ extension _AddTokenObsidian on _AddTokenScreenState {
 
   /// คำเตือนตามผลตรวจ — ข้อความชุดเดียวกับหน้าเดิมทุกข้อ
   List<Widget> _obsTrustNotices(TokenTrustResult trust, TokenInfo token, LocaleProvider l) {
+    final mismatch = trust.mismatches.isEmpty
+        ? const <Widget>[]
+        : [
+            const SizedBox(height: 12),
+            ObsidianNotice(
+              tone: ObsidianTone.warning,
+              title: l.t('token.mismatchTitle'),
+              lines: [l.t('token.mismatchBody'), ..._mismatchRows(trust, token, l)],
+            ),
+          ];
     switch (trust.trust) {
       case TokenTrust.verified:
-        final listed = trust.listed;
-        if (listed == null || trust.mismatches.isEmpty) return const [];
-        String row(String label, String fromList, String fromChain) => l
-            .t('token.mismatchRow')
-            .replaceAll('{field}', label)
-            .replaceAll('{listed}', fromList)
-            .replaceAll('{chain}', fromChain);
+        return mismatch;
+      case TokenTrust.sourceVerified:
+        // ยืนยันซอร์สโค้ด ≠ TPIX ตรวจสอบ — ยังเตือนโทนเดียวกับ "ไม่ยืนยัน"
         return [
           const SizedBox(height: 12),
           ObsidianNotice(
             tone: ObsidianTone.warning,
-            title: l.t('token.mismatchTitle'),
-            lines: [
-              l.t('token.mismatchBody'),
-              if (trust.mismatches.contains(TokenMetaField.name)) row(l.t('token.fieldName'), listed.name, token.name),
-              if (trust.mismatches.contains(TokenMetaField.symbol))
-                row(l.t('token.fieldSymbol'), listed.symbol, token.symbol),
-              if (trust.mismatches.contains(TokenMetaField.decimals))
-                row(l.t('token.decimalsLabel'), '${listed.decimals}', '${token.decimals}'),
-            ],
+            title: l.t('token.sourceVerifiedTitle'),
+            lines: [l.t('token.sourceVerifiedBody')],
           ),
+          ...mismatch,
         ];
       case TokenTrust.unverified:
         return [
@@ -252,17 +288,7 @@ extension _AddTokenObsidian on _AddTokenScreenState {
           ObsidianNotice(
             tone: ObsidianTone.danger,
             title: l.t('token.lookalikeTitle'),
-            lines: [
-              l.t('token.lookalikeBody'),
-              for (final real in trust.lookalikes)
-                real.isNative
-                    ? l.t('token.lookalikeNative')
-                    : l
-                          .t('token.lookalikeReal')
-                          .replaceAll('{symbol}', real.symbol)
-                          .replaceAll('{address}', real.address),
-              if (!trust.listAvailable) l.t('token.listUnavailable'),
-            ],
+            lines: _lookalikeLines(trust, l),
           ),
         ];
     }
@@ -272,11 +298,9 @@ extension _AddTokenObsidian on _AddTokenScreenState {
 
   Widget _obsVerifiedList(WalletProvider wallet, LocaleProvider l) {
     final st = ObsidianStyle.of(context);
+    final explorer = ExplorerTokenService.current;
     final entries = _pickerEntries(wallet);
-    final added = {
-      for (final t in wallet.tokens)
-        if (t.chainId == TokenListService.chainId) t.contractAddress.toLowerCase(),
-    };
+    final added = _AddTokenScreenState._addedKeys(wallet);
     final shown = entries.take(_AddTokenScreenState._pickerLimit).toList();
     return ObsidianPanel(
       surface: ObsidianCards.details,
@@ -303,27 +327,106 @@ extension _AddTokenObsidian on _AddTokenScreenState {
             child: Text(l.t('token.listSubtitle'), style: st.ui(fontSize: 12, color: ObsidianColors.textMuted)),
           ),
           const SizedBox(height: 6),
-          if (shown.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(l.t('token.listNoMatch'), style: st.ui(fontSize: 12.5, color: ObsidianColors.textMuted)),
-            ),
-          for (final t in shown) _obsPickerRow(t, added.contains(t.address.toLowerCase()), l, st),
-          if (entries.length > shown.length)
-            Padding(
-              padding: const EdgeInsets.only(top: 6, bottom: 4),
-              child: Text(
-                l.t('token.listMore').replaceAll('{n}', '${shown.length}').replaceAll('{total}', '${entries.length}'),
-                style: st.ui(fontSize: 11.5, color: ObsidianColors.textMuted),
+          // ไม่มีชุดที่ใช้ได้: กำลังโหลด (ครั้งแรก) หรือโหลดไม่ได้ → บอก + ลองใหม่ (ไม่ใช่รายการว่างเฉยๆ)
+          if (explorer == null)
+            _obsExplorerStatus(l, st)
+          else ...[
+            if (shown.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  l.t(explorer.isEmpty ? 'token.explorerEmpty' : 'token.listNoMatch'),
+                  style: st.ui(fontSize: 12.5, color: ObsidianColors.textMuted),
+                ),
               ),
-            ),
+            for (final t in shown) _obsPickerRow(t, added.contains(t.key), l, st),
+            if (entries.length > shown.length)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 4),
+                child: Text(
+                  l.t('token.listMore').replaceAll('{n}', '${shown.length}').replaceAll('{total}', '${entries.length}'),
+                  style: st.ui(fontSize: 11.5, color: ObsidianColors.textMuted),
+                ),
+              ),
+            if (ExplorerTokenService.isStale) _obsStaleNote(l, st),
+          ],
         ],
       ),
     );
   }
 
-  Widget _obsPickerRow(TokenDef t, bool isAdded, LocaleProvider l, ObsidianStyle st) {
-    final busy = _quickAdding == t.address.toLowerCase();
+  Widget _obsExplorerStatus(LocaleProvider l, ObsidianStyle st) {
+    if (_explorerLoading) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: ObsidianColors.cyan),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(l.t('token.explorerLoading'), style: st.ui(fontSize: 12.5, color: ObsidianColors.textSec)),
+            ),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, right: 6, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ObsidianNotice(tone: ObsidianTone.warning, lines: [l.t('token.explorerUnavailable')]),
+          const SizedBox(height: 10),
+          ObsidianButton.secondary(
+            key: const ValueKey('explorer-retry'),
+            label: l.t('token.retry'),
+            height: 44,
+            onPressed: _retryExplorer,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ชุดที่โชว์มาจากเครื่อง เพราะตรวจกับ explorer รอบล่าสุดไม่สำเร็จ
+  Widget _obsStaleNote(LocaleProvider l, ObsidianStyle st) => Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Row(
+          children: [
+            const Icon(Icons.schedule_rounded, size: 14, color: ObsidianColors.textMuted),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Text(l.t('token.explorerStale'), style: st.ui(fontSize: 11.5, color: ObsidianColors.textMuted)),
+            ),
+            SizedBox(
+              height: 32,
+              child: _explorerLoading
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Center(
+                        child: SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: ObsidianColors.cyan),
+                        ),
+                      ),
+                    )
+                  : TextButton(
+                      key: const ValueKey('explorer-retry'),
+                      onPressed: _retryExplorer,
+                      child: Text(l.t('token.retry'), style: st.ui(fontSize: 12, color: ObsidianColors.cyan)),
+                    ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _obsPickerRow(_PickerItem t, bool isAdded, LocaleProvider l, ObsidianStyle st) {
+    final busy = _quickAdding == t.key;
     return ObsidianPressable(
       // แตะที่แถว = ดูรายละเอียดก่อนเพิ่ม
       onTap: isAdded || busy
@@ -362,9 +465,10 @@ extension _AddTokenObsidian on _AddTokenScreenState {
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const TokenTrustIcon(trust: TokenTrust.verified, size: 13),
+                      TokenTrustIcon(trust: t.trust, size: 13),
                     ],
                   ),
+                  // ที่อยู่สัญญาโชว์ทุกแถว — ชื่อซ้ำกันแยกได้ด้วยที่อยู่เท่านั้น
                   Text(
                     '${t.name} · ${_AddTokenScreenState._short(t.address)}',
                     maxLines: 1,
@@ -393,7 +497,7 @@ extension _AddTokenObsidian on _AddTokenScreenState {
                     : Opacity(
                         opacity: _quickAdding == null ? 1 : 0.45,
                         child: ObsidianPressable(
-                          key: ValueKey('obs-quick-add-${t.address.toLowerCase()}'),
+                          key: ValueKey('obs-quick-add-${t.key}'),
                           onTap: _quickAdding == null ? () => _quickAdd(t) : null,
                           semanticLabel: '${l.t('token.add')} ${t.symbol}',
                           pressedScale: 0.9,

@@ -1,7 +1,8 @@
 /// TPIX Wallet — เทสต์หน้าเพิ่มโทเค็น: ยืนยันแล้ว / ไม่ยืนยัน / ของปลอม / เพิ่มทีเดียวจากรายการ
+/// + รายการจาก explorer (verify/scam/ล่ม/แคช/ลองใหม่/ชื่อซ้ำ/กดซ้ำ)
 /// + วงกลมโลโก้ (โหลดอยู่/โหลดไม่ได้/ไม่มีลิงก์ → ตัวอักษรแรก ขนาดเท่าเดิม)
 ///
-/// ไม่มีเน็ตจริง: รายการโทเค็นใส่ตรงๆ, RPC เป็น MockClient, รูปเป็น ImageProvider ปลอม
+/// ไม่มีเน็ตจริง: รายการโทเค็นใส่ตรงๆ, explorer และ RPC เป็น MockClient, รูปเป็น ImageProvider ปลอม
 /// sqlite เป็น I/O จริง → สลับ runAsync กับ pump (ดู [_drain])
 library;
 
@@ -23,6 +24,7 @@ import 'package:tpix_wallet/models/token_list.dart';
 import 'package:tpix_wallet/providers/wallet_provider.dart';
 import 'package:tpix_wallet/screens/add_token_screen.dart';
 import 'package:tpix_wallet/services/db_service.dart';
+import 'package:tpix_wallet/services/explorer_token_service.dart';
 import 'package:tpix_wallet/services/rpc_client.dart';
 import 'package:tpix_wallet/services/token_list_service.dart';
 import 'package:tpix_wallet/services/token_service.dart';
@@ -36,6 +38,21 @@ const _idtcLogo = 'https://tpix.online/storage/tokens/idtc.png';
 const _random = '0x1234567890123456789012345678901234567890';
 const _fakeUsdt = '0x9999999999999999999999999999999999999999';
 
+/// อยู่บน explorer อย่างเดียว (ไม่อยู่ใน tokenlist.json) — แบบ TPIX-LP / WTPIX จริง
+const _lp = '0x3684e0ebd1bd7ef7b7783e695639badcd04bc4f0';
+const _lpLogo = 'https://explorer.test/lp.png';
+
+/// อยู่ในหน้า /tokens แต่ไม่ผ่านกฎ
+const _unverified = '0x1111111111111111111111111111111111111111';
+const _scam = '0x2222222222222222222222222222222222222222';
+
+/// อยู่ใน tokenlist.json แต่ไม่อยู่บน explorer → ห้ามขึ้นรายการ
+const _listOnly = '0x3333333333333333333333333333333333333333';
+
+/// สองตัวชื่อเดียวกันบน explorer (verify ทั้งคู่ ไม่มีตัวไหนอนุมัติ)
+const _fooA = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const _fooB = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
 /// กระเป๋าที่ยังไม่ได้ปลดล็อกในเทสต์ = ช่อง -1
 const _slot = -1;
 
@@ -48,7 +65,77 @@ final _list = TokenList(name: 'TPIX Token List', tokens: const [
     decimals: 18,
     logoUri: _idtcLogo,
   ),
+  TokenListEntry(
+    chainId: 4289,
+    address: _listOnly,
+    name: 'List Only Coin',
+    symbol: 'LISTONLY',
+    decimals: 18,
+  ),
 ]);
+
+class _Coin {
+  final String address;
+  final String name;
+  final String symbol;
+  final bool verified;
+  final bool scam;
+  final String? icon;
+  const _Coin(this.address, this.name, this.symbol, {this.verified = true, this.scam = false, this.icon});
+}
+
+/// เหรียญบนหน้า /tokens ของ explorer ปลอม (ค่าเริ่มต้น — เทสต์เปลี่ยนได้)
+const _defaultCoins = [
+  _Coin(_idtc, 'IDTC Token', 'IDTC', icon: 'https://explorer.test/idtc.png'),
+  _Coin('0x0A4Ee87551eF041f3EecFBBfdcfFC1B46a4878f1', 'Tether USD (TPIX bridged)', 'USDT'),
+  _Coin(_lp, 'TPIX LP Token', 'TPIX-LP', icon: _lpLogo),
+  _Coin(_unverified, 'Unverified Coin', 'UNV', verified: false),
+  _Coin(_scam, 'Scam Coin', 'SCAM', scam: true),
+];
+
+List<_Coin> _coins = _defaultCoins;
+bool _explorerDown = false;
+Completer<void>? _explorerGate;
+int _explorerRequests = 0;
+DateTime _now = DateTime(2026, 11, 1, 12);
+
+/// explorer ปลอม: /api/v2/tokens หน้าเดียว + /api/v2/addresses/{ที่อยู่}
+void _serveExplorer() {
+  ExplorerTokenService.clock = () => _now;
+  ExplorerTokenService.clientFactory = () => MockClient((req) async {
+        _explorerRequests++;
+        if (_explorerGate != null) await _explorerGate!.future;
+        if (_explorerDown) return http.Response('Bad Gateway', 502);
+        if (req.url.path == '/api/v2/tokens') {
+          return http.Response(
+            jsonEncode({
+              'items': [
+                for (final c in _coins)
+                  {'address': c.address, 'name': c.name, 'symbol': c.symbol, 'type': 'ERC-20', 'icon_url': c.icon},
+              ],
+              'next_page_params': null,
+            }),
+            200,
+          );
+        }
+        final key = req.url.pathSegments.last.toLowerCase();
+        final c = _coins.where((c) => c.address.toLowerCase() == key).firstOrNull;
+        if (c == null) return http.Response('{"message":"Not found"}', 404);
+        return http.Response(
+          jsonEncode({'hash': c.address, 'is_verified': c.verified, 'is_scam': c.scam, 'is_contract': true}),
+          200,
+        );
+      });
+}
+
+/// จำลองเปิดแอปใหม่: หน่วยความจำหาย แคชในเครื่อง (SharedPreferences) ยังอยู่
+void _restartExplorer() {
+  ExplorerTokenService.resetForTest();
+  _serveExplorer();
+}
+
+/// จำนวนครั้งที่อ่าน name() ต่อสัญญา (ตัวเล็ก) — นับว่ากดซ้ำแล้วยิงซ้ำไหม
+final _nameCalls = <String, int>{};
 
 class _Contract {
   final String name;
@@ -95,7 +182,11 @@ void _mockChain(Map<String, _Contract> contracts, {Future<void>? gate}) {
                 200,
               );
             }
-            if (data.startsWith('0x06fdde03')) return ok(_abiString(c.name));
+            if (data.startsWith('0x06fdde03')) {
+              final to = (call['to'] as String).toLowerCase();
+              _nameCalls[to] = (_nameCalls[to] ?? 0) + 1;
+              return ok(_abiString(c.name));
+            }
             if (data.startsWith('0x95d89b41')) return ok(_abiString(c.symbol));
             if (data.startsWith('0x313ce567')) return ok('0x${_word(c.decimals)}');
             return ok('0x${_word(0)}'); // balanceOf
@@ -151,6 +242,13 @@ Future<void> _drain(WidgetTester tester, {int rounds = 12}) async {
   }
 }
 
+/// [_drain] จนกว่าจะเจอ [finder] (ไม่เกิน [maxRounds] รอบ) — งานที่มี I/O จริงหลายช่วงติดกัน
+Future<void> _drainUntil(WidgetTester tester, Finder finder, {int maxRounds = 80}) async {
+  for (var i = 0; i < maxRounds && finder.evaluate().isEmpty; i++) {
+    await _drain(tester, rounds: 1);
+  }
+}
+
 Future<void> _open(WidgetTester tester, {ThemeId theme = ThemeId.liquid}) async {
   tester.view.physicalSize = const Size(1080, 2400);
   tester.view.devicePixelRatio = 3.0;
@@ -199,16 +297,27 @@ void main() {
     // คู่เทรด DEX ล่ม → ใช้ค่าในตัวแอป (USDT) — ไม่มีเน็ตจริงในเทสต์
     TokenService.clientFactory = () => MockClient((_) async => http.Response('down', 503));
     TokenAvatar.imageProviderFor = (_) => const _FailingImage();
+    _coins = _defaultCoins;
+    _explorerDown = false;
+    _explorerGate = null;
+    _explorerRequests = 0;
+    _now = DateTime(2026, 11, 1, 12);
+    _nameCalls.clear();
+    _restartExplorer();
     _mockChain({
       _idtc: const _Contract('IDTC Token', 'IDTC', 18),
       _random: const _Contract('My Cool Token', 'MCT', 18),
       _fakeUsdt: const _Contract('Tether USD', 'USDT', 6),
       ChainConfig.tpixUsdtAddress.toLowerCase(): const _Contract('Tether USD', 'USDT', 6),
+      _lp: const _Contract('TPIX LP Token', 'TPIX-LP', 18),
+      _fooA: const _Contract('Foo Coin', 'FOO', 18),
+      _fooB: const _Contract('Foo Coin', 'F00', 18),
     });
   });
 
   tearDown(() {
     RpcClient.overrideForChain(4289, null);
+    ExplorerTokenService.resetForTest();
     TokenListService.resetForTest();
     TokenService.clientFactory = http.Client.new;
     TokenAvatar.imageProviderFor = originalProvider;
@@ -217,13 +326,136 @@ void main() {
   tearDownAll(() async => DbService.close());
 
   group('รายการ "โทเค็นบน TPIX Chain"', () {
-    testWidgets('โชว์ IDTC จากรายการ + USDT ในตัวแอป พร้อมติ๊กยืนยัน', (tester) async {
+    testWidgets('มาจาก explorer เท่านั้น: ผ่าน verify ขึ้น · ไม่ verify / scam / อยู่แค่ใน tokenlist ไม่ขึ้น',
+        (tester) async {
       await _open(tester);
       expect(find.text(l.t('token.listTitle')), findsOneWidget);
       expect(find.text('IDTC'), findsOneWidget);
       expect(find.text('USDT'), findsOneWidget);
-      // หัวข้อ 1 + แถวละ 1
+      expect(find.text('TPIX-LP'), findsOneWidget);
+      expect(find.text('UNV'), findsNothing);
+      expect(find.text('SCAM'), findsNothing);
+      expect(find.text('LISTONLY'), findsNothing, reason: 'tokenlist.json ไม่ใช่แหล่งรายการแล้ว');
+      // ยืนยันแล้ว (อนุมัติ): หัวข้อ 1 + IDTC + USDT · ยืนยันซอร์สโค้ด: TPIX-LP
       expect(find.byIcon(Icons.verified), findsNWidgets(3));
+      expect(find.byIcon(Icons.task_alt_rounded), findsOneWidget);
+      // ที่อยู่สัญญาโชว์ทุกแถว
+      expect(find.textContaining('0x3684...c4f0'), findsOneWidget);
+    });
+
+    testWidgets('explorer ล่มและไม่มีแคช → บอกเป็นข้อความ + ลองใหม่ (ไม่ใช่รายการว่าง) → ลองใหม่ได้รายการ',
+        (tester) async {
+      _explorerDown = true;
+      await _open(tester);
+      expect(find.text(l.t('token.explorerUnavailable')), findsOneWidget);
+      expect(find.byKey(const ValueKey('explorer-retry')), findsOneWidget);
+      expect(find.text('IDTC'), findsNothing);
+      expect(find.text('USDT'), findsNothing, reason: 'ไม่ถอยไปใช้ค่าในตัวแอป — fail closed');
+
+      _explorerDown = false;
+      _now = _now.add(const Duration(seconds: 6));
+      await tester.tap(find.byKey(const ValueKey('explorer-retry')));
+      await tester.pump();
+      await _drain(tester);
+      expect(find.text(l.t('token.explorerUnavailable')), findsNothing);
+      expect(find.text('IDTC'), findsOneWidget);
+      expect(find.text('TPIX-LP'), findsOneWidget);
+    });
+
+    testWidgets('explorer ล่มแต่มีแคชที่เคยผ่าน → ใช้แคช + บอกว่าอาจไม่ล่าสุด', (tester) async {
+      await tester.runAsync(() => ExplorerTokenService.load());
+      _restartExplorer(); // เปิดแอปใหม่ 2 ชม.ต่อมา explorer ล่ม
+      _now = _now.add(const Duration(hours: 2));
+      _explorerDown = true;
+      await _open(tester);
+      expect(find.text('TPIX-LP'), findsOneWidget);
+      expect(find.text('UNV'), findsNothing);
+      expect(find.text(l.t('token.explorerStale')), findsOneWidget);
+      expect(find.text(l.t('token.explorerUnavailable')), findsNothing);
+    });
+
+    testWidgets('เปิดหน้าซ้ำภายใน 1 ชม. ไม่ยิง explorer ซ้ำ', (tester) async {
+      await _open(tester);
+      final first = _explorerRequests;
+      expect(first, greaterThan(0));
+      _navKey.currentState!.pop();
+      await tester.pump(const Duration(milliseconds: 400));
+      unawaited(_navKey.currentState!.push(MaterialPageRoute<void>(builder: (_) => const AddTokenScreen())));
+      await tester.pump(const Duration(milliseconds: 400));
+      await _drain(tester, rounds: 4);
+      expect(find.text('TPIX-LP'), findsOneWidget);
+      expect(_explorerRequests, first);
+    });
+
+    testWidgets('ออกจากหน้าระหว่างโหลด explorer → ไม่พัง', (tester) async {
+      _explorerGate = Completer<void>();
+      await _open(tester);
+      expect(find.text(l.t('token.explorerLoading')), findsOneWidget);
+      _navKey.currentState!.pop();
+      await tester.pump(const Duration(milliseconds: 400));
+      _explorerGate!.complete();
+      await _drain(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.text('HOME'), findsOneWidget);
+      expect(ExplorerTokenService.current!.contains(_lp), isTrue, reason: 'โหลดต่อจนแคชเสร็จ');
+    });
+
+    testWidgets('อยู่บน explorer อย่างเดียว: แตะ + → เพิ่มทันที (ข้อมูลจากสัญญา + โลโก้ explorer)', (tester) async {
+      await _open(tester);
+      await tester.tap(find.byKey(const ValueKey('quick-add-$_lp')));
+      await tester.pump();
+      await _drain(tester);
+      final saved = await tester.runAsync(() => DbService.getTokensForSlot(_slot));
+      final lp = saved!.singleWhere((t) => t.contractAddress == _lp);
+      expect(lp.symbol, 'TPIX-LP');
+      expect(lp.decimals, 18, reason: 'ทศนิยมจากสัญญา');
+      expect(lp.logoUrl, _lpLogo);
+    });
+
+    testWidgets('กดเพิ่มซ้ำรัวๆ → อ่านสัญญาครั้งเดียว ได้แถวเดียว · แถวเป็น "เพิ่มแล้ว" ไม่มีปุ่มให้กดซ้ำ',
+        (tester) async {
+      await _open(tester);
+      final plus = find.byKey(const ValueKey('quick-add-$_lp'));
+      await tester.tap(plus);
+      await tester.tap(plus, warnIfMissed: false); // ยังไม่ทันวาดใหม่ — ตัวกันกดซ้ำต้องกันไว้
+      await tester.pump();
+      expect(plus, findsNothing, reason: 'ระหว่างเพิ่ม ปุ่มกลายเป็นตัวหมุน');
+      await _drain(tester);
+
+      expect(_nameCalls[_lp], 1);
+      final saved = await tester.runAsync(() => DbService.getTokensForSlot(_slot));
+      expect(saved!.where((t) => t.contractAddress == _lp), hasLength(1));
+      expect(plus, findsNothing);
+      final row = find.ancestor(of: find.text('TPIX-LP'), matching: find.byType(InkWell));
+      expect(find.descendant(of: row, matching: find.text(l.t('token.addedShort'))), findsOneWidget);
+
+      // ค้นด้วยที่อยู่อีกรอบ → บอกว่าเพิ่มแล้ว ไม่เพิ่มซ้ำ
+      await _searchFor(tester, _lp);
+      expect(find.text(l.t('token.alreadyAdded')), findsOneWidget);
+      final again = await tester.runAsync(() => DbService.getTokensForSlot(_slot));
+      expect(again!.where((t) => t.contractAddress == _lp), hasLength(1));
+    });
+
+    testWidgets('ชื่อซ้ำบน explorer → ขึ้นทั้งคู่พร้อมที่อยู่ + ไอคอนเตือน · แตะ + = หน้าตรวจละเอียด ไม่เพิ่มเอง',
+        (tester) async {
+      _coins = const [
+        _Coin(_fooA, 'Foo Coin', 'FOO'),
+        _Coin(_fooB, 'Foo Coin', 'F00'),
+        _Coin(_lp, 'TPIX LP Token', 'TPIX-LP'),
+      ];
+      await _open(tester);
+      expect(find.textContaining('0xaaaa...aaaa'), findsOneWidget);
+      expect(find.textContaining('0xbbbb...bbbb'), findsOneWidget);
+      expect(find.byIcon(Icons.gpp_maybe_rounded), findsNWidgets(2));
+
+      await tester.tap(find.byKey(const ValueKey('quick-add-$_fooA')));
+      await tester.pump();
+      // อ่านสัญญา 2 รอบ + sqlite จริง 2 รอบ (เพิ่มทีเดียว → หน้าตรวจละเอียด) — รอจนเห็นผล
+      await _drainUntil(tester, find.text(l.t('token.lookalikeTitle')));
+      expect(find.text(l.t('token.lookalikeTitle')), findsOneWidget);
+      expect(find.textContaining(_fooB), findsOneWidget, reason: 'บอกที่อยู่ของอีกตัวให้เทียบ');
+      expect(find.text(l.t('token.twinNote')), findsOneWidget);
+      expect(await _savedAddresses(tester), isNot(contains(_fooA)));
     });
 
     testWidgets('ช่องที่อยู่ (monospace) มีฟอนต์ไทยสำรอง — hint ภาษาไทยไม่เป็นกล่อง', (tester) async {
@@ -355,6 +587,24 @@ void main() {
       expect(await _savedAddresses(tester), contains(_fakeUsdt));
     });
 
+    testWidgets('อยู่บน explorer อย่างเดียว → ป้าย "ยืนยันซอร์สโค้ด" + คำเตือน (ไม่ใช่ "ยืนยันแล้ว")', (tester) async {
+      await _open(tester);
+      await _searchFor(tester, _lp);
+      expect(find.text(l.t('token.sourceVerified')), findsOneWidget);
+      expect(find.text(l.t('token.sourceVerifiedTitle')), findsOneWidget);
+      expect(find.text(l.t('token.verified')), findsNothing);
+      expect(find.text(l.t('token.unverifiedTitle')), findsNothing);
+      expect(find.text(l.t('token.add')), findsOneWidget);
+    });
+
+    testWidgets('ไม่ผ่านกฎ explorer (ไม่ verify) → คำเตือน "ไม่ยืนยัน" เหมือนเดิม', (tester) async {
+      _mockChain({_unverified: const _Contract('Unverified Coin', 'UNV', 18)});
+      await _open(tester);
+      await _searchFor(tester, _unverified);
+      expect(find.text(l.t('token.unverifiedTitle')), findsOneWidget);
+      expect(find.text(l.t('token.sourceVerified')), findsNothing);
+    });
+
     testWidgets('รายการยังไม่ขึ้นเว็บ (404) → บอกว่าตรวจกับรายการไม่ได้', (tester) async {
       TokenListService.setForTest(null);
       await _open(tester);
@@ -425,6 +675,44 @@ void main() {
       await tester.pump();
       await _drain(tester);
       expect(await _savedAddresses(tester), contains(_fakeUsdt));
+    });
+
+    testWidgets('รายการจาก explorer: ไม่ verify / scam ไม่ขึ้น · ล่ม+ไม่มีแคช → ข้อความ + ลองใหม่', (tester) async {
+      _explorerDown = true;
+      await _open(tester, theme: obs);
+      expect(find.text(l.t('token.explorerUnavailable')), findsOneWidget);
+      expect(find.byKey(const ValueKey('explorer-retry')), findsOneWidget);
+
+      _explorerDown = false;
+      _now = _now.add(const Duration(seconds: 6));
+      await tester.tap(find.byKey(const ValueKey('explorer-retry')));
+      await tester.pump();
+      await _drain(tester);
+      expect(find.text('TPIX-LP'), findsOneWidget);
+      expect(find.text('UNV'), findsNothing);
+      expect(find.text('SCAM'), findsNothing);
+      expect(find.text('LISTONLY'), findsNothing);
+    });
+
+    testWidgets('กดเพิ่มซ้ำรัวๆ → ได้แถวเดียว', (tester) async {
+      await _open(tester, theme: obs);
+      final plus = find.byKey(const ValueKey('obs-quick-add-$_lp'));
+      await tester.tap(plus);
+      await tester.tap(plus, warnIfMissed: false);
+      await tester.pump();
+      await _drain(tester);
+      expect(_nameCalls[_lp], 1);
+      final saved = await tester.runAsync(() => DbService.getTokensForSlot(_slot));
+      expect(saved!.where((t) => t.contractAddress == _lp), hasLength(1));
+      expect(plus, findsNothing);
+    });
+
+    testWidgets('อยู่บน explorer อย่างเดียว → ป้าย "ยืนยันซอร์สโค้ด" + คำเตือน', (tester) async {
+      await _open(tester, theme: obs);
+      await _searchFor(tester, _lp);
+      expect(find.text(l.t('token.sourceVerified')), findsOneWidget);
+      expect(find.text(l.t('token.sourceVerifiedTitle')), findsOneWidget);
+      expect(find.text(l.t('token.verified')), findsNothing);
     });
 
     testWidgets('ไม่ใช่ที่อยู่ → ข้อความผิด (ไม่ใช่ Exception ดิบ)', (tester) async {
@@ -498,7 +786,10 @@ void main() {
       'token.lookalikeConfirmBody', 'token.addAnyway', 'token.mismatchTitle',
       'token.mismatchBody', 'token.mismatchRow', 'token.fieldName', 'token.fieldSymbol', 'token.listTitle',
       'token.listSubtitle', 'token.listNoMatch', 'token.listMore', 'token.addedShort',
-      'token.inputHint',
+      'token.inputHint', 'token.sourceVerified', 'token.sourceVerifiedHint', 'token.sourceVerifiedTitle',
+      'token.sourceVerifiedBody', 'token.explorerTwin', 'token.twinNote', 'token.explorerLoading',
+      'token.explorerUnavailable', 'token.explorerEmpty', 'token.explorerStale', 'token.retry',
+      'token.walletChanged',
     ];
     bool hasThai(String s) => s.runes.any((r) => r >= 0x0E00 && r <= 0x0E7F);
     final th = LocaleProvider();
