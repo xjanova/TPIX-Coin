@@ -19,4 +19,5 @@ jobs:
           bash -n infrastructure/scripts/backup-chain.sh
           bash infrastructure/scripts/tests/backup-upload-r2.test.sh
           bash infrastructure/scripts/tests/setup-r2-quoting.test.sh
+          sudo bash infrastructure/scripts/tests/backup-chain-lock.test.sh
           python3 -m unittest discover -s infrastructure/scripts/tests -p 'test_*.py' -v

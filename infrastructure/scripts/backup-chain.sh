@@ -13,7 +13,8 @@
 #   3. หยุด validator เพียง "ตัวเดียว" — quorum 3/4 ยังอยู่ เชนไม่หยุด
 #      แล้ว "รอจนหยุดสนิทจริง" ก่อนแตะไฟล์
 #   4. tar ข้อมูลส่งตรงเข้า gpg (symmetric) — ไม่มีไฟล์ดิบลงดิสก์
-#   5. เปิด validator กลับ แล้วรอจน healthy + บล็อกเดินต่อ
+#   5. เปิด validator กลับ แล้วรอจนบล็อกเดินต่อจริง แล้ว "ปล่อยคิวทันที"
+#      ให้ watchdog กลับมาเฝ้าเชน — ขั้นที่เหลือไม่แตะเชนแล้ว
 #   6. ส่งไฟล์ออกนอกเครื่อง แล้วลบไฟล์เก่าตามอายุที่กำหนด
 #
 # ถ้าสคริปต์ตายกลางทาง trap จะเปิด validator กลับให้เสมอ + ลบไฟล์ .gpg ที่เขียนไม่จบทิ้ง
@@ -68,6 +69,15 @@ BACKUP_LOCK="${TPIX_BACKUP_LOCK:-/run/tpix-backup.lock}"
 MAINT_LOCK="${TPIX_MAINT_LOCK:-/run/tpix-chain-maint.lock}"
 MAINT_LOCK_WAIT="${TPIX_MAINT_LOCK_WAIT:-90}"
 
+# ── เกณฑ์ "เชนเดินต่อจริง" หลังเปิด validator กลับ ─────────────────────────────
+# ต้องนับจากหัวเชน "ตอนเปิดกลับ" ไม่ใช่ตอนก่อนหยุด เพราะช่วงที่เหลือ 3/4 เชนก็เดิน
+# อยู่แล้ว — เกณฑ์เดิมจึงผ่านทุกคืนใน 2 วินาทีโดยไม่ได้วัดอะไรเลย
+# 2026-11-01 เปิด validator-4 กลับ 19:19:47 เชนออกได้อีกบล็อกเดียว (19:19:56)
+# แล้ว IBFT round ไม่ตรงกันจนหยุด 8 นาที 40 วินาที ขณะสคริปต์รายงาน "เดินต่อปกติ"
+# ปกติ 2 วินาที/บล็อก → 5 บล็อกใช้ราว 10 วินาที เผื่อ validator ตามบล็อกอีกมาก
+RESUME_BLOCKS="${TPIX_BACKUP_RESUME_BLOCKS:-5}"
+RESUME_WAIT="${TPIX_BACKUP_RESUME_WAIT:-90}"
+
 # ── ปลายทางคาดแดงหลังบ้าน tpix.online (ตัวเดียวกับที่ chain-watchdog.sh ใช้) ──
 # ว่าง = ไม่ส่ง แต่ทำงานต่อได้ปกติ · ค่าอยู่ใน /etc/tpix-watchdog.env
 ALERT_URL="${TPIX_ALERT_URL:-}"
@@ -105,29 +115,40 @@ fail() {
 [[ $EUID -eq 0 ]] || { err "ต้องรันด้วย root (sudo)"; exit 1; }
 [[ -n "${TPIX_BACKUP_PASS:-}" ]] || { err "ต้องตั้ง TPIX_BACKUP_PASS (รหัสถอดไฟล์สำรอง) — ห้ามเก็บไว้ในสคริปต์"; exit 1; }
 [[ -d "$VALIDATOR_DATA" ]] || { err "ไม่พบโฟลเดอร์ข้อมูล $VALIDATOR_DATA"; exit 1; }
+[[ "$RESUME_BLOCKS" =~ ^[1-9][0-9]*$ && "$RESUME_WAIT" =~ ^[1-9][0-9]*$ ]] \
+    || { err "TPIX_BACKUP_RESUME_BLOCKS / TPIX_BACKUP_RESUME_WAIT ต้องเป็นจำนวนเต็มบวก"; exit 1; }
 
 command -v gpg >/dev/null || { err "ไม่มี gpg — ติดตั้งก่อน: apt-get install -y gnupg"; exit 1; }
 command -v docker >/dev/null || { err "ไม่มี docker"; exit 1; }
 
 # ── เข้าคิวบำรุงรักษาก่อนทำอะไรทั้งสิ้น ──────────────────────────────────────
-# รันตัวเองซ้ำใต้ flock (ไม่ใช้ exec เพราะยังอยากได้รหัสจบกลับมาแจ้งเตือน)
-# -E 75 = แยก "จับคิวไม่ได้" ออกจาก "งานข้างในล้มเหลว" ให้ชัด
+# ถือคิวผ่าน fd ในโปรเซสนี้เอง (ไม่ใช่รันตัวเองซ้ำใต้ `flock file cmd`) เพื่อให้
+# ปล่อยคิวได้ทันทีที่เลิกแตะเชน — รุ่นเดิมถือคิวจนอัปโหลด R2 เสร็จ (~8 นาที)
+# 2026-11-01 เชนหยุดตอน 19:19:56 แต่ watchdog ข้ามการตรวจทุกรอบจนคิวว่าง 19:27:53
+# จึงเพิ่งเห็นและ restart ตอน 19:28 · ตอนนี้คิวว่างตั้งแต่ขั้นที่ 4 จบ
 # เครื่องไหนไม่มี flock ก็ทำงานต่อแบบเดิม ดีกว่าไม่สำรองเลย (ธง BACKUP_LOCK
 # ยังกันอีกชั้น) — security/robustness control ที่ fail-closed ในงาน cron
 # = งานไม่เคยรันแล้วไม่มีใครรู้ ซึ่งแย่กว่าปัญหาที่มันกัน
-if command -v flock >/dev/null 2>&1 && [[ -z "${TPIX_BACKUP_FLOCKED:-}" ]]; then
-    export TPIX_BACKUP_FLOCKED=1
-    set +e
-    flock -w "$MAINT_LOCK_WAIT" -E 75 "$MAINT_LOCK" "$0" "$@"
-    FLOCK_RC=$?
-    set -e
-    if [[ "$FLOCK_RC" -eq 75 ]]; then
+MAINT_FD=""
+if command -v flock >/dev/null 2>&1; then
+    exec {MAINT_FD}>>"$MAINT_LOCK"
+    if ! flock -w "$MAINT_LOCK_WAIT" "$MAINT_FD"; then
         err "รอคิวบำรุงรักษาเกิน ${MAINT_LOCK_WAIT}s (มีงานอื่นถือคิวอยู่) — ข้ามรอบนี้"
         alert "backup_failed" "critical" \
             "สำรองข้อมูลเชนไม่ได้เริ่ม: รอคิวบำรุงรักษาเกิน ${MAINT_LOCK_WAIT}s"
+        exit 75
     fi
-    exit "$FLOCK_RC"
 fi
+
+# คืนเชนให้ watchdog: ลบธงสำรองข้อมูล + ปล่อยคิว · เรียกซ้ำได้ไม่เป็นไร
+release_chain() {
+    rm -f "$BACKUP_LOCK"
+    if [[ -n "$MAINT_FD" ]]; then
+        flock -u "$MAINT_FD" 2>/dev/null || true
+        exec {MAINT_FD}>&-
+        MAINT_FD=""
+    fi
+}
 
 block_number() {
     curl -s -m 5 -X POST -H 'Content-Type: application/json' \
@@ -168,7 +189,7 @@ cleanup() {
         docker start "$VALIDATOR" >/dev/null 2>&1 || alert "backup_failed" "critical" \
             "เปิด $VALIDATOR กลับไม่สำเร็จหลังสำรองข้อมูล — เชนเหลือ 3/4 ต้องเข้าไปดูด้วยมือทันที"
     fi
-    rm -f "$BACKUP_LOCK"
+    release_chain
 }
 trap cleanup EXIT
 
@@ -254,28 +275,38 @@ PARTIAL=""          # กลายเป็นไฟล์จริงแล้�
 chmod 600 "$ENCRYPTED"
 
 # ── 4. เปิด validator กลับ แล้วรอจนเชนเดินต่อจริง ──────────────────────────
+REJOIN_AT="$(hex_to_dec "$(block_number)")"
 if ! docker ps --format '{{.Names}}' | grep -qx "$VALIDATOR"; then
     log "เปิด $VALIDATOR กลับ"
     docker start "$VALIDATOR" >/dev/null 2>&1 || fail "เปิด $VALIDATOR กลับไม่สำเร็จ — ต้องเข้าไปดูด้วยมือทันที"
 fi
 VALIDATOR_STOPPED_BY_US=0
 
-log "รอให้ $VALIDATOR ตามบล็อกทัน"
+log "รอให้เชนเดินต่ออีก $RESUME_BLOCKS บล็อกจาก $REJOIN_AT (ภายใน ${RESUME_WAIT}s)"
 # ใช้ตัวแปรธงแทน `[[ ]] && err` ท้ายลูป เพราะ set -e จะฆ่าสคริปต์ทันที
 # ที่เงื่อนไขเป็นเท็จในรอบแรก (ซึ่งเป็นเรื่องปกติ ไม่ใช่ความผิดพลาด)
 CHAIN_RESUMED=0
-for _ in $(seq 1 30); do
+AFTER="$REJOIN_AT"
+for _ in $(seq 1 $(( (RESUME_WAIT + 1) / 2 ))); do
     sleep 2
     AFTER="$(hex_to_dec "$(block_number)")"
-    if [[ "$AFTER" -gt "$BEFORE" ]]; then
-        log "เชนเดินต่อปกติ บล็อก $BEFORE → $AFTER"
+    if [[ "$AFTER" -ge $(( REJOIN_AT + RESUME_BLOCKS )) ]]; then
+        log "เชนเดินต่อปกติ บล็อก $REJOIN_AT → $AFTER"
         CHAIN_RESUMED=1
         break
     fi
 done
 
+# งานของเราจบตรงนี้ — คืนเชนให้ watchdog ก่อนขั้นที่กินเวลาแต่ไม่แตะเชน
+release_chain
+
 if [[ "$CHAIN_RESUMED" -eq 0 ]]; then
-    fail "เชนไม่เดินต่อภายใน 60 วินาทีหลังเปิด $VALIDATOR กลับ — ต้องเข้าไปตรวจด้วยมือทันที"
+    # ไม่ fail: ไฟล์สำรองรอบนี้ดีอยู่และยังต้องส่งออกนอกเครื่อง · ไม่ restart เอง:
+    # watchdog เป็นเจ้าของการ restart (มีโควตากันวน) และจะเห็นในนาทีถัดไปเพราะคิวว่างแล้ว
+    # key chain_stalled ปิดเองด้วย heartbeat เมื่อเชนกลับมาปกติ
+    err "เชนไม่เดินต่อหลังเปิด $VALIDATOR กลับ (ค้างที่ $AFTER) — ปล่อยคิวให้ watchdog restart"
+    alert "chain_stalled" "critical" \
+        "เชนไม่เดินต่อหลังงานสำรองข้อมูลเปิด $VALIDATOR กลับ (ค้างที่บล็อก $AFTER) — ปล่อยคิวให้ watchdog restart แล้ว"
 fi
 
 # ── 5. ตรวจว่าไฟล์สำรองใช้ได้จริง (ไม่ใช่แค่มีไฟล์) ───────────────────────
