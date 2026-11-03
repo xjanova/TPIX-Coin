@@ -124,13 +124,26 @@ ntfy_push() {
 
 # ─── หลังบ้าน tpix.online — heartbeat + คาดแดง (no-op if URL/token not set) ───
 # สำคัญ: ต้องส่ง User-Agent (-A) เสมอ — Cloudflare WAF บล็อก request ไม่มี UA เป็น 403
-# ทุกตัวเป็น best-effort (|| true) — ระบบแจ้งเตือนล่มต้องไม่ทำให้ watchdog ล่มตาม
+# ทุกตัวเป็น best-effort (return 0 เสมอ) — ระบบแจ้งเตือนล่มต้องไม่ทำให้ watchdog ล่มตาม
+#
+# แต่ส่งไม่ถึงต้องลง log: เดิมทิ้ง error ของ curl เงียบ ๆ ตั้งแต่ 2026-10-24 หลังบ้านจึงขึ้น
+# heartbeat_missing (critical) วันละ 3-8 ครั้งทั้งที่ log นี้บอกเชนปกติทุกนาที แล้วไม่มีทาง
+# รู้ว่าหายเพราะ Cloudflare / timeout / เว็บช้า · จด http code + เวลา + IP ปลายทาง + error
+# ของ curl (ไม่มี header หรือ token หลุดลง log เพราะไม่ได้เก็บ header เลย)
 backend_post() {
     [ -n "$ALERT_URL" ] && [ -n "$ALERT_TOKEN" ] || return 0
-    curl -fsS -m 10 -A "tpix-watchdog/1.0 (${NODE_NAME})" \
+    local out rc code
+    out=$(curl -sS -m 10 -A "tpix-watchdog/1.0 (${NODE_NAME})" \
         -H "Authorization: Bearer ${ALERT_TOKEN}" \
         -H "Content-Type: application/json" \
-        -d "$2" "${ALERT_URL}$1" -o /dev/null 2>/dev/null || true
+        -w '%{http_code} %{time_total}s ip=%{remote_ip}' \
+        -d "$2" "${ALERT_URL}$1" -o /dev/null 2>&1)
+    rc=$?
+    code=${out##*$'\n'}; code=${code%% *}
+    if [ "$rc" -ne 0 ] || [ "${code:0:1}" != "2" ]; then
+        log "WARNING: ส่ง $1 เข้าหลังบ้านไม่สำเร็จ — curl_exit=$rc ${out//$'\n'/ | }"
+    fi
+    return 0
 }
 
 # heartbeat = "ทุก check ผ่าน" — ฝั่งหลังบ้านใช้ auto-resolve เหตุร้ายของ node นี้
