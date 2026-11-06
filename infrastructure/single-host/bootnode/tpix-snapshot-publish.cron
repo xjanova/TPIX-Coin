@@ -1,0 +1,6 @@
+# /etc/cron.d/tpix-snapshot-publish — snapshot ข้อมูลเชนสาธารณะจาก bootnode วันละครั้ง
+# 21:40 UTC (04:40 เวลาไทย): หลังรอบสำรอง validator 19:17 UTC จบ และคนใช้น้อยสุด
+# bootnode ดับราว 1-2 นาทีระหว่าง tar · ดู infrastructure/single-host/bootnode/RUNBOOK.md ขั้น 10
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+40 21 * * * root /usr/local/sbin/tpix-snapshot-publish >> /var/log/tpix-snapshot.log 2>&1
