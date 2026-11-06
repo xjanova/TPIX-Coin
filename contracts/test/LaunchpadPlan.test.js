@@ -45,6 +45,22 @@ describe("launchpad plan (scripts/lib/launchpad-plan.js)", function () {
         expect(L.lockedBps).to.be.gte(8_000n);
     });
 
+    it("the owner's decided dates and wallets (2026-11-06): sale 1 Dec 2026 10:00 → 1 Mar 2027, LP free 29 Feb 2028", function () {
+        const lp = idtc.launchpad;
+        const start = BigInt(Date.parse(lp.saleStart) / 1000);
+        expect(new Date(Number(start) * 1000).toISOString()).to.equal("2026-12-01T03:00:00.000Z");
+        expect(ethers.getAddress(lp.beneficiary)).to.equal(lp.beneficiary);
+        expect(ethers.getAddress(lp.projectTreasury)).to.equal(lp.projectTreasury);
+
+        const L = buildLaunch(idtc, opts({ saleStart: start, beneficiary: lp.beneficiary, projectTreasury: lp.projectTreasury, now: start - 86_400n }));
+        const iso = (t) => new Date(Number(t) * 1000).toISOString();
+        expect(iso(L.params.endTime)).to.equal("2027-03-01T03:00:00.000Z");
+        expect(iso(L.params.lpUnlockTime)).to.equal("2028-02-29T03:00:00.000Z");
+        expect(L.lockedBps).to.equal(8_484n);
+        expect(L.minPurchase).to.equal(10n ** 6n);
+        expect(L.maxPerWallet).to.equal(0n);
+    });
+
     it("SEED_USDT overrides the plan — 0 leaves the pool for the first purchase", function () {
         expect(buildLaunch(idtc, opts({ seedUsdt: "0" })).seedQuote).to.equal(0n);
         expect(() => buildLaunch(idtc, opts({ seedUsdt: "1.0000001" }))).to.throw(PlanError, /ทศนิยม/);

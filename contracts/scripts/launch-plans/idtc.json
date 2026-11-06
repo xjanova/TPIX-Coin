@@ -30,6 +30,10 @@
   },
   "launchpad": {
     "_doc": "เปิดขายผ่าน LaunchpadFactory (เงินขายเข้าพูลอัตโนมัติ) — อ่านโดย scripts/launchpad-create.js · ใช้แทน launch-token.js สำหรับ presale · พูล IDTC/USDT เปิดในธุรกรรมเดียวกันด้วย seedUsdt · พูล IDTC/TPIX ยังใช้ launch-pools.js (POOL_USDT=0)",
+    "_decided": "เจ้าของตัดสิน 2026-11-06: เปิดขาย 1 ธ.ค. 2569 10:00 น. (ปิด 1 มี.ค. 2570 10:00 · LP ปลด 29 ก.พ. 2571 10:00) · vesting และกระเป๋าโครงการ = 0x3da3…59AF · ขั้นต่ำ 1 USDT ไม่จำกัดต่อกระเป๋า · พูล IDTC/TPIX ไว้ทีหลัง",
+    "saleStart": "2026-12-01T10:00:00+07:00",
+    "beneficiary": "0x3da3776e0AB0F442c181aa031f47FA83696859AF",
+    "projectTreasury": "0x3da3776e0AB0F442c181aa031f47FA83696859AF",
     "saleCap": "100000000000",
     "feederReserve": "100000000000",
     "_reserveNote": "เหรียญที่จับคู่กับเงินขายเข้าพูล — ขายหมด 100B ที่ $0.0000015 = 150,000 USDT ต้องใช้ IDTC ฝั่งพูล 100B พอดี",

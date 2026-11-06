@@ -46,12 +46,20 @@ $env:LAUNCH_PLAN = $Plan
 
 # ─── 1) ค่าเปิดขาย ─────────────────────────────────────────────────────────
 Say "ขั้นที่ 1/5  ค่าเปิดขาย $symbol" Yellow
-Say "  วันเวลาเปิดขาย ต้องมีเขตเวลา เช่น 2026-11-20T10:00:00+07:00 (vesting เริ่มนับวันเดียวกัน)" DarkGray
-$env:SALE_START = (Read-Host "  SALE_START").Trim()
-Say "  กระเป๋าที่รับเหรียญ vesting เมื่อปลดล็อก (แนะนำ multisig)" DarkGray
-$env:BENEFICIARY = (Read-Host "  BENEFICIARY").Trim()
+Say "  ค่าในวงเล็บ [...] คือค่าที่ตัดสินไว้ในแผน — กด Enter เพื่อใช้ หรือพิมพ์ค่าใหม่" DarkGray
+function Ask($name, $default) {
+    $shown = if ($default) { " [$default]" } else { "" }
+    $v = (Read-Host "  $name$shown").Trim()
+    if (-not $v) { $v = "$default" }
+    return $v
+}
+Say "  วันเวลาเปิดขาย ต้องมีเขตเวลา เช่น 2026-12-01T10:00:00+07:00 (vesting เริ่มนับวันเดียวกัน)" DarkGray
+$env:SALE_START = Ask 'SALE_START' $planJson.launchpad.saleStart
+Say "  กระเป๋าที่รับเหรียญ vesting เมื่อปลดล็อก" DarkGray
+$env:BENEFICIARY = Ask 'BENEFICIARY' $planJson.launchpad.beneficiary
 Say "  กระเป๋าโครงการ (แผนนี้ส่งเงินขายเข้าพูล $([int]$planJson.launchpad.poolShareBps / 100)% — ต้องมีที่อยู่ไว้ แม้ไม่ได้รับอะไร)" DarkGray
-$env:PROJECT_TREASURY = (Read-Host "  PROJECT_TREASURY").Trim()
+$env:PROJECT_TREASURY = Ask 'PROJECT_TREASURY' $planJson.launchpad.projectTreasury
+if (-not $env:SALE_START) { Say "ต้องใส่วันเปิดขาย" Red; Clear-LaunchEnv; exit 1 }
 foreach ($n in 'BENEFICIARY', 'PROJECT_TREASURY') {
     if ((Get-Item "Env:$n").Value -notmatch '^0x[0-9a-fA-F]{40}$') { Say "$n ไม่ใช่ที่อยู่กระเป๋า" Red; Clear-LaunchEnv; exit 1 }
 }
