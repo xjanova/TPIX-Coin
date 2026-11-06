@@ -22,6 +22,8 @@
 | `tpix-node-peers` | `/usr/local/sbin/tpix-node-peers` (0755) |
 | `tpix-node-peers.cron` | `/etc/cron.d/tpix-node-peers` (0644) |
 | `tpix-node-peers.test.js` | ไม่ติดตั้ง — `node --test infrastructure/single-host/bootnode/tpix-node-peers.test.js` |
+| `tpix-snapshot-publish` | `/usr/local/sbin/tpix-snapshot-publish` (0755) — ขั้น 10 |
+| `tpix-snapshot-publish.cron` | `/etc/cron.d/tpix-snapshot-publish` (0644) — ขั้น 10 |
 
 **ต่างจากข้อเสนอเดิมจุดเดียว:** `--max-inbound-peers 150` (เดิม 48) เพราะทุกโหนดที่จะได้รางวัล
 ต้องต่อ bootnode นี้ค้างไว้ · เกิน ~150 โหนดให้เพิ่ม bootnode ตัวที่สอง (ข้อเสนอ §4.6)
@@ -153,6 +155,60 @@ bootnode ไม่รัน/ถามไม่ได้ = **ไม่ส่ง�
 
 เพิ่มหนึ่งบรรทัดใน `single-host/README.md` และ `CHAIN_HOST`: มี bootnode สาธารณะ ไม่ใช่ validator
 สวิตช์ฉุกเฉินคือ `docker stop tpix-bootnode` · cron `tpix-node-peers` ส่งรายชื่อ peer ให้เว็บ
+
+## ขั้น 10 — snapshot ข้อมูลเชนสาธารณะ (โหนดใหม่ไม่ต้องซิงก์จากบล็อก 0)
+
+polygon-edge 0.9 ซิงก์ ~10-20 บล็อก/วิ → เชน 3.8 ล้านบล็อก = โหนดใหม่รอ 2-5 วัน
+แอปมาสเตอร์โหนด (รุ่นที่มีเกจซิงก์) เสนอปุ่ม "โหลด snapshot" เมื่อยังห่างหัวเชน ≥ 50,000 บล็อก
+
+**ห้ามใช้ไฟล์สำรองคืนละครั้ง (`tpix-backup-chain` → bucket `tpix-chain-backup`) แทนเด็ดขาด** —
+ไฟล์นั้นคือโฟลเดอร์ validator-4 ทั้งก้อน รวม `validator.key` / `validator-bls.key`
+snapshot นี้ทำจาก **bootnode** (ไม่ใช่ validator) และเอาแค่ `blockchain/` + `trie/` · สคริปต์ปฏิเสธ bucket `tpix-chain-backup` เอง
+
+**ความปลอดภัยฝั่งแอป:** ตรวจลายเซ็น ed25519 ของ manifest ด้วย public key ที่ฝังในแอป (`electron/snapshot.js` `PUBLIC_KEYS`)
+→ ขนาด + sha256 ของไฟล์ → แตก tar เฉพาะไฟล์ธรรมดาใต้ `blockchain/` `trie/` → สลับข้อมูลโดยไม่แตะ `consensus/` `libp2p/`
+→ เริ่มโหนดแล้วเทียบ block hash ที่ความสูงของ snapshot กับ manifest และกับ rpc1 · ใครยึด bucket ได้ก็ปลอม snapshot ไม่ได้ถ้าไม่มีกุญแจลับ
+
+### 10.1 เจ้าของทำใน Cloudflare (ครั้งเดียว)
+1. R2 → สร้าง bucket **`tpix-chain-snapshot`** (แยกจาก `tpix-chain-backup`)
+2. bucket นั้น → Settings → Custom domain **`snapshot.tpix.online`** (เปิดอ่านสาธารณะผ่านโดเมนนี้เท่านั้น)
+3. R2 → Manage API tokens → **Object Read & Write เฉพาะ bucket `tpix-chain-snapshot`** (ห้ามใช้ token ของ bucket สำรอง)
+
+### 10.2 บนเครื่องเชน
+```bash
+sudo apt-get install -y pigz jq rclone          # tar/openssl/curl มีอยู่แล้ว
+sudo install -m 0755 infrastructure/single-host/bootnode/tpix-snapshot-publish /usr/local/sbin/
+sudo /usr/local/sbin/tpix-snapshot-publish keygen   # ครั้งเดียว → /etc/tpix-snapshot/signing.pem (0600)
+sudo /usr/local/sbin/tpix-snapshot-publish pubkey   # ต้องตรงกับ PUBLIC_KEYS ในแอป
+```
+กุญแจที่ใช้อยู่ (สร้าง 2026-11-06): `MCowBQYDK2VwAyEAUM7UdvFYqZaeku+Ioopemaa4beSahQSmNbcUl+S7lWs=`
+
+`/etc/tpix-snapshot.env` (0600 root) — ใส่ token ผ่าน ssh ตรงเท่านั้น ห้ามผ่านแชท/brain:
+```
+TPIX_SNAPSHOT_R2_ACCOUNT_ID=…
+TPIX_SNAPSHOT_R2_ACCESS_KEY_ID=…
+TPIX_SNAPSHOT_R2_SECRET_ACCESS_KEY=…
+TPIX_SNAPSHOT_BUCKET=tpix-chain-snapshot
+TPIX_SNAPSHOT_PUBLIC_BASE=https://snapshot.tpix.online
+```
+
+### 10.3 รอบแรก แล้วค่อยตั้ง cron
+```bash
+sudo /usr/local/sbin/tpix-snapshot-publish --local   # ทำ+เซ็น ไม่อัปโหลด (bootnode ดับ ~1-2 นาที)
+sudo /usr/local/sbin/tpix-snapshot-publish           # อัปโหลดจริง แล้วอ่านกลับจาก PUBLIC_BASE
+curl -s https://snapshot.tpix.online/latest.json | jq -r .key_id
+sudo install -m 0644 infrastructure/single-host/bootnode/tpix-snapshot-publish.cron /etc/cron.d/tpix-snapshot-publish
+```
+cron 21:40 UTC (04:40 ไทย) — หลังสำรองคืนละครั้ง (19:17 UTC) · สคริปต์รอ flag `/run/tpix-backup.lock` เองถ้ายังสำรองไม่เสร็จ (สูงสุด 30 นาที)
+และไม่ทำถ้า bootnode ห่าง validator เกิน 20 บล็อก หรือ genesis / block hash ไม่ตรง validator
+
+### 10.4 กุญแจเซ็น
+- **สำรอง `/etc/tpix-snapshot/signing.pem` เก็บส่วนตัว** (ไม่ใช่ R2 สาธารณะ) — หายแล้วต้องปล่อยแอปรุ่นใหม่ที่ฝัง key ใหม่
+- หมุนกุญแจ: `keygen` ตัวใหม่ → เพิ่ม public key ใหม่ใน `PUBLIC_KEYS` (เก็บตัวเก่าไว้หนึ่งรุ่น) → ปล่อยแอป → ค่อยเริ่มเซ็นด้วยตัวใหม่
+- กุญแจรั่ว: ลบ `latest.json` ออกจาก bucket ทันที (แอปจะไม่เสนอ snapshot) แล้วปล่อยแอปที่ถอด key เก่า
+
+**ถอยกลับ:** `sudo rm /etc/cron.d/tpix-snapshot-publish` + ลบ `latest.json` ใน bucket — โหนดใหม่กลับไปซิงก์จากบล็อกเหมือนเดิม ไม่มีอะไรพัง
+**เฝ้าดู:** `sudo tail /var/log/tpix-snapshot.log`
 
 ---
 

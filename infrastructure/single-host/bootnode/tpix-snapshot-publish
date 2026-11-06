@@ -1,0 +1,220 @@
+#!/bin/bash
+# ============================================================
+# tpix-snapshot-publish — snapshot ข้อมูลเชนสาธารณะ ให้โหนดใหม่โหลดแทนการซิงก์จากบล็อก 0
+#
+# ทำไมต้องมี: polygon-edge 0.9 ซิงก์ ~10-20 บล็อก/วิ เชนสูง 3.8 ล้านบล็อก = โหนดใหม่รอ 2-5 วัน
+# ทำไมไม่ใช้ไฟล์สำรองคืนละครั้ง (tpix-backup-chain → R2): ไฟล์นั้นคือโฟลเดอร์ validator-4 ทั้งก้อน
+#   รวม validator.key / validator-bls.key — แจกสาธารณะ = ใครก็เซ็นบล็อกแทน validator ได้
+#   ไฟล์นี้ทำจาก "bootnode" ซึ่งไม่ใช่ validator และเอาแค่ blockchain/ + trie/ (ไม่มี consensus/ libp2p/)
+#
+# ลำดับ (สั้นที่สุดที่ทำได้ — bootnode ดับ = โหนดใหม่ต่อเครือข่ายไม่ได้ช่วงนั้น):
+#   1. ตรวจ bootnode ทันหัวเชน (ห่าง validator ≤ MAX_LAG บล็อก) — ไม่ทัน = ไม่ทำ (ไม่แจก snapshot เก่าครึ่ง ๆ)
+#   2. docker stop bootnode (LevelDB ต้องปิดไฟล์ก่อน — tar ตอนมีคนเขียน = ไฟล์เสีย)
+#   3. tar ustar (blockchain trie) | pigz → ไฟล์ใน STAGING
+#   4. docker start bootnode ทันที (trap เปิดคืนเสมอ แม้สคริปต์ตาย)
+#   5. sha256 + manifest → เซ็น ed25519 ด้วยกุญแจบนเครื่องนี้ (กุญแจลับไม่ออกจากเครื่อง)
+#   6. อัปโหลด archive ก่อน แล้วค่อย latest.json (ตัวชี้) — โหลดกลางทางจะไม่เจอตัวชี้ไปไฟล์ที่ยังไม่ครบ
+#   7. ลบ archive เก่า เก็บแค่ KEEP ไฟล์ล่าสุด (bucket นี้สาธารณะ ไม่ใช่ที่สำรอง — ลบได้)
+#
+# ใช้:  tpix-snapshot-publish            ทำ + อัปโหลด (cron รายวัน)
+#       tpix-snapshot-publish --local    ทำ + เซ็น เก็บไว้ใน STAGING ไม่อัปโหลด (ทดสอบ)
+#       tpix-snapshot-publish keygen     สร้างกุญแจเซ็น (ครั้งเดียว) แล้วพิมพ์ public key ไปฝังในแอป
+#       tpix-snapshot-publish pubkey     พิมพ์ public key
+#
+# ค่าตั้ง: /etc/tpix-snapshot.env (0600 root) — token R2 ตัวนี้ต้องเขียนได้ "เฉพาะ bucket snapshot"
+#   (ห้ามใช้ token ของ bucket สำรอง tpix-chain-backup)
+#   TPIX_SNAPSHOT_R2_ACCOUNT_ID, TPIX_SNAPSHOT_R2_ACCESS_KEY_ID, TPIX_SNAPSHOT_R2_SECRET_ACCESS_KEY
+#   TPIX_SNAPSHOT_BUCKET        (ค่าเริ่มต้น tpix-chain-snapshot)
+#   TPIX_SNAPSHOT_PUBLIC_BASE   เช่น https://snapshot.tpix.online — ใช้อ่านกลับยืนยันว่าเปิดสาธารณะได้จริง
+# ============================================================
+set -euo pipefail
+
+ENV_FILE="${TPIX_SNAPSHOT_ENV:-/etc/tpix-snapshot.env}"
+if [ -f "$ENV_FILE" ]; then
+    # shellcheck disable=SC1090
+    set -a; . "$ENV_FILE"; set +a
+fi
+
+CONTAINER="${TPIX_BOOTNODE_CONTAINER:-tpix-bootnode}"
+DATA_DIR="${TPIX_BOOTNODE_DATA:-/opt/tpix-bootnode/data}"
+BOOT_RPC="${TPIX_BOOTNODE_RPC:-http://127.0.0.1:8549}"
+REF_RPC="${TPIX_REFERENCE_RPC:-http://127.0.0.1:8545}"   # validator-1 (เทียบว่า bootnode ทันหัวเชน)
+CHAIN_ID=4289
+MAX_LAG="${TPIX_SNAPSHOT_MAX_LAG:-20}"
+STAGING="${TPIX_SNAPSHOT_STAGING:-/var/lib/tpix-snapshot}"
+KEY_DIR="${TPIX_SNAPSHOT_KEY_DIR:-/etc/tpix-snapshot}"
+KEY="$KEY_DIR/signing.pem"
+BUCKET="${TPIX_SNAPSHOT_BUCKET:-tpix-chain-snapshot}"
+PUBLIC_BASE="${TPIX_SNAPSHOT_PUBLIC_BASE:-}"
+KEEP="${TPIX_SNAPSHOT_KEEP:-2}"
+LOCK="${TPIX_SNAPSHOT_LOCK:-/run/tpix-snapshot.lock}"
+BACKUP_LOCK="${TPIX_BACKUP_LOCK:-/run/tpix-backup.lock}"
+LOG="${TPIX_SNAPSHOT_LOG:-/var/log/tpix-snapshot.log}"
+DOCKER="${DOCKER:-docker}"
+
+# cron ส่ง stdout/stderr ของคำสั่งย่อย (rclone, tar) เข้า $LOG เอง — log() เขียนลงไฟล์ และขึ้นจอเฉพาะตอนคนรันเอง
+log() { local l; l="$(date -u +%FT%TZ) $*"; echo "$l" >> "$LOG"; [ -t 2 ] && echo "$l" >&2; return 0; }
+fail() { log "FAIL: $*"; exit 1; }
+
+pubkey_pem() { openssl pkey -in "$KEY" -pubout; }
+
+case "${1:-publish}" in
+    keygen)
+        install -d -m 0700 "$KEY_DIR"
+        [ -f "$KEY" ] && { echo "มีกุญแจอยู่แล้ว: $KEY (ไม่สร้างทับ — แอปที่ฝัง public key เดิมไว้จะตรวจไม่ผ่าน)" >&2; pubkey_pem; exit 0; }
+        ( umask 077; openssl genpkey -algorithm ed25519 -out "$KEY" )
+        chmod 0600 "$KEY"
+        echo "สร้างกุญแจแล้ว — ฝัง public key นี้ใน TPIX-Masternode electron/snapshot.js:" >&2
+        pubkey_pem
+        exit 0 ;;
+    pubkey) pubkey_pem; exit 0 ;;
+    publish|--local) ;;
+    *) echo "usage: $0 [publish|--local|keygen|pubkey]" >&2; exit 2 ;;
+esac
+MODE="${1:-publish}"
+
+[ "$(id -u)" -eq 0 ] || fail "ต้องรันด้วย root (อ่าน $DATA_DIR และสั่ง docker)"
+[ -f "$KEY" ] || fail "ไม่มีกุญแจเซ็น $KEY — รัน '$0 keygen' ก่อน"
+for c in tar pigz sha256sum openssl curl jq flock du base64 stat; do command -v "$c" >/dev/null || fail "ไม่มีคำสั่ง $c"; done
+[[ "$KEEP" =~ ^[1-9][0-9]?$ ]] || fail "TPIX_SNAPSHOT_KEEP ไม่ถูกต้อง"
+[[ "$BUCKET" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] || fail "ชื่อ bucket ไม่ถูกต้อง"
+[ "$BUCKET" != "tpix-chain-backup" ] || fail "ห้ามใช้ bucket สำรอง (ส่วนตัว) เป็นที่แจก snapshot"
+
+# ── คิว: ไม่ทำซ้อนตัวเอง และไม่ทำพร้อมรอบสำรอง validator (IO ดิสก์เดียวกัน + เครื่องเดียวกัน) ──
+exec 9>"$LOCK"
+flock -n 9 || { log "มีรอบ snapshot อื่นทำอยู่ — ข้าม"; exit 0; }
+# tpix-backup-chain เขียนธง $BACKUP_LOCK (เวลาเริ่ม) แล้วลบตอนจบ — รอให้จบก่อน ไม่เกิน 30 นาที
+# ธงอายุเกิน 30 นาที = ซากจากรอบที่ตาย (watchdog ใช้เกณฑ์เดียวกัน) ไม่ต้องรอ
+for _ in $(seq 1 180); do
+    [ -f "$BACKUP_LOCK" ] || break
+    age=$(( $(date +%s) - $(stat -c %Y "$BACKUP_LOCK" 2>/dev/null || echo 0) ))
+    [ "$age" -lt 1800 ] || break
+    sleep 10
+done
+[ ! -f "$BACKUP_LOCK" ] || [ "$(( $(date +%s) - $(stat -c %Y "$BACKUP_LOCK" 2>/dev/null || echo 0) ))" -ge 1800 ] \
+    || fail "รอบสำรอง validator ยังไม่จบใน 30 นาที — ข้ามรอบนี้"
+
+rpc() { # url method params → result (ว่าง = ไม่ได้)
+    curl -sS --max-time 8 -H 'Content-Type: application/json' \
+        --data "{\"jsonrpc\":\"2.0\",\"method\":\"$2\",\"params\":${3:-[]},\"id\":1}" "$1" 2>/dev/null | jq -r '.result // empty' 2>/dev/null || true
+}
+block_hash() { rpc "$1" eth_getBlockByNumber "[\"$(printf '0x%x' "$2")\",false]" | jq -r '.hash // empty' 2>/dev/null || true; }
+
+# ── 1. bootnode ต้องอยู่เชนเดียวกับ validator และทันหัวเชน ──────────────────────
+[ "$($DOCKER inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)" = "true" ] || fail "$CONTAINER ไม่ได้รัน"
+[ "$(rpc "$BOOT_RPC" eth_chainId)" = "$(printf '0x%x' $CHAIN_ID)" ] || fail "bootnode ไม่ใช่เชน $CHAIN_ID"
+GENESIS="$(block_hash "$BOOT_RPC" 0)"
+[ -n "$GENESIS" ] && [ "$GENESIS" = "$(block_hash "$REF_RPC" 0)" ] || fail "genesis ของ bootnode ไม่ตรงกับ validator"
+BOOT_HEAD_HEX="$(rpc "$BOOT_RPC" eth_blockNumber)"; REF_HEAD_HEX="$(rpc "$REF_RPC" eth_blockNumber)"
+[[ "$BOOT_HEAD_HEX" =~ ^0x[0-9a-f]+$ && "$REF_HEAD_HEX" =~ ^0x[0-9a-f]+$ ]] || fail "อ่านหัวเชนไม่ได้"
+BOOT_HEAD=$((BOOT_HEAD_HEX)); REF_HEAD=$((REF_HEAD_HEX))
+LAG=$((REF_HEAD - BOOT_HEAD))
+[ "$LAG" -le "$MAX_LAG" ] || fail "bootnode ตามหลัง validator $LAG บล็อก (เกิน $MAX_LAG) — ไม่ทำ snapshot"
+HEIGHT_HASH="$(block_hash "$BOOT_RPC" "$BOOT_HEAD")"
+[ "$HEIGHT_HASH" = "$(block_hash "$REF_RPC" "$BOOT_HEAD")" ] || fail "บล็อก $BOOT_HEAD ของ bootnode ไม่ตรงกับ validator"
+log "bootnode ทันหัวเชน: บล็อก $BOOT_HEAD (validator $REF_HEAD) genesis $GENESIS"
+
+install -d -m 0755 "$STAGING"
+FREE_KB="$(df -Pk "$STAGING" | awk 'NR==2{print $4}')"
+USED_KB="$(du -sk "$DATA_DIR/blockchain" "$DATA_DIR/trie" | awk '{s+=$1} END{print s}')"
+[ "$FREE_KB" -gt $((USED_KB * 2)) ] || fail "ที่ว่างใน $STAGING ไม่พอ (ว่าง ${FREE_KB}KB ต้อง > $((USED_KB * 2))KB)"
+
+STAMP="$(date -u +%Y%m%d-%H%M%S)"
+NAME="tpix-chain-snapshot-${STAMP}-h${BOOT_HEAD}.tar.gz"
+ARCHIVE="$STAGING/$NAME"
+PART="$ARCHIVE.part"
+
+# ── 2-4. หยุด bootnode → tar → เปิดคืน ──────────────────────────────────────────
+STOPPED_BY_US=0
+cleanup() {
+    rm -f "$PART"
+    if [ "$STOPPED_BY_US" -eq 1 ] && [ "$($DOCKER inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)" != "true" ]; then
+        log "เปิด $CONTAINER คืน"
+        $DOCKER start "$CONTAINER" >/dev/null 2>&1 || log "CRITICAL: เปิด $CONTAINER คืนไม่สำเร็จ — โหนดใหม่ต่อเครือข่ายไม่ได้ ต้องเข้าไปดูทันที"
+    fi
+}
+trap cleanup EXIT
+
+T0=$(date +%s)
+STOPPED_BY_US=1
+$DOCKER stop -t 30 "$CONTAINER" >/dev/null
+[ "$($DOCKER inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)" != "true" ] || fail "$CONTAINER ยังไม่หยุด — ไม่ tar ข้อมูลที่ยังมีคนเขียนอยู่"
+UNPACKED=$(du -sb "$DATA_DIR/blockchain" "$DATA_DIR/trie" | awk '{s+=$1} END{print s}')
+# ustar: ชื่อไฟล์สั้น ไม่มี PAX/GNU extension — ตัวแตกไฟล์ในแอปรองรับแค่ ustar ธรรมดาโดยตั้งใจ
+# --owner/--group 0: ไม่แจก uid ของเครื่องนี้ · ไม่มี symlink ในข้อมูล LevelDB อยู่แล้ว (--hard-dereference กันไว้)
+tar --format=ustar --owner=0 --group=0 --numeric-owner --hard-dereference \
+    -C "$DATA_DIR" -cf - blockchain trie | pigz -6 > "$PART"
+$DOCKER start "$CONTAINER" >/dev/null
+STOPPED_BY_US=0
+log "bootnode ดับ $(( $(date +%s) - T0 )) วินาที (tar เสร็จ เปิดคืนแล้ว)"
+
+mv "$PART" "$ARCHIVE"
+SIZE=$(stat -c %s "$ARCHIVE")
+SHA=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+pigz -t "$ARCHIVE" || fail "ไฟล์บีบอัดเสีย"
+
+# ── 5. manifest + ลายเซ็น ─────────────────────────────────────────────────────
+# height = หัวเชนของ bootnode "ก่อนหยุด" — ในไฟล์อาจมีมากกว่านี้ 1-2 บล็อก (ระหว่างสั่งหยุด)
+# แอปจึงตรวจซ้ำหลังเปิดโหนด: hash ของบล็อกหัวในเครื่องต้องตรงกับเครือข่าย
+MANIFEST="$STAGING/$NAME.manifest.json"
+jq -cn --argjson chain "$CHAIN_ID" --arg genesis "$GENESIS" --arg created "$(date -u +%FT%TZ)" \
+    --argjson height "$BOOT_HEAD" --arg hash "$HEIGHT_HASH" --arg archive "$NAME" \
+    --argjson size "$SIZE" --arg sha "$SHA" --argjson unpacked "$UNPACKED" \
+    '{format:1, chain_id:$chain, genesis_hash:$genesis, created_at:$created, height:$height, block_hash:$hash,
+      archive:$archive, size:$size, sha256:$sha, unpacked_size:$unpacked, contents:["blockchain","trie"],
+      client:"polygon-edge 0.9.0"}' > "$MANIFEST"
+SIG="$STAGING/$NAME.sig"
+openssl pkeyutl -sign -inkey "$KEY" -rawin -in "$MANIFEST" -out "$SIG"
+openssl pkeyutl -verify -pubin -inkey <(pubkey_pem) -rawin -in "$MANIFEST" -sigfile "$SIG" >/dev/null \
+    || fail "ตรวจลายเซ็นตัวเองไม่ผ่าน"
+KEY_ID=$(pubkey_pem | openssl pkey -pubin -outform DER | sha256sum | cut -c1-16)
+LATEST="$STAGING/latest.json"
+jq -cn --arg m "$(base64 -w0 "$MANIFEST")" --arg s "$(base64 -w0 "$SIG")" --arg k "$KEY_ID" \
+    '{manifest:$m, signature:$s, key_id:$k}' > "$LATEST"
+log "snapshot พร้อม: $NAME ($SIZE ไบต์, sha256 $SHA, บล็อก $BOOT_HEAD)"
+
+if [ "$MODE" = "--local" ]; then
+    log "--local: ไม่อัปโหลด เก็บไว้ที่ $STAGING"
+    exit 0
+fi
+
+# ── 6. อัปโหลด: archive ก่อน ตัวชี้ทีหลัง ──────────────────────────────────────
+for v in TPIX_SNAPSHOT_R2_ACCOUNT_ID TPIX_SNAPSHOT_R2_ACCESS_KEY_ID TPIX_SNAPSHOT_R2_SECRET_ACCESS_KEY; do
+    [ -n "${!v:-}" ] || fail "ไม่ได้ตั้ง $v ใน $ENV_FILE"
+done
+[[ "$TPIX_SNAPSHOT_R2_ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]] || fail "TPIX_SNAPSHOT_R2_ACCOUNT_ID ไม่ถูกต้อง"
+command -v rclone >/dev/null || fail "ไม่มี rclone"
+export RCLONE_CONFIG_SNAP_TYPE=s3 RCLONE_CONFIG_SNAP_PROVIDER=Cloudflare
+export RCLONE_CONFIG_SNAP_ACCESS_KEY_ID="$TPIX_SNAPSHOT_R2_ACCESS_KEY_ID"
+export RCLONE_CONFIG_SNAP_SECRET_ACCESS_KEY="$TPIX_SNAPSHOT_R2_SECRET_ACCESS_KEY"
+export RCLONE_CONFIG_SNAP_ENDPOINT="https://${TPIX_SNAPSHOT_R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+export RCLONE_CONFIG_SNAP_ACL='' RCLONE_S3_NO_CHECK_BUCKET=true
+R=(--retries 3 --low-level-retries 5 --s3-no-head)
+
+rclone copyto "$ARCHIVE" "SNAP:$BUCKET/$NAME" "${R[@]}" \
+    --header-upload "Cache-Control: public, max-age=31536000, immutable" || fail "อัปโหลด archive ไม่สำเร็จ"
+REMOTE_SIZE=$(rclone lsjson "SNAP:$BUCKET/$NAME" --stat 2>/dev/null | jq -r '.Size // empty')
+[ "$REMOTE_SIZE" = "$SIZE" ] || fail "ขนาดบน R2 ($REMOTE_SIZE) ไม่ตรง ($SIZE) — ไม่ประกาศตัวชี้"
+rclone copyto "$LATEST" "SNAP:$BUCKET/latest.json" "${R[@]}" \
+    --header-upload "Cache-Control: no-cache, max-age=0" --header-upload "Content-Type: application/json" \
+    || fail "อัปโหลด latest.json ไม่สำเร็จ"
+log "อัปโหลดแล้ว: $NAME + latest.json"
+
+if [ -n "$PUBLIC_BASE" ]; then
+    got="$(curl -fsS --max-time 20 "${PUBLIC_BASE%/}/latest.json?t=$STAMP" | jq -r '.manifest // empty' || true)"
+    [ "$got" = "$(base64 -w0 "$MANIFEST")" ] || log "WARN: อ่าน ${PUBLIC_BASE%/}/latest.json กลับมาไม่ตรง (โดเมนสาธารณะ/แคชยังไม่พร้อม?)"
+    code="$(curl -sS -o /dev/null -w '%{http_code}' -r 0-0 --max-time 20 "${PUBLIC_BASE%/}/$NAME" || true)"
+    [ "$code" = "206" ] || [ "$code" = "200" ] || log "WARN: ${PUBLIC_BASE%/}/$NAME ตอบ $code (ต้องรองรับ Range เพื่อโหลดต่อได้)"
+fi
+
+# ── 7. เก็บแค่ KEEP ไฟล์ล่าสุด (ตัวที่ latest.json ชี้ไม่มีทางถูกลบ — เป็นตัวใหม่สุดเสมอ) ──
+mapfile -t OLD < <(rclone lsf "SNAP:$BUCKET" --include 'tpix-chain-snapshot-*.tar.gz' 2>/dev/null | sort -r | tail -n +$((KEEP + 1)))
+for f in "${OLD[@]}"; do
+    [ "$f" != "$NAME" ] || continue
+    rclone deletefile "SNAP:$BUCKET/$f" "${R[@]}" && log "ลบ snapshot เก่า $f" || log "WARN: ลบ $f ไม่สำเร็จ"
+done
+
+# ไฟล์ในเครื่องไม่ต้องเก็บ — ของจริงอยู่บน R2 แล้ว (เก็บแค่ manifest ไว้ไล่ย้อนหลัง)
+rm -f "$ARCHIVE" "$SIG"
+find "$STAGING" -maxdepth 1 -name 'tpix-chain-snapshot-*.manifest.json' -mtime +14 -delete
+log "เสร็จ"
