@@ -3,14 +3,17 @@
  *
  *   - one createLaunch: sale, feeder, vesting, and the pool opened at exactly the sale price, LP held by the feeder
  *   - purchases feed the pool at its own ratio; project share split once (never re-split on leftovers)
- *   - the band: a pushed pool price stops permissionless feeds; only the owner may feed against a stated price
+ *   - the band: a pushed pool price stops every feed (owner included) until arbitrage brings it back
  *   - a pair created first at a bad price blocks the launch; donated balances in an empty pair are skimmed
- *   - locks: LP until lpUnlockTime, reserve until the sale ends; protected tokens cannot be "recovered"
+ *   - anti-rug: only Token Factory ERC20V2 tokens with mint / pause / blacklist / auto-burn off; LP ≥ 180 days;
+ *     ≥ 50% of proceeds to the pool; ≥ 80% of supply in sale + reserve + vesting still locked at LP unlock
+ *   - locks: LP, unpaired reserve, unsold sale tokens and unpaired proceeds all stay until lpUnlockTime
  *   - holders can sell back into the pool right after a feed
  */
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time, loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
+const { deployTokenFactory } = require("./helpers/deployTokenFactory");
 
 const WTPIX_FQN = "src/sale/WTPIX_ERC20.sol:WTPIX";
 const E18 = 10n ** 18n;
@@ -20,6 +23,7 @@ const NUM = 2n * E18; // tokens (wei) per micro-USDT = 2e18 / 3  →  $0.0000015
 const DEN = 3n;
 const DAY = 86_400n;
 const MONTH = 2_629_800n;
+// mintable, burnable, pausable, blacklist, mintCap, autoBurn, autoBurnRateBps, burnFloor
 const STANDARD = [false, false, false, false, 0, false, 0, 0];
 
 const TRANCHES = [
@@ -29,7 +33,18 @@ const TRANCHES = [
     { amount: 165n * B, cliffPeriods: 48, releasePeriods: 12 },
 ];
 
+/** no vesting: the sale + reserve alone must then hold ≥ 80% of the 1.1T supply */
+const BIG_SALE = { saleCap: 500n * B, feederReserve: 400n * B };
+
 describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
+    async function createToken(tokenFactory, owner, flags = STANDARD, supply = 1_100n * B) {
+        const tx = await tokenFactory.createERC20V2("Invest Energy-Development Coin", "IDTC", 18, supply, owner, ...flags);
+        const rc = await tx.wait();
+        const ev = rc.logs.map((l) => { try { return tokenFactory.interface.parseLog(l); } catch { return null; } })
+            .find((e) => e && e.name === "TokenCreated");
+        return ethers.getContractAt("FactoryERC20V2", ev.args.tokenAddress);
+    }
+
     async function fixture() {
         const [deployer, creator, buyer, attacker, project] = await ethers.getSigners();
         const wtpix = await (await ethers.getContractFactory(WTPIX_FQN)).deploy();
@@ -39,21 +54,21 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             await dexFactory.getAddress(),
             await wtpix.getAddress()
         );
+        const { tokenFactory } = await deployTokenFactory();
         const vd = await (await ethers.getContractFactory("LaunchVestingDeployer")).deploy();
         const lf = await (await ethers.getContractFactory("LaunchpadFactory")).deploy(
             await usdt.getAddress(),
             await router.getAddress(),
-            await vd.getAddress()
+            await vd.getAddress(),
+            await tokenFactory.getAddress()
         );
-        const token = await (await ethers.getContractFactory("FactoryERC20V2")).deploy(
-            "Invest Energy-Development Coin", "IDTC", 18, 1_100n * B, creator.address, ...STANDARD
-        );
+        const token = await createToken(tokenFactory, creator.address);
 
         await usdt.setBridge(deployer.address, true);
         for (const s of [creator, buyer, attacker]) await usdt.bridgeMint(s.address, 1_000_000n * USDT, ethers.id(`seed-${s.address}`));
         await usdt.setBridge(deployer.address, false);
 
-        return { deployer, creator, buyer, attacker, project, usdt, dexFactory, router, lf, token };
+        return { deployer, creator, buyer, attacker, project, usdt, dexFactory, router, lf, token, tokenFactory };
     }
 
     async function params(ctx, over = {}) {
@@ -84,13 +99,18 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
 
     const NO_VESTING = { beneficiary: ethers.ZeroAddress, start: 0, period: 0, tranches: [], label: "" };
 
+    async function approveFor(ctx, p, v) {
+        const lfAddr = await ctx.lf.getAddress();
+        const vestTotal = (v.tranches || []).reduce((a, t) => a + t.amount, 0n);
+        const token = await ethers.getContractAt("IERC20", p.token);
+        await token.connect(ctx.creator).approve(lfAddr, p.saleCap + p.feederReserve + vestTotal);
+        if (p.seedQuote > 0n) await ctx.usdt.connect(ctx.creator).approve(lfAddr, p.seedQuote);
+    }
+
     async function launch(ctx, over = {}, vest) {
         const p = await params(ctx, over);
         const v = vest === undefined ? vesting(ctx, p.startTime) : vest;
-        const lfAddr = await ctx.lf.getAddress();
-        const vestTotal = (v.tranches || []).reduce((a, t) => a + t.amount, 0n);
-        await ctx.token.connect(ctx.creator).approve(lfAddr, p.saleCap + p.feederReserve + vestTotal);
-        if (p.seedQuote > 0n) await ctx.usdt.connect(ctx.creator).approve(lfAddr, p.seedQuote);
+        await approveFor(ctx, p, v);
         const tx = await ctx.lf.connect(ctx.creator).createLaunch(p, v);
         const rc = await tx.wait();
         const ev = rc.logs.map((l) => { try { return ctx.lf.interface.parseLog(l); } catch { return null; } })
@@ -161,7 +181,7 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
 
         it("works without vesting and without a seed (first purchase opens the pool)", async function () {
             const ctx = await loadFixture(fixture);
-            const { sale, feeder, vesting: v } = await launch(ctx, { seedQuote: 0n }, NO_VESTING);
+            const { sale, feeder, vesting: v } = await launch(ctx, { seedQuote: 0n, ...BIG_SALE }, NO_VESTING);
             expect(v).to.equal(null);
             expect(await pairOf(ctx)).to.equal(null);
             await time.increaseTo((await sale.startTime()) + 1n);
@@ -176,7 +196,7 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             const ctx = await loadFixture(fixture);
             const lfAsCreator = ctx.lf.connect(ctx.creator);
             const p = await params(ctx);
-            await expect(lfAsCreator.createLaunch({ ...p, lpUnlockTime: p.endTime + 29n * DAY }, NO_VESTING))
+            await expect(lfAsCreator.createLaunch({ ...p, lpUnlockTime: p.endTime + 179n * DAY }, NO_VESTING))
                 .to.be.revertedWithCustomError(ctx.lf, "BadConfig");
             await expect(lfAsCreator.createLaunch({ ...p, token: await ctx.usdt.getAddress() }, NO_VESTING))
                 .to.be.revertedWithCustomError(ctx.lf, "BadConfig");
@@ -186,15 +206,6 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
                 .to.be.revertedWithCustomError(ctx.lf, "ZeroAddress");
             await expect(lfAsCreator.createLaunch({ ...p, bandBps: 2001 }, NO_VESTING))
                 .to.be.revertedWithCustomError(await ethers.getContractFactory("PoolFeeder"), "BadConfig");
-        });
-
-        it("rejects tokens that take a fee on transfer", async function () {
-            const ctx = await loadFixture(fixture);
-            const fee = await (await ethers.getContractFactory("FeeOnTransferToken")).connect(ctx.creator).deploy(1_000n * B);
-            const p = await params(ctx, { token: await fee.getAddress(), seedQuote: 0n });
-            await fee.connect(ctx.creator).approve(await ctx.lf.getAddress(), p.saleCap + p.feederReserve);
-            await expect(ctx.lf.connect(ctx.creator).createLaunch(p, NO_VESTING))
-                .to.be.revertedWithCustomError(ctx.lf, "FeeOnTransfer");
         });
 
         it("refuses to launch into a pair someone opened first at a bad price", async function () {
@@ -208,9 +219,9 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
                 await ctx.token.getAddress(), await ctx.usdt.getAddress(), 1n * B, 150n * USDT, 0, 0, ctx.attacker.address, (await time.latest()) + 600
             );
             const p = await params(ctx);
-            await ctx.token.connect(ctx.creator).approve(await ctx.lf.getAddress(), p.saleCap + p.feederReserve);
-            await ctx.usdt.connect(ctx.creator).approve(await ctx.lf.getAddress(), p.seedQuote);
-            await expect(ctx.lf.connect(ctx.creator).createLaunch(p, NO_VESTING))
+            const v = vesting(ctx, p.startTime);
+            await approveFor(ctx, p, v);
+            await expect(ctx.lf.connect(ctx.creator).createLaunch(p, v))
                 .to.be.revertedWithCustomError(ctx.lf, "PoolPriceOff");
         });
 
@@ -220,10 +231,79 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             const pair = await pairOf(ctx);
             await ctx.token.connect(ctx.creator).transfer(await pair.getAddress(), 5n * B); // donation, not minted
             await ctx.usdt.connect(ctx.attacker).transfer(await pair.getAddress(), 1n * USDT);
-            const { feeder } = await launch(ctx, {}, NO_VESTING);
+            const { feeder } = await launch(ctx);
             expect(await feeder.poolVsSaleBps()).to.be.closeTo(10_000n, 1n); // token side rounds down
             expect(await ctx.token.balanceOf(ctx.project.address)).to.equal(5n * B);
             expect(await ctx.usdt.balanceOf(ctx.project.address)).to.equal(1n * USDT);
+        });
+    });
+
+    describe("anti-rug rules", function () {
+        it("only accepts tokens made by the TPIX Token Factory", async function () {
+            const ctx = await loadFixture(fixture);
+            // same contract code, deployed by hand — not in the factory's register
+            const loose = await (await ethers.getContractFactory("FactoryERC20V2")).deploy(
+                "Fake IDTC", "IDTC", 18, 1_100n * B, ctx.creator.address, ...STANDARD
+            );
+            const fee = await (await ethers.getContractFactory("FeeOnTransferToken")).connect(ctx.creator).deploy(1_100n * B);
+            for (const t of [loose, fee]) {
+                const addr = await t.getAddress();
+                expect(await ctx.lf.tokenCheck(addr)).to.equal(1n);
+                const p = await params(ctx, { token: addr, seedQuote: 0n, ...BIG_SALE });
+                await approveFor(ctx, p, NO_VESTING);
+                await expect(ctx.lf.connect(ctx.creator).createLaunch(p, NO_VESTING))
+                    .to.be.revertedWithCustomError(ctx.lf, "NotFactoryToken");
+            }
+            expect(await ctx.lf.tokenCheck(await ctx.token.getAddress())).to.equal(0n);
+        });
+
+        it("refuses tokens whose owner can mint, pause, blacklist, or that burn on transfer", async function () {
+            const ctx = await loadFixture(fixture);
+            const risky = [
+                [true, false, false, false, 0, false, 0, 0], // mintable
+                [false, false, true, false, 0, false, 0, 0], // pausable
+                [false, false, false, true, 0, false, 0, 0], // blacklist (the honeypot switch)
+                [false, true, false, false, 0, true, 100, 0], // auto-burn
+            ];
+            for (const flags of risky) {
+                const t = await createToken(ctx.tokenFactory, ctx.creator.address, flags);
+                const addr = await t.getAddress();
+                expect(await ctx.lf.tokenCheck(addr)).to.equal(2n);
+                const p = await params(ctx, { token: addr, seedQuote: 0n, ...BIG_SALE });
+                await approveFor(ctx, p, NO_VESTING);
+                await expect(ctx.lf.connect(ctx.creator).createLaunch(p, NO_VESTING))
+                    .to.be.revertedWithCustomError(ctx.lf, "RiskyToken");
+            }
+            // burnable alone is harmless (holders burn their own)
+            const burnable = await createToken(ctx.tokenFactory, ctx.creator.address, [false, true, false, false, 0, false, 0, 0]);
+            expect(await ctx.lf.tokenCheck(await burnable.getAddress())).to.equal(0n);
+        });
+
+        it("needs at least half of every purchase to go into the pool", async function () {
+            const ctx = await loadFixture(fixture);
+            const p = await params(ctx, { poolShareBps: 4_999 });
+            await expect(ctx.lf.connect(ctx.creator).createLaunch(p, vesting(ctx, p.startTime)))
+                .to.be.revertedWithCustomError(ctx.lf, "BadConfig");
+            await launch(ctx, { poolShareBps: 5_000 }); // the floor itself is fine
+        });
+
+        it("refuses when the creator would keep more than 20% of the supply unlocked", async function () {
+            const ctx = await loadFixture(fixture);
+            // no vesting: sale 100B + reserve 100B = 18.18% of 1.1T locked
+            const p = await params(ctx);
+            await approveFor(ctx, p, NO_VESTING);
+            await expect(ctx.lf.connect(ctx.creator).createLaunch(p, NO_VESTING))
+                .to.be.revertedWithCustomError(ctx.lf, "TooMuchUnlocked").withArgs(1_818n);
+        });
+
+        it("does not count vesting that is already free when the LP unlocks", async function () {
+            const ctx = await loadFixture(fixture);
+            const p = await params(ctx);
+            // 770B "vested" over one month — all of it free long before the LP unlocks
+            const quick = vesting(ctx, p.startTime, { tranches: [{ amount: 770n * B, cliffPeriods: 0, releasePeriods: 1 }] });
+            await approveFor(ctx, p, quick);
+            await expect(ctx.lf.connect(ctx.creator).createLaunch(p, quick))
+                .to.be.revertedWithCustomError(ctx.lf, "TooMuchUnlocked");
         });
     });
 
@@ -252,7 +332,7 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             const ctx = await loadFixture(fixture);
             // reserve pairs only ~200 USDT at the sale price, half of the proceeds go to the project
             const reserve = (210n * USDT * NUM) / DEN;
-            const { sale, feeder } = await launch(ctx, { poolShareBps: 5_000, feederReserve: reserve }, NO_VESTING);
+            const { sale, feeder } = await launch(ctx, { poolShareBps: 5_000, feederReserve: reserve, saleCap: 200n * B });
             await time.increaseTo((await sale.startTime()) + 1n);
             const projectBefore = await ctx.usdt.balanceOf(ctx.project.address); // 5 USDT from the seed split
 
@@ -275,7 +355,7 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             expect(await feeder.pendingPool()).to.equal(pending + 50n * USDT);
         });
 
-        it("stops permissionless feeds when the pool price leaves the band; the owner feeds against a stated price", async function () {
+        it("stops every feed — owner included — while the pool is out of band, and resumes once arbitrage brings it back", async function () {
             const ctx = await loadFixture(fixture);
             const { sale, feeder } = await launch(ctx);
             await time.increaseTo((await sale.startTime()) + 1n);
@@ -283,14 +363,17 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             const tokens = await ctx.token.balanceOf(ctx.buyer.address);
             await sell(ctx, ctx.buyer, tokens / 10n); // dumps the 10-USDT pool well below the band
 
-            const vs = await feeder.poolVsSaleBps();
-            expect(vs).to.be.gt(10_300n);
+            expect(await feeder.poolVsSaleBps()).to.be.gt(10_300n);
             await expect(feeder.feed()).to.be.revertedWithCustomError(feeder, "OutOfBand");
-            await expect(feeder.connect(ctx.attacker).feedWithReference(1, 1))
-                .to.be.revertedWithCustomError(feeder, "OwnableUnauthorizedAccount");
+            await expect(feeder.connect(ctx.creator).feed()).to.be.revertedWithCustomError(feeder, "OutOfBand");
+            expect(feeder.interface.getFunction("feedWithReference")).to.equal(null);
 
-            const [tr, qr] = await feeder.poolReserves();
-            await expect(feeder.connect(ctx.creator).feedWithReference(tr, qr)).to.emit(feeder, "Fed");
+            // the pool is now cheaper than the sale: buyers take it from the pool until it is back in band
+            for (let i = 0; i < 60 && (await feeder.poolVsSaleBps()) > 10_300n; i++) {
+                await buyFromPool(ctx, ctx.attacker, USDT / 2n);
+            }
+            expect(await feeder.poolVsSaleBps()).to.be.lte(10_300n);
+            await expect(feeder.feed()).to.emit(feeder, "Fed");
             expect(await feeder.pendingPool()).to.be.lte(1n); // rounding dust only
         });
 
@@ -364,10 +447,11 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             await expect(f.setSaleWindow(p.startTime, p.endTime + 1n)).to.be.revertedWithCustomError(feeder, "BadConfig");
             await f.setSaleWindow(p.startTime, p.endTime - DAY);
             expect(await sale.endTime()).to.equal(p.endTime - DAY);
+            expect(await feeder.saleEndLimit()).to.equal(p.endTime);
             await expect(feeder.connect(ctx.attacker).pauseSale()).to.be.revertedWithCustomError(feeder, "OwnableUnauthorizedAccount");
         });
 
-        it("the reserve cannot leave while proceeds wait for the pool; leftovers only after the LP unlock", async function () {
+        it("unpaired proceeds and the reserve stay until the LP unlocks, the reserve only once no proceeds wait", async function () {
             const ctx = await loadFixture(fixture);
             const { p, sale, feeder } = await launch(ctx);
             await time.increaseTo((await sale.startTime()) + 1n);
@@ -378,24 +462,30 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
 
             await time.increaseTo(p.endTime);
             const f = feeder.connect(ctx.creator);
-            await expect(f.withdrawReserve(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "QuotePending");
+            await expect(f.withdrawReserve(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "StillLocked");
             await expect(f.withdrawLeftoverQuote(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "StillLocked");
             await time.increaseTo(p.lpUnlockTime);
+            await expect(f.withdrawReserve(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "QuotePending");
             await expect(f.withdrawLeftoverQuote(ctx.creator.address)).to.emit(feeder, "ReserveWithdrawn");
             await expect(f.withdrawReserve(ctx.creator.address)).to.emit(feeder, "ReserveWithdrawn");
         });
 
-        it("withdrawUnsold goes through the feeder after the sale", async function () {
+        it("unsold sale tokens stay locked until the LP unlocks — pausing the sale does not free them", async function () {
             const ctx = await loadFixture(fixture);
             const { p, sale, feeder } = await launch(ctx);
+            const f = feeder.connect(ctx.creator);
+            await f.pauseSale(); // FixedPriceSale itself would allow withdrawUnsold while paused
+            await expect(f.withdrawUnsold(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "StillLocked");
             await time.increaseTo(p.endTime);
-            await feeder.connect(ctx.creator).withdrawUnsold(ctx.creator.address);
+            await expect(f.withdrawUnsold(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "StillLocked");
+            await time.increaseTo(p.lpUnlockTime);
+            await f.withdrawUnsold(ctx.creator.address);
             expect(await ctx.token.balanceOf(await sale.getAddress())).to.equal(0n);
         });
     });
 
     describe("locks", function () {
-        it("holds the LP until lpUnlockTime and the reserve until the sale ends", async function () {
+        it("holds the LP and the reserve until lpUnlockTime", async function () {
             const ctx = await loadFixture(fixture);
             const { p, feeder } = await launch(ctx);
             const f = feeder.connect(ctx.creator);
@@ -403,13 +493,14 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             await expect(f.withdrawReserve(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "StillLocked");
 
             await time.increaseTo(p.endTime);
-            const reserve = await feeder.tokenReserve();
-            await expect(f.withdrawReserve(ctx.creator.address)).to.emit(feeder, "ReserveWithdrawn").withArgs(ctx.creator.address, reserve, 0n);
+            await expect(f.withdrawReserve(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "StillLocked");
             await expect(f.withdrawLiquidity(ctx.creator.address)).to.be.revertedWithCustomError(feeder, "StillLocked");
 
             await time.increaseTo(p.lpUnlockTime);
             await expect(feeder.connect(ctx.attacker).withdrawLiquidity(ctx.attacker.address))
                 .to.be.revertedWithCustomError(feeder, "OwnableUnauthorizedAccount");
+            const reserve = await feeder.tokenReserve();
+            await expect(f.withdrawReserve(ctx.creator.address)).to.emit(feeder, "ReserveWithdrawn").withArgs(ctx.creator.address, reserve, 0n);
             await expect(f.withdrawLiquidity(ctx.creator.address)).to.emit(feeder, "LiquidityWithdrawn");
             const pair = await pairOf(ctx);
             expect(await pair.balanceOf(ctx.creator.address)).to.be.gt(0n);

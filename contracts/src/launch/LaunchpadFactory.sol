@@ -8,6 +8,22 @@ import "./FixedPriceSale.sol";
 import "./PoolFeeder.sol";
 import "./LaunchVestingDeployer.sol";
 
+/// the TPIX Token Factory's public register of the tokens it created
+interface ILaunchTokenRegistry {
+    function tokenRecords(address token)
+        external
+        view
+        returns (string memory name, string memory symbol, address tokenOwner, uint8 category, uint256 createdAt);
+}
+
+/// the immutable feature switches of a Token Factory ERC20V2 token
+interface ILaunchTokenFlags {
+    function isMintable() external view returns (bool);
+    function isPausable() external view returns (bool);
+    function isBlacklistEnabled() external view returns (bool);
+    function isAutoBurnEnabled() external view returns (bool);
+}
+
 /**
  * @title LaunchpadFactory — one transaction opens a child-token sale whose proceeds feed a locked pool
  * @author Xman Studio
@@ -22,18 +38,35 @@ import "./LaunchVestingDeployer.sol";
  *
  * The caller must approve this factory for saleCap + feederReserve + vesting total tokens (and seedQuote of the quote).
  * No owner, no fee, no upgrade: the factory keeps only a public list of what it created.
+ *
+ * Anti-rug rules — checked here, so they hold even for callers who skip the website:
+ *   - only plain ERC20V2 tokens made by the TPIX Token Factory, with minting, pausing, blacklisting and
+ *     auto-burn all switched off (those switches are immutable, so they can never be turned on later)
+ *   - the LP stays locked at least MIN_LP_LOCK after the sale ends; until then the feeder also keeps the
+ *     unsold sale tokens and the unpaired reserve (see PoolFeeder)
+ *   - at least MIN_POOL_SHARE_BPS of every purchase goes into the pool
+ *   - at least MIN_LOCKED_SUPPLY_BPS of the total supply sits in the sale, the feeder reserve, or vesting
+ *     that is still locked when the LP unlocks — the creator can never hold more than the rest freely
  * Tokens that take a fee on transfer are rejected (received amounts are checked).
  */
 contract LaunchpadFactory is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// the LP must stay locked at least this long after the sale ends
-    uint64 public constant MIN_LP_LOCK = 30 days;
+    uint64 public constant MIN_LP_LOCK = 180 days;
     uint16 public constant DEFAULT_BAND_BPS = 300;
+    /// share of every purchase that must go into the pool
+    uint16 public constant MIN_POOL_SHARE_BPS = 5000;
+    /// share of the total supply that must be in the sale, the reserve or still-locked vesting
+    uint16 public constant MIN_LOCKED_SUPPLY_BPS = 8000;
+    /// Token Factory category of plain ERC20V2 tokens
+    uint8 private constant CATEGORY_ERC20V2 = 0;
+    uint256 private constant BPS = 10_000;
 
     IERC20 public immutable quote;
     IFeederRouter public immutable router;
     LaunchVestingDeployer public immutable vestingDeployer;
+    ILaunchTokenRegistry public immutable tokenRegistry;
 
     struct Params {
         IERC20 token;
@@ -81,14 +114,33 @@ contract LaunchpadFactory is ReentrancyGuard {
     error BadConfig();
     error FeeOnTransfer();
     error PoolPriceOff(uint256 poolVsSaleBps);
+    error NotFactoryToken();
+    error RiskyToken();
+    error TooMuchUnlocked(uint256 lockedBps);
 
-    constructor(IERC20 quote_, IFeederRouter router_, LaunchVestingDeployer vestingDeployer_) {
-        if (address(quote_) == address(0) || address(router_) == address(0) || address(vestingDeployer_) == address(0)) {
-            revert ZeroAddress();
-        }
+    constructor(
+        IERC20 quote_,
+        IFeederRouter router_,
+        LaunchVestingDeployer vestingDeployer_,
+        ILaunchTokenRegistry tokenRegistry_
+    ) {
+        if (
+            address(quote_) == address(0) || address(router_) == address(0) || address(vestingDeployer_) == address(0)
+                || address(tokenRegistry_) == address(0)
+        ) revert ZeroAddress();
         quote = quote_;
         router = router_;
         vestingDeployer = vestingDeployer_;
+        tokenRegistry = tokenRegistry_;
+    }
+
+    /// @notice why a token cannot be launched: 0 = ok, 1 = not from the Token Factory, 2 = risky switches on
+    function tokenCheck(address token) public view returns (uint8) {
+        (,,, uint8 category, uint256 createdAt) = tokenRegistry.tokenRecords(token);
+        if (createdAt == 0 || category != CATEGORY_ERC20V2) return 1;
+        ILaunchTokenFlags t = ILaunchTokenFlags(token);
+        if (t.isMintable() || t.isPausable() || t.isBlacklistEnabled() || t.isAutoBurnEnabled()) return 2;
+        return 0;
     }
 
     function launchCount() external view returns (uint256) {
@@ -108,8 +160,10 @@ contract LaunchpadFactory is ReentrancyGuard {
         if (address(p.token) == address(quote) || p.saleCap == 0) revert BadConfig();
         if (p.endTime <= p.startTime || p.endTime <= block.timestamp) revert BadConfig();
         if (p.lpUnlockTime < uint256(p.endTime) + MIN_LP_LOCK) revert BadConfig();
-        if (p.poolShareBps > 0 && p.feederReserve == 0) revert BadConfig();
-        if (p.seedQuote > 0 && p.poolShareBps == 0) revert BadConfig();
+        if (p.poolShareBps < MIN_POOL_SHARE_BPS || p.feederReserve == 0) revert BadConfig();
+        uint8 check = tokenCheck(address(p.token));
+        if (check == 1) revert NotFactoryToken();
+        if (check == 2) revert RiskyToken();
 
         PoolFeeder f = new PoolFeeder(
             PoolFeeder.Config({
@@ -121,7 +175,7 @@ contract LaunchpadFactory is ReentrancyGuard {
                 poolShareBps: p.poolShareBps,
                 bandBps: p.bandBps == 0 ? DEFAULT_BAND_BPS : p.bandBps,
                 lpUnlockTime: p.lpUnlockTime,
-                reserveReleaseTime: p.endTime,
+                saleEndLimit: p.endTime,
                 projectTreasury: p.projectTreasury,
                 minFeed: p.minFeed
             }),
@@ -149,7 +203,7 @@ contract LaunchpadFactory is ReentrancyGuard {
         f.bindSale(sale);
 
         _pull(p.token, sale, p.saleCap);
-        if (p.feederReserve > 0) _pull(p.token, feeder, p.feederReserve);
+        _pull(p.token, feeder, p.feederReserve);
         if (p.seedQuote > 0) {
             _pull(quote, feeder, p.seedQuote);
             f.feed();
@@ -159,6 +213,7 @@ contract LaunchpadFactory is ReentrancyGuard {
             vesting = vestingDeployer.deploy(p.token, v.beneficiary, v.start, v.period, v.tranches, v.label);
             _pull(p.token, vesting, TrancheVesting(vesting).totalAllocation());
         }
+        _checkLocked(p, vesting);
 
         uint256 id = _launches.length;
         _launches.push(
@@ -173,6 +228,17 @@ contract LaunchpadFactory is ReentrancyGuard {
         );
         launchIdOfSale[sale] = id + 1;
         emit LaunchCreated(id, address(p.token), msg.sender, sale, feeder, vesting);
+    }
+
+    /// the sale, the reserve and vesting still locked at lpUnlockTime must hold MIN_LOCKED_SUPPLY_BPS of the supply
+    function _checkLocked(Params calldata p, address vesting) private view {
+        uint256 locked = p.saleCap + p.feederReserve;
+        if (vesting != address(0)) {
+            TrancheVesting tv = TrancheVesting(vesting);
+            locked += tv.totalAllocation() - tv.vestedAmount(p.lpUnlockTime);
+        }
+        uint256 supply = p.token.totalSupply();
+        if (locked * BPS < supply * MIN_LOCKED_SUPPLY_BPS) revert TooMuchUnlocked((locked * BPS) / supply);
     }
 
     function _pull(IERC20 t, address to, uint256 amount) private {

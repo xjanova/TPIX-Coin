@@ -61,11 +61,13 @@ interface IFeederSale {
  * ±`bandBps` of the sale price (rateNumerator / rateDenominator tokens per quote unit). Pushing the pool
  * price to make the feeder add at a bad ratio therefore costs an attacker more than the band can pay back.
  * An empty pool is seeded at exactly the sale price (stray donations in the pair are skimmed first).
- * Outside the band only the owner can feed, against a reference price the owner states (feedWithReference).
+ * Outside the band nobody can feed — not even the owner: proceeds wait until arbitrage against the sale
+ * brings the pool back into the band (an owner-chosen reference price would let the owner move the pool,
+ * feed at the moved price and drain the liquidity on the way back).
  *
- * Lock: the LP tokens stay in this contract until `lpUnlockTime`. The unused token reserve can leave after
- * `reserveReleaseTime` (the end of the sale) once no proceeds wait for the pool; proceeds that never made
- * it into the pool can leave only after `lpUnlockTime`.
+ * Lock: until `lpUnlockTime` nothing the buyers' money or the creator's tokens could rug with leaves this
+ * contract — not the LP tokens, not the unpaired token reserve, not the unsold sale tokens, not proceeds
+ * that never made it into the pool. The sale itself can only be moved or shortened within `saleEndLimit`.
  *
  * Proceeds cannot be redirected: the feeder is the permanent owner of its FixedPriceSale (bound once by the
  * deployer) and exposes pause / window / limits / unsold — never setTreasury or an ownership transfer.
@@ -90,7 +92,8 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
     uint16 public immutable poolShareBps;
     uint16 public immutable bandBps;
     uint64 public immutable lpUnlockTime;
-    uint64 public immutable reserveReleaseTime;
+    /// the sale can never be moved to end later than this (the original end)
+    uint64 public immutable saleEndLimit;
     uint256 public immutable minFeed;
     address private immutable _binder;
 
@@ -103,7 +106,7 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
     uint256 public totalTokenToPool;
     uint256 public totalQuoteToProject;
 
-    event Fed(uint256 quoteToPool, uint256 tokenToPool, uint256 liquidity, uint256 quoteToProject, bool ownerReference);
+    event Fed(uint256 quoteToPool, uint256 tokenToPool, uint256 liquidity, uint256 quoteToProject);
     event ProjectTreasuryUpdated(address indexed treasury);
     event SaleBound(address indexed sale);
     event LiquidityWithdrawn(address indexed to, uint256 amount);
@@ -130,7 +133,7 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
         uint16 poolShareBps;
         uint16 bandBps;
         uint64 lpUnlockTime;
-        uint64 reserveReleaseTime;
+        uint64 saleEndLimit;
         address projectTreasury;
         uint256 minFeed;
     }
@@ -146,7 +149,7 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
             revert BadConfig();
         }
         if (c.poolShareBps > BPS || c.bandBps == 0 || c.bandBps > MAX_BAND_BPS) revert BadConfig();
-        if (c.lpUnlockTime < c.reserveReleaseTime || c.minFeed == 0) revert BadConfig();
+        if (c.lpUnlockTime < c.saleEndLimit || c.minFeed == 0) revert BadConfig();
 
         token = c.token;
         quote = c.quote;
@@ -157,7 +160,7 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
         poolShareBps = c.poolShareBps;
         bandBps = c.bandBps;
         lpUnlockTime = c.lpUnlockTime;
-        reserveReleaseTime = c.reserveReleaseTime;
+        saleEndLimit = c.saleEndLimit;
         projectTreasury = c.projectTreasury;
         minFeed = c.minFeed;
         _binder = msg.sender;
@@ -219,25 +222,6 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
 
     /// @notice anyone may call: split the collected quote and add the pool share as liquidity at the sale-price band
     function feed() external nonReentrant returns (uint256 quoteToPool, uint256 tokenToPool, uint256 liquidity) {
-        return _feed(rateNumerator, rateDenominator, false);
-    }
-
-    /// @notice owner only: same as feed() but the band is checked against a reference price the owner states
-    ///         (e.g. after the sale, when the market price has moved away from the sale price)
-    function feedWithReference(uint256 refNum, uint256 refDen)
-        external
-        onlyOwner
-        nonReentrant
-        returns (uint256 quoteToPool, uint256 tokenToPool, uint256 liquidity)
-    {
-        if (refNum == 0 || refDen == 0 || refNum >= 2 ** 96 || refDen >= 2 ** 96) revert BadConfig();
-        return _feed(refNum, refDen, true);
-    }
-
-    function _feed(uint256 refNum, uint256 refDen, bool ownerReference)
-        private
-        returns (uint256 quoteToPool, uint256 tokenToPool, uint256 liquidity)
-    {
         // new money = everything above what is already set aside for the pool
         uint256 balance = quote.balanceOf(address(this));
         uint256 newIn = balance > pendingPool ? balance - pendingPool : 0;
@@ -253,21 +237,22 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
 
         uint256 vs;
         if (pendingPool > 0 && pendingPool >= minFeed) {
-            (quoteToPool, tokenToPool, liquidity, vs) = _addToPool(pendingPool, refNum, refDen);
+            (quoteToPool, tokenToPool, liquidity, vs) = _addToPool(pendingPool);
             pendingPool -= quoteToPool;
         }
         if (quoteToPool == 0 && toProject == 0) {
             if (vs != 0) revert OutOfBand(vs);
             revert NothingToFeed();
         }
-        emit Fed(quoteToPool, tokenToPool, liquidity, toProject, ownerReference);
+        emit Fed(quoteToPool, tokenToPool, liquidity, toProject);
     }
 
     /// @dev returns all 0 with `outOfBand` set when the pool price is outside the band
-    function _addToPool(uint256 forPool, uint256 refNum, uint256 refDen)
+    function _addToPool(uint256 forPool)
         private
         returns (uint256 quoteUsed, uint256 tokenUsed, uint256 liquidity, uint256 outOfBand)
     {
+        (uint256 refNum, uint256 refDen) = (rateNumerator, rateDenominator);
         uint256 reserveAvail = token.balanceOf(address(this));
         if (reserveAvail == 0) return (0, 0, 0, 0);
 
@@ -330,9 +315,9 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
         _sale().unpause();
     }
 
-    /// @notice move or shorten the sale — never past the original end, or later proceeds could miss the pool
+    /// @notice move or shorten the sale — never past the original end
     function setSaleWindow(uint64 startTime_, uint64 endTime_) external onlyOwner {
-        if (endTime_ > reserveReleaseTime) revert BadConfig();
+        if (endTime_ > saleEndLimit) revert BadConfig();
         _sale().setWindow(startTime_, endTime_);
     }
 
@@ -340,8 +325,9 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
         _sale().setLimits(minPurchase_, maxPerWallet_);
     }
 
-    /// @notice unsold sale tokens (FixedPriceSale allows it after the end, or while paused)
+    /// @notice unsold sale tokens, only once the LP is unlocked — pausing the sale must not free them early
     function withdrawUnsold(address to) external onlyOwner nonReentrant {
+        if (block.timestamp < lpUnlockTime) revert StillLocked();
         _sale().withdrawUnsold(to);
     }
 
@@ -362,12 +348,12 @@ contract PoolFeeder is Ownable2Step, ReentrancyGuard {
     }
 
     /**
-     * @notice the unused token reserve, after the sale ends — and only once no proceeds wait for the pool
-     *         (feed them first, or feedWithReference when the pool price left the band)
+     * @notice the unpaired token reserve, only once the LP is unlocked and no proceeds wait for the pool
+     *         (feed them, or take them out with withdrawLeftoverQuote, first)
      */
     function withdrawReserve(address to) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
-        if (block.timestamp < reserveReleaseTime) revert StillLocked();
+        if (block.timestamp < lpUnlockTime) revert StillLocked();
         uint256 q = quote.balanceOf(address(this));
         if (q >= minFeed) revert QuotePending(q);
         uint256 t = token.balanceOf(address(this));

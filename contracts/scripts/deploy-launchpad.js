@@ -2,7 +2,8 @@
  * Deploy the TPIX Launchpad — LaunchVestingDeployer + LaunchpadFactory on TPIX Chain (4289)
  *
  * Neither contract has an owner, a fee or an upgrade path: any wallet may deploy them and the deployer keeps
- * no power afterwards. Each child-token creator later calls LaunchpadFactory.createLaunch() from their own
+ * no power afterwards. LaunchpadFactory only accepts tokens registered by TPIXTokenFactoryV2 (anti-rug rules
+ * in src/launch/LaunchpadFactory.sol), so the factory address is baked in at deploy. Each child-token creator later calls LaunchpadFactory.createLaunch() from their own
  * wallet (the Token Factory wizard on tpix.online does that) — see src/launch/LaunchpadFactory.sol.
  *
  * Usage:
@@ -12,7 +13,7 @@
  *   dry run: npx hardhat run scripts/deploy-launchpad.js   (local network, stand-in USDT + DEX)
  *
  * Env (optional):
- *   USDT_TPIX_ADDRESS / DEX_ROUTER_ADDRESS   default = deployed-contracts.json
+ *   USDT_TPIX_ADDRESS / DEX_ROUTER_ADDRESS / TOKEN_FACTORY_V2_ADDRESS   default = deployed-contracts.json
  *   REDEPLOY=1                                 deploy new ones even if the registry has working ones
  *
  * Registration with tpix.online (contract keys launchpad_factory / launchpad_vesting_deployer) is done from
@@ -78,6 +79,7 @@ async function main() {
 
     let usdt = addressFromEnv("USDT_TPIX_ADDRESS") || findContract(registry, "USDT_TPIX");
     let router = addressFromEnv("DEX_ROUTER_ADDRESS") || findContract(registry, "TPIXDEXRouter02");
+    let tokenRegistry = addressFromEnv("TOKEN_FACTORY_V2_ADDRESS") || findContract(registry, "TPIXTokenFactoryV2");
     if (isDryRun) {
         // local rehearsal: no real coins to bind to — stand-ins
         const [, owner] = await hre.ethers.getSigners();
@@ -85,20 +87,30 @@ async function main() {
         const U = await (await hre.ethers.getContractFactory("USDT_TPIX")).deploy();
         const F = await (await hre.ethers.getContractFactory("TPIXDEXFactory")).deploy((owner || deployer).address);
         const R = await (await hre.ethers.getContractFactory("TPIXDEXRouter02")).deploy(await F.getAddress(), await W.getAddress());
+        const creators = [];
+        for (const n of ["ERC20V2Creator", "UtilityTokenCreator", "RewardTokenCreator", "GovernanceTokenCreator", "StablecoinTokenCreator"]) {
+            creators.push(await (await hre.ethers.getContractFactory(n)).deploy());
+        }
+        const TF = await (await hre.ethers.getContractFactory("TPIXTokenFactoryV2")).deploy(...(await Promise.all(creators.map((c) => c.getAddress()))));
         usdt = await U.getAddress();
         router = await R.getAddress();
-        console.log(`[dry-run] stand-in USDT_TPIX ${usdt} · router ${router}`);
+        tokenRegistry = await TF.getAddress();
+        console.log(`[dry-run] stand-in USDT_TPIX ${usdt} · router ${router} · token factory ${tokenRegistry}`);
     }
-    if (!usdt || !router) throw new Error("ไม่พบที่อยู่ USDT_TPIX หรือ TPIXDEXRouter02 ใน registry");
-    for (const [n, a] of [["USDT_TPIX", usdt], ["TPIXDEXRouter02", router]]) {
+    if (!usdt || !router || !tokenRegistry) throw new Error("ไม่พบที่อยู่ USDT_TPIX / TPIXDEXRouter02 / TPIXTokenFactoryV2 ใน registry");
+    for (const [n, a] of [["USDT_TPIX", usdt], ["TPIXDEXRouter02", router], ["TPIXTokenFactoryV2", tokenRegistry]]) {
         if ((await hre.ethers.provider.getCode(a)) === "0x") throw new Error(`${n} ${a} ไม่มีโค้ดบนเชนนี้`);
     }
     const usdtC = await hre.ethers.getContractAt("USDT_TPIX", usdt);
     if (Number(await usdtC.decimals()) !== 6) throw new Error("USDT_TPIX decimals ไม่ใช่ 6 — ผิดตัว?");
+    // the register must answer the call LaunchpadFactory makes on every launch
+    const tf = await hre.ethers.getContractAt("TPIXTokenFactoryV2", tokenRegistry);
+    await tf.tokenRecords(hre.ethers.ZeroAddress);
 
     console.log("Deployer  :", deployer.address);
     console.log("USDT_TPIX :", usdt);
-    console.log("Router    :", router, "\n");
+    console.log("Router    :", router);
+    console.log("TokenFact.:", tokenRegistry, "\n");
 
     const redeploy = process.env.REDEPLOY === "1";
     const today = new Date().toISOString().slice(0, 10);
@@ -129,13 +141,14 @@ async function main() {
         const c = await hre.ethers.getContractAt("LaunchpadFactory", lf);
         reuse = (await c.quote()).toLowerCase() === usdt.toLowerCase()
             && (await c.router()).toLowerCase() === router.toLowerCase()
-            && (await c.vestingDeployer()).toLowerCase() === vd.toLowerCase();
+            && (await c.vestingDeployer()).toLowerCase() === vd.toLowerCase()
+            && (await c.tokenRegistry()).toLowerCase() === tokenRegistry.toLowerCase();
     }
     if (reuse) {
         console.log("[2/2] LaunchpadFactory (reused):", lf);
     } else {
         console.log("[2/2] Deploying LaunchpadFactory...");
-        const c = await (await hre.ethers.getContractFactory("LaunchpadFactory", deployer)).deploy(usdt, router, vd);
+        const c = await (await hre.ethers.getContractFactory("LaunchpadFactory", deployer)).deploy(usdt, router, vd, tokenRegistry);
         await c.waitForDeployment();
         lf = await c.getAddress();
         if (!(await codeMatches(lf, "LaunchpadFactory"))) throw new Error("โค้ดบนเชนไม่ตรง artifact");
@@ -143,7 +156,7 @@ async function main() {
         upsertContract(registry, {
             ...base, verified: false, deployedAt: today, name: "LaunchpadFactory", address: lf,
             sourceFile: "contracts/src/launch/LaunchpadFactory.sol",
-            description: "เปิดขายเหรียญลูกในธุรกรรมเดียว: FixedPriceSale + PoolFeeder (เงินขายเข้าพูลอัตโนมัติ LP ล็อก) + TrancheVesting — ไม่มีเจ้าของ ไม่มีค่าธรรมเนียม",
+            description: "เปิดขายเหรียญลูกในธุรกรรมเดียว: FixedPriceSale + PoolFeeder (เงินขายเข้าพูลอัตโนมัติ LP ล็อก ≥180 วัน) + TrancheVesting — รับเฉพาะเหรียญจาก TPIXTokenFactoryV2 ที่ปิด mint/pause/blacklist/auto-burn, ≥50% เข้าพูล, ≥80% ของซัพพลายล็อก — ไม่มีเจ้าของ ไม่มีค่าธรรมเนียม",
         });
     }
 
