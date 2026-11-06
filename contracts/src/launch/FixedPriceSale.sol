@@ -102,23 +102,36 @@ contract FixedPriceSale is Ownable2Step, Pausable, ReentrancyGuard {
 
     // ─────────────────────────────── buy ───────────────────────────────
 
-    function buy(uint256 payAmount) external nonReentrant whenNotPaused returns (uint256 tokensOut) {
+    function buy(uint256 payAmount) external returns (uint256 tokensOut) {
+        return _buy(msg.sender, payAmount);
+    }
+
+    /**
+     * @notice ซื้อให้คนอื่น — ผู้เรียกจ่าย payToken ส่วนเหรียญไปที่ `buyer` ในธุรกรรมเดียว
+     *         (ตัวแทนขายของ launchpad ใช้ส่งเหรียญถึงผู้ซื้อที่จ่าย USDT มาจาก BSC · เพดานต่อกระเป๋านับที่ `buyer`)
+     */
+    function buyFor(address buyer, uint256 payAmount) external returns (uint256 tokensOut) {
+        if (buyer == address(0)) revert ZeroAddress();
+        return _buy(buyer, payAmount);
+    }
+
+    function _buy(address buyer, uint256 payAmount) private nonReentrant whenNotPaused returns (uint256 tokensOut) {
         if (block.timestamp < startTime || block.timestamp >= endTime) revert NotActive();
         if (payAmount < minPurchase) revert BelowMinimum();
         tokensOut = quote(payAmount);
         if (tokensOut == 0) revert ZeroOutput();
         if (sold + tokensOut > saleCap) revert CapExceeded();
-        uint256 bought = purchased[msg.sender] + tokensOut;
+        uint256 bought = purchased[buyer] + tokensOut;
         if (maxPerWallet != 0 && bought > maxPerWallet) revert WalletLimitExceeded();
 
         // effects ก่อนแตะสัญญาภายนอก
         sold += tokensOut;
         raised += payAmount;
-        purchased[msg.sender] = bought;
+        purchased[buyer] = bought;
 
         payToken.safeTransferFrom(msg.sender, treasury, payAmount);
-        saleToken.safeTransfer(msg.sender, tokensOut);
-        emit Purchased(msg.sender, payAmount, tokensOut);
+        saleToken.safeTransfer(buyer, tokensOut);
+        emit Purchased(buyer, payAmount, tokensOut);
     }
 
     // ─────────────────────────────── owner ───────────────────────────────

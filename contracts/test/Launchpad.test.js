@@ -405,6 +405,31 @@ describe("Launchpad (LaunchpadFactory + PoolFeeder)", function () {
             expect(got).to.be.gt(89n * USDT); // 0.3% fee + ~9% impact in a 1,010-USDT pool
         });
 
+        it("buyFor: the payer pays, the buyer gets the tokens in the same tx, the wallet limit counts the buyer", async function () {
+            const ctx = await loadFixture(fixture);
+            const { sale, feeder } = await launch(ctx);
+            await feeder.connect(ctx.creator).setSaleLimits(0n, (150n * USDT * NUM) / DEN); // 150 USDT worth per wallet
+            await time.increaseTo((await sale.startTime()) + 1n);
+            const agent = ctx.attacker; // stands in for the server's sale agent
+            await ctx.usdt.connect(agent).approve(await sale.getAddress(), 1_000n * USDT);
+            const payBefore = await ctx.usdt.balanceOf(agent.address);
+
+            await expect(sale.connect(agent).buyFor(ctx.buyer.address, 100n * USDT))
+                .to.emit(sale, "Purchased").withArgs(ctx.buyer.address, 100n * USDT, (100n * USDT * NUM) / DEN);
+            expect(await ctx.token.balanceOf(ctx.buyer.address)).to.equal((100n * USDT * NUM) / DEN);
+            expect(await ctx.token.balanceOf(agent.address)).to.equal(0n);
+            expect(payBefore - (await ctx.usdt.balanceOf(agent.address))).to.equal(100n * USDT);
+            expect(await sale.purchased(ctx.buyer.address)).to.equal((100n * USDT * NUM) / DEN);
+            expect(await sale.purchased(agent.address)).to.equal(0n);
+
+            // the limit is the buyer's, not the agent's: 100 + 100 > 150 for this buyer, another buyer is fine
+            await expect(sale.connect(agent).buyFor(ctx.buyer.address, 100n * USDT))
+                .to.be.revertedWithCustomError(sale, "WalletLimitExceeded");
+            await sale.connect(agent).buyFor(ctx.project.address, 100n * USDT);
+            await expect(sale.connect(agent).buyFor(ethers.ZeroAddress, 1n * USDT))
+                .to.be.revertedWithCustomError(sale, "ZeroAddress");
+        });
+
         it("ignores dust below minFeed", async function () {
             const ctx = await loadFixture(fixture);
             const { feeder } = await launch(ctx);
