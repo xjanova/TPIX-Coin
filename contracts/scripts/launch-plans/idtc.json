@@ -1,6 +1,8 @@
 {
   "_doc": "แผนเปิดตัว IDTC บน TPIX Chain — อ่านโดย scripts/launch-token.js · ตัวเลขเหรียญเป็นหน่วยเต็ม (ไม่ใช่ wei)",
   "symbol": "IDTC",
+  "token": "0x798923aeb2692bbd27cfb0505bf7c94f6cf4e288",
+  "_tokenNote": "ตรวจบนเชน 2026-11-06: TPIXTokenFactoryV2 ประเภท 0 (ERC20V2) · mint/pause/blacklist/auto-burn ปิด · 1.1T อยู่ที่ 0x3da3776e0AB0F442c181aa031f47FA83696859AF",
   "decimals": 18,
   "totalSupply": "1100000000000",
   "vesting": {
@@ -25,5 +27,24 @@
     "tpix": "100",
     "_tpixNote": "100 TPIX ≈ 10 USD ที่ TPIX $0.10 — ฝั่ง IDTC คิดจากราคา TPIX ในพูล WTPIX/USDT ตอนรัน (หรือ TPIX_USD)",
     "lpLock": { "label": "ล็อก 12 เดือน", "cliffPeriods": 12, "releasePeriods": 1 }
+  },
+  "launchpad": {
+    "_doc": "เปิดขายผ่าน LaunchpadFactory (เงินขายเข้าพูลอัตโนมัติ) — อ่านโดย scripts/launchpad-create.js · ใช้แทน launch-token.js สำหรับ presale · พูล IDTC/USDT เปิดในธุรกรรมเดียวกันด้วย seedUsdt · พูล IDTC/TPIX ยังใช้ launch-pools.js (POOL_USDT=0)",
+    "_decided": "เจ้าของตัดสิน 2026-11-06: เปิดขาย 1 ธ.ค. 2569 10:00 น. (ปิด 1 มี.ค. 2570 10:00 · LP ปลด 29 ก.พ. 2571 10:00) · vesting และกระเป๋าโครงการ = 0x3da3…59AF · ขั้นต่ำ 1 USDT ไม่จำกัดต่อกระเป๋า · พูล IDTC/TPIX ไว้ทีหลัง",
+    "saleStart": "2026-12-01T10:00:00+07:00",
+    "beneficiary": "0x3da3776e0AB0F442c181aa031f47FA83696859AF",
+    "projectTreasury": "0x3da3776e0AB0F442c181aa031f47FA83696859AF",
+    "saleCap": "100000000000",
+    "feederReserve": "100000000000",
+    "_reserveNote": "เหรียญที่จับคู่กับเงินขายเข้าพูล — ขายหมด 100B ที่ $0.0000015 = 150,000 USDT ต้องใช้ IDTC ฝั่งพูล 100B พอดี",
+    "durationDays": 90,
+    "poolShareBps": 10000,
+    "bandBps": 0,
+    "lpLockDaysAfterEnd": 365,
+    "minFeedUsdt": "1",
+    "seedUsdt": "10",
+    "minPurchaseUsdt": "1",
+    "maxPerWallet": "0",
+    "_limitsNote": "minPurchaseUsdt = ซื้อขั้นต่ำ (USDT) · maxPerWallet = เพดานเหรียญต่อกระเป๋า (หน่วยเต็ม, 0 = ไม่จำกัด) — ตั้งผ่าน PoolFeeder.setSaleLimits หลังเปิด"
   }
 }
