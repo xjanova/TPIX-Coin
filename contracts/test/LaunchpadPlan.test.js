@@ -57,6 +57,7 @@ describe("launchpad plan (scripts/lib/launchpad-plan.js)", function () {
         expect(iso(L.params.endTime)).to.equal("2027-03-01T03:00:00.000Z");
         expect(iso(L.params.lpUnlockTime)).to.equal("2028-02-29T03:00:00.000Z");
         expect(L.lockedBps).to.equal(8_484n);
+        expect(L.params.bandBps).to.equal(500); // ±5% (owner, 2026-11-06)
         expect(L.minPurchase).to.equal(10n ** 6n);
         expect(L.maxPerWallet).to.equal(0n);
     });
