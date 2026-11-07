@@ -1,0 +1,245 @@
+# TPIX explorer — ชุดใหม่แบบ blue/green (สร้าง 2026-11-06 ตอนอัป Blockscout จาก 6.10.1)
+# ชุดเดิมยังอยู่ที่ /opt/tpix/docker-compose.yml (blockscout-*) — ไฟล์นี้ไม่แตะของเดิม
+# รัน: cd /opt/tpix-bs && sudo docker compose --env-file /opt/tpix/.env up -d
+#   เปลี่ยนรุ่น backend: sudo env BSN_BACKEND_IMAGE=<image> docker compose --env-file /opt/tpix/.env up -d bsn-backend
+# ชื่อ service ขึ้นต้น bsn- เพราะใช้เครือข่าย tpix_tpix ร่วมกับของเดิม (ชื่อซ้ำ = DNS ชนกัน)
+name: tpixbs
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "3" }
+
+services:
+  bsn-db:
+    image: postgres:16-alpine
+    container_name: bsn-db
+    restart: unless-stopped
+    mem_limit: 1536m
+    shm_size: 256m
+    environment:
+      POSTGRES_DB: ${BS_DB}
+      POSTGRES_USER: ${BS_USER}
+      POSTGRES_PASSWORD: ${BS_PASS:?BS_PASS missing from /opt/tpix/.env}
+    volumes:
+      - bsn-db-data:/var/lib/postgresql/data
+      - /opt/tpix/backup:/backup:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BS_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+    networks: [tpix]
+
+  bsn-backend:
+    image: ${BSN_BACKEND_IMAGE:-tpix/blockscout:12.0.4}
+    container_name: bsn-backend
+    restart: unless-stopped
+    mem_limit: 2g
+    depends_on:
+      bsn-db: { condition: service_healthy }
+    command: sh -c "bin/blockscout eval 'Elixir.Explorer.ReleaseTasks.create_and_migrate()' && bin/blockscout start"
+    volumes:
+      - /opt/tpix/chain/genesis.blockscout.json:/genesis-spec.json:ro
+    environment:
+      CHAIN_SPEC_PATH: /genesis-spec.json
+      MIX_ENV: prod
+      DATABASE_URL: postgresql://${BS_USER}:${BS_PASS}@bsn-db:5432/${BS_DB}
+      SECRET_KEY_BASE: ${BS_SECRET_KEY_BASE:?BS_SECRET_KEY_BASE missing}
+      API_SENSITIVE_ENDPOINTS_KEY: ${BS_SENSITIVE_KEY:?BS_SENSITIVE_KEY missing}
+      # RPC = bootnode (ไม่ seal บล็อก) ไม่โหลด validator · bootnode หยุดสั้น ๆ ทุกคืน 21:40 UTC ตอน snapshot
+      ETHEREUM_JSONRPC_VARIANT: geth
+      ETHEREUM_JSONRPC_HTTP_URL: http://tpix-bootnode:8545
+      ETHEREUM_JSONRPC_WS_URL: ws://tpix-bootnode:8545/ws
+      ETHEREUM_JSONRPC_HTTP_TIMEOUT: "30"
+      CHAIN_ID: "4289"
+      NETWORK: "TPIX Chain"
+      SUBNETWORK: "Mainnet"
+      COIN: "TPIX"
+      COIN_NAME: "Thaiprompt Index"
+      BLOCK_TRANSFORMER: base
+      PORT: "4000"
+      ECTO_USE_SSL: "false"
+      ECTO_SSL_MODE: "disable"
+      MIGRATION_FILL_INTERNAL_TRANSACTIONS_ADDRESS_IDS_BATCH_SIZE: "5000"
+      MIGRATION_FILL_INTERNAL_TRANSACTIONS_ADDRESS_IDS_TIMEOUT: "100ms"
+      API_V2_ENABLED: "true"
+      POOL_SIZE: "20"
+      MICROSERVICE_SC_VERIFIER_ENABLED: "true"
+      MICROSERVICE_SC_VERIFIER_URL: http://bsn-verifier:8050
+      MICROSERVICE_SC_VERIFIER_TYPE: sc_verifier
+      # internal tx ยังปิด — polygon-edge 0.9.0 ส่ง structLogs ผิดรูป (ดู /opt/tpix/docker-compose.yml)
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+      INDEXER_INTERNAL_TRANSACTIONS_TRACER_TYPE: "polygon_edge"
+      INDEXER_DISABLE_BLOCK_REWARD_FETCHER: "true"
+      INDEXER_DISABLE_WITHDRAWALS_FETCHER: "true"
+      # polygon-edge 0.9.0 รับ JSON-RPC batch ได้ไม่เกิน 20 (ค่าเริ่มต้น) — 8.x+ ส่งทีละ batch size เต็ม
+      INDEXER_COIN_BALANCES_BATCH_SIZE: "20"
+      INDEXER_TOKEN_BALANCES_BATCH_SIZE: "20"
+      COIN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
+      TOKEN_BALANCE_ON_DEMAND_FETCHER_ENABLED: "true"
+      TXS_STATS_ENABLED: "true"
+      SHOW_TXS_CHART: "true"
+      SHOW_PRICE_CHART: "false"
+      DISABLE_EXCHANGE_RATES: "true"
+      DISABLE_MARKET: "true"
+      # heavy index migration เช็คทุก 10 นาทีโดยปริยาย — ข้อมูลเราเล็ก ให้เช็คถี่
+      MIGRATION_HEAVY_INDEX_OPERATIONS_CHECK_INTERVAL: "10s"
+    ports: ["127.0.0.1:4200:4000"]
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "3" }
+    networks: [tpix]
+
+  bsn-verifier:
+    image: ${BSN_VERIFIER_IMAGE:-ghcr.io/blockscout/smart-contract-verifier:v1.11.1}
+    container_name: bsn-verifier
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      SMART_CONTRACT_VERIFIER__SERVER__HTTP__ADDR: 0.0.0.0:8050
+      SMART_CONTRACT_VERIFIER__SOLIDITY__ENABLED: "true"
+      SMART_CONTRACT_VERIFIER__SOLIDITY__COMPILERS_DIR: /compilers
+      SMART_CONTRACT_VERIFIER__SOLIDITY__REFRESH_VERSIONS_SCHEDULE: "0 0 * * * * *"
+      SMART_CONTRACT_VERIFIER__VYPER__ENABLED: "false"
+      SMART_CONTRACT_VERIFIER__SOURCIFY__ENABLED: "false"
+      # v1.11+ requires an explicit mode; native = the in-process compilers every earlier version used
+      SMART_CONTRACT_VERIFIER__COMPILERS__EXECUTION__TYPE: native
+      SMART_CONTRACT_VERIFIER__ZKSYNC_SOLIDITY__ENABLED: "false"
+      SMART_CONTRACT_VERIFIER__METRICS__ENABLED: "false"
+      RUST_LOG: info
+    volumes:
+      - bsn-verifier-compilers:/compilers
+    logging: *logging
+    networks: [tpix]
+
+  bsn-stats:
+    image: ghcr.io/blockscout/stats:v2.19.1
+    container_name: bsn-stats
+    restart: unless-stopped
+    mem_limit: 512m
+    depends_on:
+      bsn-db: { condition: service_healthy }
+    environment:
+      STATS__DB_URL: postgresql://${BS_USER}:${BS_PASS}@bsn-db:5432/stats
+      STATS__BLOCKSCOUT_DB_URL: postgresql://${BS_USER}:${BS_PASS}@bsn-db:5432/${BS_DB}
+      STATS__BLOCKSCOUT_API_URL: http://bsn-backend:4000
+      STATS__CREATE_DATABASE: "true"
+      STATS__RUN_MIGRATIONS: "true"
+      STATS__SERVER__HTTP__ADDR: 0.0.0.0:8050
+      STATS__METRICS__ENABLED: "false"
+      RUST_LOG: info
+    volumes:
+      # charts.json ของ image ฝัง native_coin_symbol=ETH — ไฟล์นี้ดึงจาก image v2.19.1 แล้วแก้เป็น TPIX
+      - /opt/tpix-bs/config/stats-charts.json:/app/config/blockscout_instance/charts.json:ro
+    ports: ["127.0.0.1:8163:8050"]
+    logging: *logging
+    networks: [tpix]
+
+  bsn-frontend:
+    # build เองจาก blockscout/frontend v2.12.1 (/opt/build) — upstream ไม่ปล่อย image สาธารณะหลัง v2.3.5
+    image: ${BSN_FRONTEND_IMAGE:-tpix/blockscout-frontend:v2.12.1}
+    container_name: bsn-frontend
+    restart: unless-stopped
+    mem_limit: 768m
+    depends_on: [bsn-backend]
+    environment:
+      NEXT_PUBLIC_API_HOST: explorer.tpix.online
+      NEXT_PUBLIC_API_PORT: "443"
+      NEXT_PUBLIC_API_PROTOCOL: https
+      NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL: wss
+      NEXT_PUBLIC_APP_HOST: explorer.tpix.online
+      NEXT_PUBLIC_APP_PROTOCOL: https
+      NEXT_PUBLIC_APP_PORT: "443"
+      NEXT_PUBLIC_NETWORK_NAME: "TPIX Chain"
+      NEXT_PUBLIC_NETWORK_SHORT_NAME: "TPIX"
+      NEXT_PUBLIC_NETWORK_ID: "4289"
+      NEXT_PUBLIC_NETWORK_RPC_URL: "https://rpc1.tpix.online"
+      NEXT_PUBLIC_NETWORK_CURRENCY_NAME: "TPIX"
+      NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: "TPIX"
+      NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: "18"
+      NEXT_PUBLIC_IS_TESTNET: "false"
+      # LOGO = โลโก้แนวนอน (ใช้ตอนแถบหัวกางเต็ม) · ICON = ไอคอนจัตุรัส (ตอนแถบหุบ/จอมือถือ)
+      # ⚠️ สองอย่างนี้ต้องเป็นคนละรูป — เดิมตั้งเป็นไฟล์เดียวกันทั้งคู่ ผลคือรูปแนวนอน
+      # อัตราส่วน 2.36:1 ถูกยัดลงช่องจัตุรัส 30×30 ที่ overflow:hidden แล้วบีบเหลือ
+      # 30×60 กลายเป็นโลโก้ผอมสูงอ่านไม่ออก (ยืนยันจากเว็บจริง 2026-08-08)
+      NEXT_PUBLIC_NETWORK_LOGO: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_LOGO_DARK: "https://tpix.online/images/logotpixexplorer.webp"
+      NEXT_PUBLIC_NETWORK_ICON: "https://tpix.online/images/tpix-logo-512.png"
+      NEXT_PUBLIC_NETWORK_ICON_DARK: "https://tpix.online/images/tpix-logo-512.png"
+      NEXT_PUBLIC_COLOR_THEME_DEFAULT: "dark"
+      NEXT_PUBLIC_HOMEPAGE_CHARTS: "['daily_txs']"
+      NEXT_PUBLIC_WEB3_WALLETS: "['metamask']"
+      NEXT_PUBLIC_PROMOTE_BLOCKSCOUT_IN_TITLE: "false"
+      NEXT_PUBLIC_AD_BANNER_PROVIDER: "none"
+      NEXT_PUBLIC_AD_TEXT_PROVIDER: "none"
+
+      # ── favicon ────────────────────────────────────────────────────────────
+      # ไม่มี prefix NEXT_PUBLIC โดยตั้งใจ — favicon_generator.sh อ่านตัวนี้ตอนบูต
+      # ถ้าไม่ตั้ง มัน fallback ไป NEXT_PUBLIC_NETWORK_ICON ซึ่งเป็น .webp
+      # ตัวสร้าง favicon อ่าน webp ไม่ได้ → พังเงียบ → /favicon.ico ตอบ 404
+      # และแท็บเบราว์เซอร์ไม่มีไอคอน (ยืนยันจากเว็บจริง 2026-08-08)
+      # ต้องเป็น PNG/JPG/SVG เท่านั้น
+      FAVICON_MASTER_URL: "https://tpix.online/images/tpix-logo-512.png"
+      # รูปที่ขึ้นตอนแชร์ลิงก์ใน LINE/Facebook/X — ไม่ตั้ง = ได้โลโก้ Blockscout
+      NEXT_PUBLIC_OG_IMAGE_URL: "https://tpix.online/images/tpix-logo-512.png"
+
+      # ── หน้า /stats (กราฟ) ─────────────────────────────────────────────────
+      # ใช้ path บนโดเมนเดิม ไม่แยก subdomain — เลี่ยงงาน DNS + ใบรับรองใหม่
+      # และเป็น same-origin เลยไม่ต้องยุ่งกับ CORS ด้วย
+      # nginx ส่ง /stats-api/ → 127.0.0.1:8153 (ดู nginx-explorer.conf)
+      NEXT_PUBLIC_STATS_API_HOST: "https://explorer.tpix.online"
+      NEXT_PUBLIC_STATS_API_BASE_PATH: "/stats-api"
+
+      # ── ให้ตรงกับความจริงของเชนนี้ ─────────────────────────────────────────
+      # IBFT2 เป็น PoA ไม่ใช่ PoW — ตั้งค่านี้แล้วหน้าเว็บเรียก "Validator"
+      # แทน "Miner" ซึ่งตรงกับสิ่งที่ผู้ใช้เห็นจริงมากกว่า
+      NEXT_PUBLIC_NETWORK_VERIFICATION_TYPE: "validation"
+
+      # ── ของที่ Blockscout ทำได้อยู่แล้วแต่ไม่เคยเปิด (ตรวจแล้ว 2026-08-08) ──
+      # ⚠️ ตัวนี้เป็น no-op — ตั้งไว้เพื่อประกาศเจตนาเท่านั้น
+      # โค้ดจริงเช็คว่า `"false" === env` แปลว่าฟีเจอร์ **เปิดอยู่แล้วโดยปริยาย**
+      # จะปิดได้ต้องใส่ "false" เท่านั้น ใส่ "true" ไม่ได้เปลี่ยนอะไร
+      # และ v1.38.0 **ไม่มีเมนู /advanced-filter ในตัวเลย** (ไม่มีนิยามใน bundle)
+      # เข้าได้ทาง URL ตรงอย่างเดียว → จึงเพิ่มลิงก์ไว้ใน footer ให้คนหาเจอ
+      NEXT_PUBLIC_ADVANCED_FILTER_ENABLED: "true"
+      # รองรับส่วนขยายเบราว์เซอร์ MetaSuites (ฟรี ไม่ต้องต่อบริการอะไร)
+      NEXT_PUBLIC_METASUITES_ENABLED: "true"
+      # ใส่ข้อมูลจริงของหน้านั้นๆ ลง meta tag — ตอนแชร์ลิงก์ที่อยู่/ธุรกรรมใน
+      # LINE/Facebook/X จะขึ้นยอดและรายละเอียด ไม่ใช่ข้อความเดียวกันหมดทุกหน้า
+      NEXT_PUBLIC_SEO_ENHANCED_DATA_ENABLED: "true"
+      NEXT_PUBLIC_OG_ENHANCED_DATA_ENABLED: "true"
+      NEXT_PUBLIC_OG_DESCRIPTION: "TPIX Chain block explorer — ตรวจสอบบล็อก ธุรกรรม และกระเป๋าบนเชน TPIX (chain ID 4289) ได้แบบสาธารณะตลอดเวลา"
+      # แถบหน้าแรกใช้สีแบรนด์ TPIX แทนสีเริ่มต้นของ Blockscout
+      # ใช้ HERO_BANNER_CONFIG ไม่ใช่ HOMEPAGE_PLATE_* — ตัวหลัง deprecated แล้ว
+      # (ตัว validator ของ v1.38.0 เตือนตรงๆ ว่าจะถูกถอดออกในรุ่นถัดไป)
+      # ค่าเป็น array เพื่อรองรับธีมสว่าง/มืดแยกกัน ที่นี่ใส่ค่าเดียวใช้ทั้งสองธีม
+      NEXT_PUBLIC_HOMEPAGE_HERO_BANNER_CONFIG: '{"background":["linear-gradient(136deg, rgb(6,182,212) 0%, rgb(14,116,144) 50%, rgb(15,23,42) 100%)"],"text_color":["white"]}'
+      # ปุ่ม "เปิดใน Remix" บนหน้าสัญญาที่ยืนยันซอร์สแล้ว
+      # {hash} กับ {domain} เป็นตัวแทนที่ Blockscout เติมให้เอง
+      NEXT_PUBLIC_CONTRACT_CODE_IDES: '[{"title":"Remix IDE","url":"https://remix.ethereum.org/?address={hash}&blockscout={domain}","icon_url":"https://tpix.online/images/tpix-logo-512.png"}]'
+      # ลิงก์เพิ่มในเมนู — ผูก explorer เข้ากับ ecosystem ที่เหลือ
+      NEXT_PUBLIC_OTHER_LINKS: '[{"text":"TPIX Chain","url":"https://tpix.online"},{"text":"Whitepaper","url":"https://tpix.online/whitepaper"},{"text":"RPC Endpoint","url":"https://rpc1.tpix.online"}]'
+      # ลิงก์ท้ายเว็บ — ไฟล์ JSON เสิร์ฟจาก nginx เครื่องเดียวกัน (ดู nginx-explorer.conf)
+      # frontend ดาวน์โหลดไฟล์นี้ตอนบูต ถ้าโหลดไม่ได้จะข้ามไปเฉยๆ ไม่ทำให้ล้ม
+      NEXT_PUBLIC_FOOTER_LINKS: "https://explorer.tpix.online/tpix-footer-links.json"
+      # ผังโครงสร้างสัญญา — เส้นทางเดียวกับ stats คือ path บนโดเมนเดิม
+      NEXT_PUBLIC_VISUALIZE_API_HOST: "https://explorer.tpix.online"
+      NEXT_PUBLIC_VISUALIZE_API_BASE_PATH: "/visualize-api"
+      # แก๊สเป็นศูนย์ทั้งเชน (--price-limit 0) ตัวติดตามราคาแก๊สจึงโชว์ค่าว่าง
+      # ตลอดกาล ปิดทิ้งดีกว่าให้ผู้ใช้เห็นช่องที่ไม่มีวันมีข้อมูล
+      NEXT_PUBLIC_GAS_TRACKER_ENABLED: "false"
+      NEXT_PUBLIC_NETWORK_CURRENCY_WEI_NAME: "wei"
+      NEXT_PUBLIC_HOMEPAGE_STATS: "['total_blocks','average_block_time','total_txs','wallet_addresses']"
+    ports: ["127.0.0.1:3200:3000"]
+    logging: *logging
+    networks: [tpix]
+
+volumes:
+  bsn-db-data:
+  bsn-verifier-compilers:
+
+networks:
+  tpix:
+    external: true
+    name: tpix_tpix

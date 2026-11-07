@@ -5,7 +5,8 @@
 #
 # ดึง Token List สาธารณะของ tpix.online (มาตรฐาน Uniswap Token List — มีเฉพาะเหรียญที่
 # แอดมินอนุมัติแล้ว) แล้วส่งโลโก้เข้า Blockscout ผ่าน /api/v2/import/token-info
-# ที่รันอยู่บนเครื่องเดียวกัน (127.0.0.1:4000)
+# ที่รันอยู่บนเครื่องเดียวกัน (127.0.0.1:4200 = ชุด Blockscout 12 ใน /opt/tpix-bs ตั้งแต่ 2026-11-06;
+# ชุดเก่า 6.10.1 ที่ 4000 หยุดแล้ว — ดู infrastructure/explorer/)
 #
 # ทำไมเป็นแบบ "ดึง" ไม่ใช่ให้เว็บ "ส่ง": คีย์ API_SENSITIVE_ENDPOINTS_KEY ไม่ต้องออกจากเครื่องนี้เลย
 # เว็บแค่เผยแพร่รายการสาธารณะ ส่วนเครื่องนี้อ่านคีย์จาก /opt/tpix/.env เอง
@@ -23,7 +24,7 @@
 set -euo pipefail
 
 LIST_URL="${LIST_URL:-https://tpix.online/tokenlist.json}"
-BS_API="${BS_API:-http://127.0.0.1:4000}"
+BS_API="${BS_API:-http://127.0.0.1:4200}"   # Blockscout 12 stack in /opt/tpix-bs since 2026-11-06
 ENV_FILE="${ENV_FILE:-/opt/tpix/.env}"
 CHAIN_ID=4289
 
