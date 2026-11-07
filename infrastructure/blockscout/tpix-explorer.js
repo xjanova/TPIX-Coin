@@ -20,6 +20,9 @@
  *      NEXT_PUBLIC_FOOTER_LINKS (tpix-footer-links.json) ใส่ได้แค่ลิงก์ตัวหนังสือ
  *   5. ป้าย ✓ Verified หลังชื่อเหรียญ (หน้า /tokens และหน้า /token/0x…)
  *      เมื่อสัญญายืนยันซอร์สแล้ว — กฎเดียวกับ TPIX Wallet
+ *   6. หน้ายืนยันซอร์ส (/contract-verification, /address/0x…/contract-verification)
+ *      แสดงแถบพาไปบริการยืนยันซอร์สของ TPIX Token Factory แทนฟอร์มของ Blockscout
+ *      ซึ่งด่าน nginx ตอบ 403 ทุกครั้ง (tpix-verify-gate-locations.conf)
  *
  * ทำไมต้องดึงยอดจาก RPC เอง ไม่ใช้ API ของ Blockscout
  *   Blockscout ค้นพบ address จาก block/transaction เท่านั้น กระเป๋าที่ได้เงิน
@@ -338,12 +341,12 @@
     var s = document.createElement('style');
     s.id = 'tpix-verified-css';
     s.textContent = [
-      /* ค่าตั้งต้นคือธีมสว่าง — ธีมมืด Blockscout ใส่ body.chakra-ui-dark และ html[data-theme=dark] */
+      /* ค่าตั้งต้นคือธีมสว่าง — ธีมมืด: frontend v2.x ใส่ html.dark · v1.x ใส่ body.chakra-ui-dark / html[data-theme=dark] */
       '.tpix-verified{flex:none;display:inline-flex;align-items:center;gap:3px;vertical-align:middle;margin-left:6px;',
       '  height:20px;padding:0 6px;border-radius:10px;border:1px solid rgba(22,101,52,.4);background:rgba(22,163,74,.1);',
       '  color:#166534;font:600 11px/1 system-ui,sans-serif;white-space:nowrap;cursor:help;user-select:none}',
       '.tpix-verified svg{width:12px;height:12px;flex:none;display:block}',
-      '.chakra-ui-dark .tpix-verified,[data-theme=dark] .tpix-verified{border-color:rgba(74,222,128,.45);',
+      '.dark .tpix-verified,.chakra-ui-dark .tpix-verified,[data-theme=dark] .tpix-verified{border-color:rgba(74,222,128,.45);',
       '  background:rgba(74,222,128,.12);color:#4ade80}',
       '.tpix-verified-lg{height:24px;padding:0 8px;border-radius:12px;font-size:12px;margin-left:10px}',
       '.tpix-verified-lg svg{width:14px;height:14px}',
@@ -500,6 +503,92 @@
     document.querySelectorAll(stale).forEach(function (b) { b.remove(); });   // ค้างจากหน้าก่อน
   }
 
+  /* ── หน้ายืนยันซอร์ส → บริการของ TPIX Token Factory ──────────────────────── */
+
+  /* ด่าน nginx (tpix-verify-gate-locations.conf) ตอบ 403 ให้คำขอ verify ที่ไม่มี
+   * X-TPIX-Verify-Key ทุกครั้ง ฟอร์มของ Blockscout จึงกรอกไปก็ไม่มีทางสำเร็จ
+   * ซ่อนฟอร์มแล้วบอกทางที่ใช้ได้จริง: ปุ่มบนการ์ดเหรียญในแท็บ "เหรียญของฉัน" ของ Token Factory
+   * ค่าบริการตาม policy ของ tpix.online (options.source_verify.fee) — เปลี่ยนค่าที่นั่นต้องแก้ SV_FEE ด้วย
+   * หน้านี้มีฟอร์มเฉพาะสัญญาที่ยังไม่ยืนยัน (ยืนยันแล้ว redirect ไปแท็บ contract · ที่อยู่ธรรมดาได้ 404)
+   * ไม่มีฟอร์ม = ไม่แสดงแถบ */
+  var SV_ROUTE = /^\/(?:address\/0x[0-9a-fA-F]{40}\/)?contract-verification\/?$/;
+  var SV_URL = 'https://tpix.online/token-factory';
+  var SV_FEE = '1,000';
+
+  function svStyles() {
+    if (document.getElementById('tpix-sv-css')) return;
+    var s = document.createElement('style');
+    s.id = 'tpix-sv-css';
+    s.textContent = [
+      /* :has ซ่อนฟอร์มทันทีที่แถบขึ้น · เบราว์เซอร์เก่าใช้ style ที่ใส่ให้ฟอร์มใน verifyPage() */
+      'main:has(.tpix-sv) form{display:none!important}',
+      '.tpix-sv{box-sizing:border-box;max-width:760px;margin:8px 0 24px;padding:20px 22px;border-radius:14px;',
+      '  border:1px solid rgba(6,182,212,.45);background:linear-gradient(160deg,rgba(6,182,212,.1),rgba(6,182,212,.02) 70%);',
+      '  color:inherit;line-height:1.55;overflow-wrap:anywhere}',
+      '.tpix-sv h2{font-size:1.15rem;font-weight:700;line-height:1.35;margin:0 0 2px}',
+      '.tpix-sv-en{font-size:.88rem;opacity:.72;margin:0 0 12px}',
+      '.tpix-sv-why{font-size:.86rem;opacity:.85;margin:0 0 16px}',
+      '.tpix-sv-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 18px;border-radius:10px;',
+      '  background:#0e7490;color:#fff!important;font:600 15px/1.3 system-ui,sans-serif;text-decoration:none!important;',
+      '  transition:background .15s}',
+      '.tpix-sv-btn:hover{background:#155e75}',
+      '.tpix-sv-btn:focus-visible{outline:2px solid #06b6d4;outline-offset:2px}',
+      '.tpix-sv-note{font-size:.8rem;opacity:.78;margin:16px 0 0;padding-top:12px;border-top:1px solid rgba(128,145,170,.25)}',
+      '.tpix-sv-note p{margin:0 0 4px}',
+      '@media (max-width:480px){.tpix-sv{padding:16px}.tpix-sv h2{font-size:1.02rem}',
+      '  .tpix-sv-btn{display:flex;justify-content:center;text-align:center;width:100%}}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  function svText(tag, cls, text) {
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    el.textContent = text;
+    return el;
+  }
+
+  function svBanner() {
+    svStyles();
+    var box = document.createElement('section');
+    box.className = 'tpix-sv';
+    box.setAttribute('aria-label', 'TPIX Token Factory source verification');
+    box.appendChild(svText('h2', '', 'ยืนยันซอร์สโค้ดผ่าน TPIX Token Factory — ค่าบริการ ' + SV_FEE + ' TPIX'));
+    box.appendChild(svText('p', 'tpix-sv-en', 'Verify contract source through TPIX Token Factory — fee ' + SV_FEE + ' TPIX'));
+    box.appendChild(svText('p', 'tpix-sv-why',
+      'TPIX Explorer รับยืนยันซอร์สโค้ดผ่าน TPIX Token Factory เท่านั้น จึงปิดฟอร์มของหน้านี้ไว้ · ' +
+      'Source verification on TPIX Explorer is available only through TPIX Token Factory, so the form on this page is turned off.'));
+    var a = svText('a', 'tpix-sv-btn', '🔍 ไปที่ TPIX Token Factory · Open Token Factory ↗');
+    a.href = SV_URL;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    box.appendChild(a);
+    var note = document.createElement('div');
+    note.className = 'tpix-sv-note';
+    note.appendChild(svText('p', '',
+      'ใช้ได้เฉพาะเหรียญที่สร้างด้วย TPIX Token Factory — เชื่อมกระเป๋าที่สร้างเหรียญ เปิดแท็บ "เหรียญของฉัน" ' +
+      'แล้วกด "🔍 ยืนยันซอร์สโค้ดบน Explorer" ที่การ์ดของเหรียญ'));
+    note.appendChild(svText('p', '',
+      'Only tokens created with TPIX Token Factory are eligible — connect the wallet that created the token, open "My Tokens" ' +
+      'and press "Verify source code on Explorer" on the token\'s card.'));
+    box.appendChild(note);
+    return box;
+  }
+
+  /* แถบต่อท้ายลูกของพ่อฟอร์ม (บน /contract-verification คือ <main>) — ไม่แทรกกลางลูกที่ React จัดการ
+   * ฟอร์มถูกซ่อน แถบจึงอยู่ใต้หัวเรื่องพอดี · React สร้างฟอร์มใหม่ apply() รอบถัดไปก็ซ่อนให้อีก */
+  function verifyPage() {
+    var form = document.querySelector('main form');
+    if (!form) return;
+    var host = form.parentElement;
+    if (!host || !hydrated(host)) return;
+    if (form.style.display !== 'none') form.style.display = 'none';
+    var cur = document.querySelector('.tpix-sv');
+    if (cur && cur.parentElement === host) return;
+    if (cur) cur.remove();
+    host.appendChild(svBanner());
+  }
+
   /* ── ทะเบียนเชนใน footer ───────────────────────────────────────────────── */
 
   /* ใส่เฉพาะที่ตรวจแล้วว่ามีหน้า chain 4289 จริง (ethereum-lists/chains PR #8148)
@@ -603,6 +692,7 @@
   function isHome() { return location.pathname === '/' || location.pathname === ''; }
   function isTokens() { return /^\/tokens\/?$/.test(location.pathname); }
   function isTokenPage() { return TOKEN_PAGE.test(location.pathname); }   // ?tab=… อยู่ใน search ไม่กระทบ
+  function isVerifyRoute() { return SV_ROUTE.test(location.pathname); }
 
   function apply() {
     branding();
@@ -611,6 +701,8 @@
     else { var b = document.querySelector('.tpix-treasury'); if (b) b.remove(); }
     if (isTokens()) addWatchButtons();
     badges();                                 // หลังปุ่ม + — ป้ายแทรกก่อนปุ่มได้ทันที
+    if (isVerifyRoute()) verifyPage();
+    else { var sv = document.querySelector('.tpix-sv'); if (sv) sv.remove(); }
   }
 
   function boot() {
