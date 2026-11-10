@@ -128,6 +128,7 @@ services:
   blockscout-db:
     image: postgres:16-alpine
     container_name: blockscout-db
+    profiles: ["legacy-explorer"]  # retired 2026-11-07: explorer runs from /opt/tpix-bs (Blockscout 12); start with --profile legacy-explorer
     restart: unless-stopped
     mem_limit: 2g # Match production; do not lower the database limit during validator hardening.
     environment:
@@ -149,6 +150,7 @@ services:
   blockscout-backend:
     image: blockscout/blockscout:6.10.1
     container_name: blockscout-backend
+    profiles: ["legacy-explorer"]  # retired 2026-11-07: explorer runs from /opt/tpix-bs (Blockscout 12); start with --profile legacy-explorer
     restart: unless-stopped
     mem_limit: 2g
     depends_on:
@@ -253,6 +255,7 @@ services:
   blockscout-sc-verifier:
     image: ghcr.io/blockscout/smart-contract-verifier@sha256:c9e4e022ba2b1cc24fe70e581d835e873c6c374545b3a0fd209e16ff03f93d78  # v1.10.6
     container_name: blockscout-sc-verifier
+    profiles: ["legacy-explorer"]  # retired 2026-11-07: explorer runs from /opt/tpix-bs (Blockscout 12); start with --profile legacy-explorer
     restart: unless-stopped
     mem_limit: 1g
     environment:
@@ -299,6 +302,7 @@ services:
   blockscout-stats:
     image: ghcr.io/blockscout/stats@sha256:1091cacba9287b6930575fac2aa3512dec3a8e81de58316ca63a6c20e1ddc457  # v2.17.0
     container_name: blockscout-stats
+    profiles: ["legacy-explorer"]  # retired 2026-11-07: explorer runs from /opt/tpix-bs (Blockscout 12); start with --profile legacy-explorer
     restart: unless-stopped
     mem_limit: 512m
     depends_on:
@@ -327,6 +331,7 @@ services:
   blockscout-frontend:
     image: ghcr.io/blockscout/frontend:v1.38.0
     container_name: blockscout-frontend
+    profiles: ["legacy-explorer"]  # retired 2026-11-07: explorer runs from /opt/tpix-bs (Blockscout 12); start with --profile legacy-explorer
     restart: unless-stopped
     mem_limit: 768m
     depends_on: [blockscout-backend]

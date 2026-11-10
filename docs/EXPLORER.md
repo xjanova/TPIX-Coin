@@ -248,10 +248,14 @@ TPIX Token Factory service (1,000 TPIX) — tpix.online submits it after the on-
 
 nginx in front of Blockscout rejects with `403` any request without a valid `X-TPIX-Verify-Key` header to:
 
-- `POST /api/v2/smart-contracts/<address>/verification/...`
-- `POST /api/` (Etherscan-style), and `GET /api/?action=verify*`
+- `POST/PUT/PATCH/DELETE /api/v2/smart-contracts/<address>/verification/...` and `/api/v1/verified_smart_contracts`
+- the Etherscan-style API at `/api/` and `/api/v1`: any write method, any request with a body,
+  and any query that contains `verif` or a `%`-escape (so `checkverifystatus` needs the key too)
 
-Reading stays open: contract pages, `GET /api/v2/smart-contracts/<address>`, `checkverifystatus`.
+Paths with `.` / `..` segments are rejected with `400`.
+
+Reading stays open: contract pages, `GET /api/v2/smart-contracts/<address>`, and Etherscan-style reads
+(`module=account`, `logs`, `block`, `getsourcecode`, …). The explorer's verify pages point users to Token Factory.
 Gate files: `infrastructure/blockscout/08-tpix-verify-gate.conf`, `tpix-verify-gate-locations.conf`,
 `tpix-verify-key.map.example`.
 
