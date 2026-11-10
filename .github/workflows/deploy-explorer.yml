@@ -5,18 +5,25 @@
 
 name: Deploy TPIX Explorer
 
+# RETIRED 2026-11-10. explorer.tpix.online runs Blockscout 12.0.4 from
+# /opt/tpix-bs (infrastructure/explorer/, see its README). This workflow still
+# starts the 6.10.1 stack (blockscout-db / -backend / -frontend), which is kept
+# stopped on the chain host only for rollback. Starting it again would fight
+# the live stack for ports and load the disk hard enough to stall IBFT.
+# The push trigger is gone and every run stops at the first step, so a fixed
+# SSH secret can never bring the old stack back by accident.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'infrastructure/blockscout/**'
-      - '.github/workflows/deploy-explorer.yml'
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Refuse — this workflow deploys the retired 6.10.1 explorer
+        run: |
+          echo "::error::deploy-explorer.yml is retired. The live explorer is Blockscout 12 at /opt/tpix-bs — deploy it with infrastructure/explorer/ (README), not this workflow."
+          exit 1
+
       # ── ด่านกัน automation ล้าสมัยไปสั่งงานเครื่องผิด (เพิ่ม 2026-08-05) ──────────
       # workflow นี้ SSH เข้า secrets.SSH_HOST ซึ่งเป็นค่าเดี่ยว และสมมติว่า validator
       # ทุกตัวอยู่ที่ $HOME/tpix-infrastructure บนเครื่องนั้น วันที่ย้าย validator
