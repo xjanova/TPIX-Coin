@@ -28,6 +28,49 @@
 | `grep -r load_module /etc/nginx/modules-enabled/` | ได้ผลว่าง แล้วสรุปผิดว่าโมดูล njs ไม่ได้โหลด | `-r` ไม่ตาม symlink ต้องใช้ `-R` |
 | curl ไม่ส่ง UA | Cloudflare bot rule ตอบ **403** ทำให้นึกว่าด่านเราพัง | ส่ง `User-Agent` แบบเบราว์เซอร์เสมอ |
 | copy watchdog ไป `/usr/local/bin` | cron เรียก `/usr/local/sbin/tpix-chain-watchdog` (ไม่มี `.sh`) — ตัวใหม่ไม่เคยถูกเรียก | ตรวจ `/etc/cron.d/tpix-chain-watchdog` ก่อนเสมอ |
+| ลง `tpix-rpc.js` รุ่นงบแก๊สก่อนโซน `rpc_gas_budget` | **ธุรกรรมทุกใบได้ 429** (`gas rate limit exceeded`) เพราะด่าน fail-closed เมื่อโซนหาย | ลง `05-tpix-njs.conf` + reload ให้โซนเกิดก่อน แล้วค่อยลง `tpix-rpc.js` (ขั้น 1b) |
+
+---
+
+## ขั้น 1b — งบแก๊สต่อ IP (เพิ่ม 2026-11-13 · **ยังไม่ได้ลงเครื่องจริง**)
+
+โควตาเดิมนับจำนวนใบ (10 ใบ / 10 วิ / IP) — ธุรกรรม 21,000 gas กับ 10,000,000 gas กิน 1 หน่วยเท่ากัน
+IP เดียวที่ส่งใบละ 5M gas วินาทีละใบจึงทำให้ทุกบล็อกเต็มได้ (เชนรับ 5M gas/วินาที)
+ด่านใหม่อ่าน gas limit จากธุรกรรมที่เซ็นแล้ว และให้ IP ละ **12M gas / 60 วิ** (4% ของความจุเชน)
+
+| สิ่งที่ผู้ใช้จะเห็นต่างจากเดิม | |
+|---|---|
+| ธุรกรรมที่ขอแก๊สเกิน 10M | 400 `transaction gas limit above block gas limit` (เดิมโหนดเป็นคนปฏิเสธ) |
+| ใช้แก๊สรวมเกิน 12M ใน 1 นาทีจาก IP เดียว | 429 `gas rate limit exceeded` — ลองใหม่ได้เมื่อขึ้นนาทีใหม่ |
+| สคริปต์ deploy สัญญาหลายตัวติดกัน (`contracts/scripts/deploy-*.js`) | ได้ราว 12M gas ต่อนาที เกินแล้วเจอ 429 — hardhat ลองใหม่จำกัดครั้ง จึง **อาจล้มกลางทาง** `pace()` ในสคริปต์ยังพักตามโควตาจำนวนใบอย่างเดียว ยังไม่รู้จักงบแก๊ส → ก่อนลงด่านนี้ต้องปรับ `pace()` หรือรัน deploy จากเครื่องเชนตรงเข้า `127.0.0.1:8545` (ยังไม่ได้ลองทั้งสองทาง) |
+
+ค่า 12M / 60 วิ เป็นค่าตั้งต้นจากการคำนวณ ยังไม่ได้ยืนยันด้วยโหลดจริงบน `infrastructure/lab`
+
+```bash
+cd ~/TPIX-Coin && git pull
+TS=$(date +%Y%m%d-%H%M%S)
+sudo mkdir -p /etc/nginx/backup-$TS
+sudo cp /etc/nginx/njs/tpix-rpc.js /etc/nginx/conf.d/05-tpix-njs.conf /etc/nginx/backup-$TS/
+
+# 1) โซนก่อน — ไฟล์ js เก่ายังไม่ใช้โซนนี้ จึงไม่มีอะไรเปลี่ยนสำหรับผู้ใช้
+sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
+sudo nginx -t && sudo systemctl reload nginx
+sudo tail -n 20 /var/log/nginx/error.log        # ต้องไม่มี [emerg] — reload คืน exit 0 แม้ config ถูกปฏิเสธ
+
+# 2) แล้วค่อยตัวด่าน
+sudo cp infrastructure/njs/tpix-rpc.js /etc/nginx/njs/
+sudo nginx -t && sudo systemctl reload nginx
+sudo tail -n 20 /var/log/nginx/error.log
+
+# 3) ตรวจจากเครื่องนอก (ใช้เวลาราว 30 วิ และกินงบแก๊สของ IP ที่รัน 1 นาที)
+bash infrastructure/scripts/verify-rpc-gate.sh https://rpc.tpix.online
+```
+
+ถอยกลับ: `sudo cp /etc/nginx/backup-$TS/tpix-rpc.js /etc/nginx/njs/ && sudo nginx -t && sudo systemctl reload nginx`
+(โซน `rpc_gas_budget` ปล่อยไว้ได้ ไฟล์ js เก่าไม่แตะมัน)
+
+ยังไม่ได้ยืนยันบน njs 0.8.2 ของเครื่องจริง: `incr()` รับค่าลบ (ใช้คืนงบของใบที่ไม่ผ่าน — ถ้าไม่รับ ด่านจะเข้มขึ้นเฉย ๆ ไม่พัง)
+และการเพิ่มโซนใหม่ด้วย `reload` (ถ้าไม่ขึ้นให้ `restart` ตามกับดักแถวที่ 2)
 
 ---
 

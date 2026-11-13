@@ -84,25 +84,62 @@ check "batch 25 ใบ (เกินเพดาน 20)"              413 "$BATC
 check "JSON พัง"                                400 '{'
 
 echo
-echo "── โควตาเขียน (ธุรกรรมขยะ ไม่เข้า mempool) ──"
-# raw tx ปลอม — โหนดปฏิเสธตั้งแต่ถอดรหัส แต่ด่านนับโควตาไปแล้ว
-# จึงทดสอบตัวจำกัดได้โดยไม่ทิ้งอะไรไว้บนเชน
+echo "── โควตาเขียน: จำนวนใบ (ธุรกรรมที่โหนดปฏิเสธ ไม่เข้า mempool) ──"
+# ธุรกรรมโอน 1 wei ที่เซ็นจริง (gas 21,000) จากกุญแจสุ่มที่ทิ้งไปแล้ว — บัญชียอด 0
+# โหนดจึงปฏิเสธ (insufficient funds) แต่ด่านนับโควตาไปแล้ว = ทดสอบได้โดยไม่ทิ้งอะไรไว้บนเชน
+# ต้องเป็นใบเล็กที่ถอดแก๊สได้ ไม่ใช่ขยะ — ขยะถูกคิดแก๊สเต็มเพดาน จะไปชนงบแก๊สก่อนโควตาจำนวนใบ
 # รอให้หน้าต่างโควตาของรอบก่อนหมดอายุ ไม่งั้นจะโดนตัดตั้งแต่ใบแรกแล้วอ่านผลผิด
 sleep 11
-JUNK='{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":["0xdeadbeef"],"id":1}'
+SMALL='{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":["0xf861808082520894000000000000000000000000000000000000dead01808221a6a07a281bdae8308daa52e66517bb4e8bdb8d7a403d633e6a0cc15750bc287f1f9da062bfd4b92be3d1dafa914a63054407dd111273562e11e5de038645cfa97fdf28"],"id":1}'
 LIMITED=0
-for i in $(seq 1 14); do
-    code=$(hit "$JUNK")
+# 21 ใบ ไม่ใช่ 14: หน้าต่างเป็นแบบคงที่ 10 วิ ถ้าขอบหน้าต่างตกกลางชุด 14 ใบอาจแบ่งเป็น 7+7 แล้วไม่โดนตัดเลย
+# 21 ใบแบ่งสองฝั่งยังไงก็มีฝั่งหนึ่ง ≥ 11
+for i in $(seq 1 21); do
+    code=$(hit "$SMALL")
     if [ "$code" = "429" ]; then LIMITED=1; break; fi
 done
-if [ "$LIMITED" = "1" ]; then
+if [ "$LIMITED" = "1" ] && [ "$i" -ge 2 ]; then
     printf '  ✔ %-52s ตัดที่ใบที่ %s\n' "ยิงเขียนรัวแล้วโดนตัด (429)" "$i"
     PASS=$((PASS + 1))
+elif [ "$LIMITED" = "1" ]; then
+    printf '  ✘ %-52s โดนตัดตั้งแต่ใบแรก\n' "ยิงเขียนรัวแล้วโดนตัด (429)"
+    printf '      → ธุรกรรมทุกใบอาจโดนปฏิเสธอยู่: เช็กว่าโซน rpc_write_budget และ rpc_gas_budget\n'
+    printf '        ถูกประกาศใน 05-tpix-njs.conf ครบ (โซนหาย = ด่าน fail-closed)\n'
+    FAIL=$((FAIL + 1))
 else
-    printf '  ✘ %-52s ยิง 14 ใบไม่โดนตัดเลย\n' "ยิงเขียนรัวแล้วโดนตัด (429)"
-    printf '      → เช็ก js_shared_dict_zone rpc_write_budget ใน 10-tpix-http.conf\n'
+    printf '  ✘ %-52s ยิง 21 ใบไม่โดนตัดเลย\n' "ยิงเขียนรัวแล้วโดนตัด (429)"
+    printf '      → เช็ก js_shared_dict_zone rpc_write_budget ใน 05-tpix-njs.conf\n'
     FAIL=$((FAIL + 1))
 fi
+
+echo
+echo "── โควตาเขียน: งบแก๊ส ──"
+# ขยะที่ถอดแก๊สไม่ออกถูกคิดเต็มเพดาน (10M) — งบ 12M/60 วิ จึงรับได้ใบเดียว ใบถัดไปต้องโดนตัด
+# และต้องเป็นข้อความของงบแก๊ส ไม่ใช่ของโควตาจำนวนใบ (จึงรอให้หน้าต่างจำนวนใบหมดก่อน)
+sleep 11
+JUNK='{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":["0xdeadbeef"],"id":1}'
+GAS_LIMITED=0
+# 3 ใบ: ถ้าขอบหน้าต่าง 60 วิตกระหว่างใบที่ 1 กับ 2 ใบที่ 3 ก็ยังต้องโดนตัด
+for j in 1 2 3; do
+    reply=$(curl -sk -m 12 -X POST "$TARGET" -H 'Content-Type: application/json' \
+        -H "User-Agent: $UA" --data "$JUNK" 2>/dev/null || true)
+    case "$reply" in
+        *"gas rate limit exceeded"*) GAS_LIMITED=1; break ;;
+    esac
+done
+if [ "$GAS_LIMITED" = "1" ] && [ "$j" -ge 2 ]; then
+    printf '  ✔ %-52s ตัดที่ใบที่ %s\n' "ธุรกรรมกินแก๊สเต็มเพดานโดนตัดด้วยงบแก๊ส" "$j"
+    PASS=$((PASS + 1))
+elif [ "$GAS_LIMITED" = "1" ]; then
+    printf '  ✘ %-52s โดนตัดตั้งแต่ใบแรก\n' "ธุรกรรมกินแก๊สเต็มเพดานโดนตัดด้วยงบแก๊ส"
+    printf '      → โซน rpc_gas_budget อาจหาย (fail-closed) หรือ IP นี้เพิ่งใช้งบไปในนาทีนี้ — รอ 60 วิแล้วลองใหม่\n'
+    FAIL=$((FAIL + 1))
+else
+    printf '  ✘ %-52s ส่ง 3 ใบไม่โดนตัดเลย\n' "ธุรกรรมกินแก๊สเต็มเพดานโดนตัดด้วยงบแก๊ส"
+    printf '      → tpix-rpc.js บนเครื่องยังเป็นรุ่นที่ไม่มี spendGas หรือไม่ได้ reload nginx\n'
+    FAIL=$((FAIL + 1))
+fi
+echo "  (IP ที่รันสคริปต์นี้จะส่งธุรกรรมใหญ่ไม่ได้ราว 1 นาทีหลังจากนี้ — งบแก๊สถูกใช้ไปกับการทดสอบ)"
 
 # การอ่านต้องไม่โดนหางเลขจากโควตาเขียนที่เพิ่งเต็ม
 sleep 1
