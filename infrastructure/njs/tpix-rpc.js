@@ -47,6 +47,39 @@ var WINDOW_SECONDS = 10;
  * ตัดที่ขอบก่อน เพื่อไม่ให้ upstream เสียเวลาแกะคำขอที่ยังไงก็ถูกปฏิเสธ */
 var MAX_BATCH = 20;
 
+/* ── งบแก๊สต่อ IP ───────────────────────────────────────────────────────────
+ * โควตาด้านบนนับ "จำนวนใบ" — โอนธรรมดา 21,000 gas กับธุรกรรม 10,000,000 gas กิน 1 หน่วยเท่ากัน
+ * เชนรับได้ 10M gas / 2 วิ = 5M gas/วินาที ส่วน IP เดียวส่งได้เฉลี่ย 1 ใบ/วินาที
+ * → IP เดียวที่ส่งใบละ 5M gas ทำให้ทุกบล็อกเต็มได้ โดยไม่เกินโควตาจำนวนใบเลย
+ *   (security-review-2026-10-25 ข้อ F1 — คำนวณจาก config ยังไม่เคยยิงโหลดจริง)
+ *
+ * ด่านนี้อ่าน gas limit จากธุรกรรมที่เซ็นแล้ว (ดู rawTxGas) แล้วหักจากงบของ IP นั้น
+ *   12M gas / 60 วิ = เฉลี่ย 0.2M gas/วินาที = 4% ของความจุเชน → ต้องมี ~25 IP ถึงจะเต็มเชน
+ *   หน้าต่าง 60 วิ (ไม่ใช่ 10 วิ) เพราะงบต้อง ≥ MAX_TX_GAS เสมอ ไม่งั้นธุรกรรมใหญ่ใบเดียว
+ *   (deploy สัญญา) จะไม่มีวันผ่าน — หน้าต่างสั้น + งบ ≥ 10M = IP เดียวได้ 20% ของเชน
+ *
+ * ⚠️ ค่าพวกนี้เป็นค่าตั้งต้น ยังไม่ได้ยืนยันด้วยโหลดจริงบน infrastructure/lab
+ * ⚠️ ใช้โซนของตัวเอง (rpc_gas_budget, timeout=60s) ไม่ปนกับ rpc_write_budget (timeout=10s)
+ *    ถ้าปน วันที่ njs รุ่นใหม่ทำให้ค่าที่ incr() สร้างหมดอายุตาม timeout ของโซน
+ *    งบแก๊สจะกลายเป็น 12M ต่อ 10 วิ เงียบ ๆ
+ */
+var GAS_PER_WINDOW = 12000000;
+var GAS_WINDOW_SECONDS = 60;
+
+/* ต้องตรงกับ --block-gas-target ของ validator (single-host/docker-compose.yml)
+ * ธุรกรรมที่ขอแก๊สเกินนี้ไม่มีวันลงบล็อกได้ — ตัดที่ขอบพร้อมบอกสาเหตุ
+ * ⛔ ถ้าขยับ --block-gas-target ขึ้น ต้องขยับค่านี้ (และ GAS_PER_WINDOW) ตาม
+ *    ไม่งั้นธุรกรรมใหญ่ที่เชนรับได้จะโดน 400 ที่ด่าน */
+var MAX_TX_GAS = 10000000;
+
+/* ธุรกรรมที่ถูกต้องทุกใบใช้อย่างน้อย 21,000 — ใบที่แจ้งต่ำกว่านี้โหนดปฏิเสธเอง
+ * แต่ยังกินแรงโหนดตอนถอด จึงคิดขั้นต่ำเท่านี้ */
+var MIN_TX_GAS = 21000;
+
+/* ถอด gas limit ไม่ออก (ไม่ใช่ hex / RLP พัง / ชนิดธุรกรรมที่ไม่รู้จัก) → คิดเต็มเพดาน
+ * ยังส่งต่อให้โหนดเพื่อให้ผู้ใช้ได้ข้อความ error ของโหนดเอง แต่ขยะแบบนี้ผ่านได้ ~1 ใบ/นาที/IP */
+var UNPARSED_TX_GAS = MAX_TX_GAS;
+
 /* ── ด่านที่ 1 — DENY (ข้ามไม่ได้ ต่อให้อยู่ใน allow-list ก็ตาม) ──────────────
  * polygon-edge 0.9.0 ไม่เปิด namespace พวกนี้อยู่แล้ว แต่:
  *   - อัปเกรดรุ่นแล้วอาจเปิด
@@ -99,11 +132,141 @@ var DENY_SET = toSet(DENY_EXACT);
 var READ_SET = toSet(READ_METHODS);
 var WRITE_SET = toSet(WRITE_METHODS);
 
+var HEX_RE = /^[0-9a-fA-F]+$/;
+
+/**
+ * เลขจาก hex ช่วงไบต์ [from, to) — -1 ถ้าไม่ใช่ hex ล้วน
+ *
+ * ตรวจเฉพาะไบต์ที่อ่านจริง (ไม่เกิน 6 ไบต์ต่อครั้ง) โดยตั้งใจ:
+ *   - parseInt('1z', 16) ได้ 1 ไม่ใช่ NaN → ถ้าไม่ตรวจ ขยะจะถูกอ่านเป็น "แก๊สน้อย" แล้วหลุดการคิดเต็มเพดาน
+ *   - ไม่เอา regex ไปจับทั้งก้อน: ธุรกรรมยาวได้ถึง ~128k ตัวอักษร และ regex แบบวนกลุ่มบนสตริงยาวขนาดนั้น
+ *     ยังไม่เคยลองบน njs/PCRE ของเครื่องจริง ถ้ามันโยน error ธุรกรรมใหญ่ทุกใบจะได้ 500
+ */
+function hexInt(hex, from, to) {
+    var s = hex.substring(from * 2, to * 2);
+    if (!HEX_RE.test(s)) {
+        return -1;
+    }
+    return parseInt(s, 16);
+}
+
+/**
+ * หัวของ RLP item ที่ตำแหน่ง pos (หน่วยเป็นไบต์) — อ่านจากสตริง hex ตรง ๆ
+ * ไม่แปลงทั้งก้อนเป็น buffer เพราะต้องการแค่ 3-5 ช่องแรก ส่วน data อาจยาวหลายหมื่นไบต์
+ *
+ * @returns {{list: boolean, start: number, len: number}|null} null = RLP พัง/ล้นขอบ
+ */
+function rlpHead(hex, pos, end) {
+    if (pos >= end) {
+        return null;
+    }
+
+    var b = hexInt(hex, pos, pos + 1);
+    if (b < 0) {
+        return null;
+    }
+    var isList = b >= 0xc0;
+    var start;
+    var len;
+
+    if (b < 0x80) {
+        start = pos;          // ไบต์เดียว ค่าคือตัวมันเอง
+        len = 1;
+    } else {
+        var short = b - (isList ? 0xc0 : 0x80);
+        if (short <= 55) {
+            start = pos + 1;
+            len = short;
+        } else {
+            var lenOfLen = short - 55;
+            /* body ถูกจำกัดที่ 128k → ความยาว 3 ไบต์ก็เกินพอ เกิน 4 คือของปลอม
+             * (และกัน parseInt เกิน 2^53) */
+            if (lenOfLen > 4 || pos + 1 + lenOfLen > end) {
+                return null;
+            }
+            len = hexInt(hex, pos + 1, pos + 1 + lenOfLen);
+            if (len < 0) {
+                return null;
+            }
+            start = pos + 1 + lenOfLen;
+        }
+    }
+
+    if (start + len > end) {
+        return null;
+    }
+    return { list: isList, start: start, len: len };
+}
+
+/**
+ * gas limit ของธุรกรรมที่เซ็นแล้ว (พารามิเตอร์ตัวแรกของ eth_sendRawTransaction)
+ * ไม่ตรวจลายเซ็น ไม่ถอด field อื่น — โหนดทำส่วนนั้นเอง ที่นี่ต้องการแค่ "ใบนี้ขอแก๊สเท่าไร"
+ *
+ *   legacy        rlp([nonce, gasPrice, gasLimit, ...])                        ช่องที่ 2
+ *   0x01 (2930)   0x01 || rlp([chainId, nonce, gasPrice, gasLimit, ...])        ช่องที่ 3
+ *   0x02 (1559)   0x02 || rlp([chainId, nonce, tip, feeCap, gasLimit, ...])     ช่องที่ 4
+ *
+ * @returns {number} gas limit, หรือ -1 ถ้าถอดไม่ออก
+ */
+function rawTxGas(raw) {
+    if (typeof raw !== 'string' || raw.length < 4 || raw.length % 2 !== 0
+        || raw.charAt(0) !== '0' || raw.charAt(1) !== 'x') {
+        return -1;
+    }
+
+    var hex = raw.substring(2);
+    var end = hex.length / 2;
+    var pos = 0;
+    var gasIndex = 2;
+
+    var first = hexInt(hex, 0, 1);
+    if (first < 0) {
+        return -1;
+    }
+    if (first < 0xc0) {
+        if (first === 0x01) {
+            gasIndex = 3;
+        } else if (first === 0x02) {
+            gasIndex = 4;
+        } else {
+            return -1;        // รวม 0x7f (state tx ของ polygon-edge) — ไม่ควรมาทาง RPC สาธารณะ
+        }
+        pos = 1;
+    }
+
+    var outer = rlpHead(hex, pos, end);
+    if (outer === null || !outer.list || outer.start + outer.len !== end) {
+        return -1;
+    }
+
+    var p = outer.start;
+    for (var i = 0; i <= gasIndex; i++) {
+        var item = rlpHead(hex, p, end);
+        if (item === null || item.list) {
+            return -1;
+        }
+        if (i === gasIndex) {
+            if (item.len === 0) {
+                return 0;     // จำนวนเต็ม 0 ใน RLP คือสตริงว่าง
+            }
+            if (item.len > 6) {
+                return Number.MAX_SAFE_INTEGER;   // เกิน 2^48 — เกินเพดานแน่นอน ไม่ต้องรู้ค่าจริง
+            }
+            return hexInt(hex, item.start, item.start + item.len);
+        }
+        p = item.start + item.len;
+    }
+
+    return -1;
+}
+
 /**
  * ตัดสินคำขอจากเนื้อ body — ฟังก์ชันบริสุทธิ์ ไม่แตะ nginx เลย
  * แยกออกมาเพื่อให้ node เทสต์ได้จริง (ดู tpix-rpc.test.mjs)
  *
- * @returns {{ok: boolean, code?: number, reason?: string, writes: number, methods: string[]}}
+ * gas = แก๊สรวมที่ธุรกรรมในคำขอนี้ขอ (ใช้หักงบแก๊ส) — มีเฉพาะเมื่อ ok
+ *
+ * @returns {{ok: boolean, code?: number, reason?: string, writes: number, gas?: number, methods: string[]}}
  */
 function classify(bodyText) {
     if (typeof bodyText !== 'string' || bodyText.length === 0) {
@@ -131,6 +294,7 @@ function classify(bodyText) {
 
     var methods = [];
     var writes = 0;
+    var gas = 0;
 
     for (var i = 0; i < calls.length; i++) {
         var call = calls[i];
@@ -149,6 +313,19 @@ function classify(bodyText) {
 
         if (WRITE_SET[method] === true) {
             writes += 1;
+
+            var txGas = rawTxGas(Array.isArray(call.params) ? call.params[0] : undefined);
+            if (txGas < 0) {
+                txGas = UNPARSED_TX_GAS;
+            } else if (txGas > MAX_TX_GAS) {
+                return {
+                    ok: false, code: 400, reason: 'transaction gas limit above block gas limit',
+                    writes: 0, methods: [],
+                };
+            } else if (txGas < MIN_TX_GAS) {
+                txGas = MIN_TX_GAS;
+            }
+            gas += txGas;
         } else if (READ_SET[method] !== true) {
             return { ok: false, code: 403, reason: 'method not allowed', writes: 0, methods: [] };
         }
@@ -156,7 +333,7 @@ function classify(bodyText) {
         methods.push(method);
     }
 
-    return { ok: true, writes: writes, methods: methods };
+    return { ok: true, writes: writes, gas: gas, methods: methods };
 }
 
 /**
@@ -202,6 +379,46 @@ function spendWrites(dict, key, units, nowMs) {
     var windowNo = Math.floor(now / (WINDOW_SECONDS * 1000));
     var used = dict.incr(key + '|' + windowNo, units, 0);
     return used <= WRITE_PER_WINDOW;
+}
+
+/**
+ * ถังงบแก๊ส — หน้าต่างคงที่ GAS_WINDOW_SECONDS วินาที กุญแจผูกเลขหน้าต่างแบบเดียวกับ spendWrites
+ *
+ * ต่างจาก spendWrites จุดเดียว: ใบที่ไม่ผ่าน **คืนงบ** (หักแล้วบวกกลับ)
+ * ไม่งั้นผู้ใช้ที่ลองส่งใบใหญ่เกินงบที่เหลือครั้งเดียว จะโดนปฏิเสธใบเล็กไปทั้งหน้าต่าง
+ * คนยิงถล่มไม่ได้อะไรจากการคืนนี้ — ใบที่ถูกปฏิเสธไปไม่ถึงโหนด และยังกินโควตาจำนวนใบอยู่
+ *
+ * @param {number} [nowMs] เวลาปัจจุบัน (มิลลิวินาที) — ใส่ได้เพื่อเทสต์
+ * @returns {boolean} true = ยังอยู่ในงบ
+ */
+function spendGas(dict, key, gas, nowMs) {
+    if (gas <= 0) {
+        return true;
+    }
+
+    /* โซนหาย = fail-closed เหมือน spendWrites
+     * ⛔ ลำดับ deploy: ต้องลง nginx-njs.conf (ที่ประกาศ rpc_gas_budget) **ก่อน** ไฟล์นี้
+     *    ลงไฟล์นี้อย่างเดียว = ธุรกรรมทุกใบได้ 429 */
+    if (dict === undefined || dict === null) {
+        return false;
+    }
+
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    var windowNo = Math.floor(now / (GAS_WINDOW_SECONDS * 1000));
+    var slot = key + '|' + windowNo;
+    var used = dict.incr(slot, gas, 0);
+    if (used <= GAS_PER_WINDOW) {
+        return true;
+    }
+
+    /* ยังไม่ได้ยืนยันบน njs 0.8.2 ว่า incr รับค่าลบ — ถ้าโยน error ให้ถือว่าไม่ได้คืนงบ
+     * (ผลคือเข้มขึ้น ไม่ใช่หลวมลง) ดีกว่าปล่อยให้คำขอที่ควรได้ 429 กลายเป็น 500 */
+    try {
+        dict.incr(slot, -gas, 0);
+    } catch (e) {
+        /* ตั้งใจปล่อยผ่าน */
+    }
+    return false;
 }
 
 function corsHeaders(r) {
@@ -263,6 +480,11 @@ async function gate(r) {
         return;
     }
 
+    if (!spendGas(ngx.shared.rpc_gas_budget, clientKey(r), verdict.gas)) {
+        fail(r, 429, 'gas rate limit exceeded');
+        return;
+    }
+
     var reply = await r.subrequest('/__rpc_upstream', { method: 'POST', body: body });
 
     corsHeaders(r);
@@ -274,8 +496,14 @@ export default {
     gate,
     classify,
     spendWrites,
+    spendGas,
+    rawTxGas,
     clientKey,
     WRITE_PER_WINDOW,
     WINDOW_SECONDS,
     MAX_BATCH,
+    GAS_PER_WINDOW,
+    GAS_WINDOW_SECONDS,
+    MAX_TX_GAS,
+    MIN_TX_GAS,
 };
