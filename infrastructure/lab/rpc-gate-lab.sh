@@ -175,7 +175,7 @@ http {
     include $LAB/conf.d/*.conf;
 
     js_import labprobe from $LAB/njs/probe.js;
-    js_shared_dict_zone zone=lab_probe:1m type=number evict;
+    js_shared_dict_zone zone=lab_probe:1m timeout=60s type=number evict;
     js_shared_dict_zone zone=lab_fill:64k timeout=60s type=number evict;
 
     limit_req_zone  \$binary_remote_addr zone=rpc_per_ip:10m rate=30r/s;
