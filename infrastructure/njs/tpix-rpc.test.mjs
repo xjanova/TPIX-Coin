@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import gate from './tpix-rpc.js';
 
 const {
-    classify, spendWrites, spendGas, rawTxGas,
+    classify, spendWrites, spendGas, rawTxGas, clientKey, addressKey,
     WRITE_PER_WINDOW, WINDOW_SECONDS,
     GAS_PER_WINDOW, GAS_WINDOW_SECONDS, MAX_TX_GAS, MIN_TX_GAS,
 } = gate;
@@ -392,4 +392,169 @@ test('ถ้า incr โยน error ตอนคืนงบ (njs 0.8.2 ไม�
     const t0 = 1_800_000_000_000;
     assert.equal(spendGas(dict, '1.2.3.4', GAS_PER_WINDOW, t0), true);
     assert.equal(spendGas(dict, '1.2.3.4', 21000, t0 + 1), false);
+});
+
+// ── กุญแจถัง: IPv6 ตัดที่ /64 ──────────────────────────────────────────────
+//
+// ผู้ใช้ IPv6 หนึ่งรายถือทั้ง /64 และเปลี่ยนที่อยู่ต้นทางได้เองทุกคำขอ
+// กุญแจ = ที่อยู่เต็ม (/128) จึงแปลว่าได้ถังใหม่ทุกครั้งที่เปลี่ยนที่อยู่
+
+/** คำขอจำลองเท่าที่ clientKey อ่าน */
+const req = (cf, remote = '172.64.0.1') => ({
+    headersIn: cf === undefined ? {} : { 'CF-Connecting-IP': cf },
+    remoteAddress: remote,
+});
+
+test('IPv6 สองที่อยู่ใน /64 เดียวกันได้กุญแจเดียวกัน', () => {
+    const a = addressKey('2001:db8:1:2::1');
+    assert.equal(a, '2001:db8:1:2::/64');
+    for (const addr of [
+        '2001:db8:1:2::2',
+        '2001:db8:1:2:aaaa:bbbb:cccc:dddd',
+        '2001:db8:1:2:ffff:ffff:ffff:ffff',
+        '2001:db8:1:2::',
+    ]) {
+        assert.equal(addressKey(addr), a, addr);
+    }
+});
+
+test('IPv6 คนละ /64 ได้คนละกุญแจ — รวมถึง /64 ที่ติดกัน', () => {
+    const a = addressKey('2001:db8:1:2:ffff:ffff:ffff:ffff');
+    assert.notEqual(addressKey('2001:db8:1:3::'), a, '/64 ถัดไป');
+    assert.notEqual(addressKey('2001:db8:1:1:ffff:ffff:ffff:ffff'), a, '/64 ก่อนหน้า');
+    assert.notEqual(addressKey('2001:db8:2:2::1'), a);
+    assert.notEqual(addressKey('2001:db9:1:2::1'), a);
+    assert.notEqual(addressKey('2002:db8:1:2::1'), a);
+    // ครึ่งหลังเหมือนกันทุกบิต ต่างแค่ /64
+    assert.notEqual(addressKey('2001:db8:1:2::1'), addressKey('2001:db8:1:20::1'));
+});
+
+test('รูปย่อ รูปเต็ม ตัวใหญ่ ตัวเล็ก ของที่อยู่เดียวกันได้กุญแจเดียวกัน', () => {
+    const forms = [
+        '2001:db8::1',
+        '2001:0db8:0000:0000:0000:0000:0000:0001',
+        '2001:DB8::1',
+        '2001:0DB8:0:0:0:0:0:1',
+        '2001:db8:0:0::1',
+        '2001:db8::0:1',
+        '2001:db8:0:0:0::1',
+    ];
+    for (const f of forms) {
+        assert.equal(addressKey(f), '2001:db8:0:0::/64', f);
+    }
+});
+
+test("'::' อยู่ตรงไหนก็ขยายถูก — หัว กลาง ท้าย และ '::' ล้วน", () => {
+    assert.equal(addressKey('::'), '0:0:0:0::/64');
+    assert.equal(addressKey('::1'), '0:0:0:0::/64');
+    assert.equal(addressKey('::1:2:3:4:5'), '0:0:0:1::/64');
+    assert.equal(addressKey('1::'), '1:0:0:0::/64');
+    assert.equal(addressKey('1:2:3:4::'), '1:2:3:4::/64');
+    assert.equal(addressKey('1:2:3:4:5:6:7::'), '1:2:3:4::/64');
+    assert.equal(addressKey('::2:3:4:5:6:7:8'), '0:2:3:4::/64');
+    assert.equal(addressKey('1:2:3::8'), '1:2:3:0::/64');
+    assert.equal(addressKey('1:2::7:8'), '1:2:0:0::/64');
+    assert.equal(addressKey('fe80::1'), 'fe80:0:0:0::/64');
+    // '::' กลืนกลุ่มที่ 4 → ต้องไม่ถูกอ่านเป็น 2001:db8:5:1
+    assert.equal(addressKey('2001:db8:5::1:0:0:1'), '2001:db8:5:0::/64');
+    assert.equal(addressKey('2001:db8:5:0:1::1'), '2001:db8:5:0::/64');
+});
+
+test('IPv4 คืนตามเดิมทุกตัวอักษร', () => {
+    for (const ip of ['1.2.3.4', '203.0.113.99', '10.0.0.1', '255.255.255.255']) {
+        assert.equal(addressKey(ip), ip);
+    }
+});
+
+test('IPv4 ที่ห่อเป็น IPv6 ได้กุญแจของ IPv4 ตัวนั้น — ไม่กองรวมใน ::/64', () => {
+    for (const mapped of [
+        '::ffff:1.2.3.4',
+        '::FFFF:1.2.3.4',
+        '::ffff:102:304',
+        '::ffff:0102:0304',
+        '0:0:0:0:0:ffff:1.2.3.4',
+        '0000:0000:0000:0000:0000:FFFF:0102:0304',
+    ]) {
+        assert.equal(addressKey(mapped), '1.2.3.4', mapped);
+    }
+    assert.equal(addressKey('::ffff:203.0.113.99'), '203.0.113.99');
+    assert.notEqual(addressKey('::ffff:1.2.3.4'), addressKey('::ffff:1.2.3.5'), 'คนละ IPv4 คนละถัง');
+    // ไม่ใช่ ::ffff:0:0/96 → เป็น IPv6 ธรรมดา ตัดที่ /64
+    assert.equal(addressKey('::fffe:1.2.3.4'), '0:0:0:0::/64');
+    assert.equal(addressKey('64:ff9b::1.2.3.4'), '64:ff9b:0:0::/64');
+});
+
+test('กุญแจของ IPv6 ไม่ชนกับกุญแจของ IPv4 และไม่ถูกแปลงซ้ำ', () => {
+    const k = addressKey('2001:db8:1:2::1');
+    assert.ok(k.endsWith('::/64'));
+    assert.equal(addressKey(k), k, 'กุญแจที่ตัดแล้วมี / จึงไม่ใช่ที่อยู่ — คืนตามเดิม');
+});
+
+test('ของที่ไม่ใช่ที่อยู่ คืนตามเดิม ไม่โยน exception', () => {
+    const junk = [
+        undefined, null, 123, {}, [], true,
+        '', 'abc', 'not an ip', '1.2.3', '1.2.3.4.5', '999.1.1.1',
+        ':', ':::', '::::', '1::2::3', '2001:db8:::1', ':1:2:3:4:5:6:7', '1:2:3:4:5:6:7:',
+        'gggg::1', '12345::1', '2001:db8::-1', '2001:db8:: 1', ' 2001:db8::1',
+        '1:2:3:4:5:6:7', '1:2:3:4:5:6:7:8:9', '1:2:3:4:5:6:7::8', '::1:2:3:4:5:6:7:8',
+        'fe80::1%eth0', '[::1]', '[2001:db8::1]:443', '2001:db8::/64', '2001:db8::1/128',
+        '::ffff:1.2.3', '::ffff:1.2.3.256', '::ffff:1.2.3.4.5', '::ffff:1.2.3.4:5', '::ffff:1..3.4',
+        '1.2.3.4::', '1:2:3:4:5:6:7:1.2.3.4', '::ffff:0x1.2.3.4', '::ffff:1234.1.1.1',
+        '2001:db8::1, 2001:db8::2', '2001:db8::1\n', 'ที่::อยู่',
+        ':'.repeat(5000), 'f:'.repeat(5000),
+    ];
+    for (const j of junk) {
+        assert.doesNotThrow(() => addressKey(j), JSON.stringify(j));
+        assert.equal(addressKey(j), j, JSON.stringify(j));
+    }
+});
+
+test('clientKey ใช้ CF-Connecting-IP ก่อน แล้วตัด IPv6 เหลือ /64', () => {
+    assert.equal(clientKey(req('2001:db8:1:2::1')), '2001:db8:1:2::/64');
+    assert.equal(clientKey(req('2001:DB8:1:2:AAAA::9')), '2001:db8:1:2::/64');
+    assert.equal(clientKey(req('203.0.113.7')), '203.0.113.7');
+    assert.equal(clientKey(req('::ffff:203.0.113.7')), '203.0.113.7');
+});
+
+test('clientKey ไม่มี header (หรือ header ยาวผิดปกติ) ใช้ remoteAddress — ตัด /64 เหมือนกัน', () => {
+    assert.equal(clientKey(req(undefined, '2001:db8:9:9::5')), '2001:db8:9:9::/64');
+    assert.equal(clientKey(req('', '2001:db8:9:9::6')), '2001:db8:9:9::/64');
+    assert.equal(clientKey(req(undefined, '198.51.100.4')), '198.51.100.4');
+    assert.equal(clientKey(req('2001:db8::' + '0'.repeat(64), '198.51.100.4')), '198.51.100.4');
+    assert.equal(clientKey(req('ขยะ', '198.51.100.4')), 'ขยะ', 'header ที่ไม่ใช่ที่อยู่ยังเป็นกุญแจตามเดิม');
+});
+
+test('ช่องที่ปิด: หมุนที่อยู่ใน /64 เดียวไม่ได้โควตาเขียนใหม่', () => {
+    const dict = fakeDict();
+    const t0 = 1_800_000_000_000;
+    let passed = 0;
+    // 30 ที่อยู่จาก /64 เดียว ที่อยู่ละ 1 ใบ — กุญแจแบบที่อยู่เต็มปล่อยผ่านทั้ง 30 ใบ
+    for (let i = 1; i <= 30; i++) {
+        const r = req('2001:db8:1:2::' + i.toString(16));
+        if (spendWrites(dict, clientKey(r), 1, t0 + i)) passed++;
+    }
+    assert.equal(passed, WRITE_PER_WINDOW);
+    assert.equal(spendWrites(dict, clientKey(req('2001:db8:1:3::1')), 1, t0 + 100), true, '/64 อื่นไม่โดนหางเลข');
+    assert.equal(spendWrites(dict, clientKey(req('203.0.113.7')), 1, t0 + 100), true, 'IPv4 ไม่โดนหางเลข');
+});
+
+test('ช่องที่ปิด: หมุนที่อยู่ใน /64 เดียวไม่ได้งบแก๊สใหม่ — 25 ที่อยู่เคยพอถึงความจุเชน', () => {
+    const dict = fakeDict();
+    const t0 = 1_800_000_000_000 - (1_800_000_000_000 % (GAS_WINDOW_SECONDS * 1000));
+    let gasPassed = 0;
+    for (let i = 1; i <= 25; i++) {
+        const r = req('2001:db8:1:2:' + i.toString(16) + '::1');
+        if (spendGas(dict, clientKey(r), GAS_PER_WINDOW, t0 + i)) gasPassed += GAS_PER_WINDOW;
+    }
+    assert.equal(gasPassed, GAS_PER_WINDOW, 'ทั้ง /64 ได้งบเดียว');
+    assert.equal(spendGas(dict, clientKey(req('2001:db8:1:2::ffff')), 21000, t0 + 50), false, 'งบของ /64 หมดแล้ว');
+    assert.equal(spendGas(dict, clientKey(req('2001:db8:1:3::1')), GAS_PER_WINDOW, t0 + 50), true, '/64 อื่นมีงบของตัวเอง');
+});
+
+test('IPv4 กับ IPv4 ตัวเดียวกันที่ห่อเป็น IPv6 ใช้งบเดียวกัน', () => {
+    const dict = fakeDict();
+    const t0 = 1_800_000_000_000 - (1_800_000_000_000 % (GAS_WINDOW_SECONDS * 1000));
+    assert.equal(spendGas(dict, clientKey(req('203.0.113.7')), GAS_PER_WINDOW, t0), true);
+    assert.equal(spendGas(dict, clientKey(req('::ffff:203.0.113.7')), 21000, t0 + 1), false);
+    assert.equal(spendGas(dict, clientKey(req('::ffff:203.0.113.8')), 21000, t0 + 1), true);
 });
