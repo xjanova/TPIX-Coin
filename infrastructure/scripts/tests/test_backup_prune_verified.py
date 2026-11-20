@@ -76,14 +76,68 @@ class RetentionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.plan()
 
-    def test_missing_or_untrusted_receipt(self):
+    def test_untrusted_receipt(self):
         receipt = Path(str(self.files[0]) + '.r2-verified')
         receipt.chmod(0o644)
         with self.assertRaises(ValueError):
             self.plan()
-        receipt.unlink()
-        with self.assertRaises(FileNotFoundError):
-            self.plan()
+        self.assertTrue(all(p.exists() for p in self.files))
+
+    def drop_receipt(self, *indexes):
+        for index in indexes:
+            Path(str(self.files[index]) + '.r2-verified').unlink()
+
+    def names(self, *indexes):
+        return [self.files[index].name for index in indexes]
+
+    def test_failed_night_between_verified_ones_does_not_block(self):
+        # 2026-11-18 on chain-1: the read-back of the second newest archive was
+        # reset, no receipt was written, and pruning crashed every night after.
+        self.drop_receipt(2)
+        plan = self.plan()
+        self.assertEqual(plan['retained'], self.names(1, 3))
+        self.assertEqual([item['name'] for item in plan['remove']], self.names(0, 2))
+        self.assertEqual([item.get('unverified', False) for item in plan['remove']], [False, True])
+        self.assertEqual(plan['unverified_kept'], [])
+        self.assertEqual(self.checked, self.names(0, 1, 3))
+        prune.apply_plan(self.directory, plan)
+        self.assertEqual(prune.archives(self.directory), [self.files[1], self.files[3]])
+        self.assertFalse(Path(str(self.files[0]) + '.r2-verified').exists())
+
+    def test_unverified_newest_archive_is_never_removed(self):
+        self.drop_receipt(3)
+        plan = self.plan()
+        self.assertEqual(plan['retained'], self.names(1, 2))
+        self.assertEqual([item['name'] for item in plan['remove']], self.names(0))
+        self.assertEqual(plan['unverified_kept'], self.names(3))
+        prune.apply_plan(self.directory, plan)
+        self.assertEqual(prune.archives(self.directory), self.files[1:])
+
+    def test_too_few_verified_archives_removes_nothing(self):
+        self.drop_receipt(0, 1, 2)
+        plan = self.plan()
+        self.assertEqual(plan['retained'], self.names(3))
+        self.assertEqual(plan['remove'], [])
+        self.assertEqual(plan['unverified_kept'], self.names(0, 1, 2))
+        prune.apply_plan(self.directory, plan)
+        self.assertTrue(all(p.exists() for p in self.files))
+
+    def test_leftover_verified_after_the_plan_is_not_deleted(self):
+        self.drop_receipt(2)
+        plan = self.plan()
+        self.receipt(self.files[2])
+        with self.assertRaises(ValueError):
+            prune.apply_plan(self.directory, plan)
+        self.assertTrue(all(p.exists() for p in self.files))
+
+    def test_leftover_still_uploading_is_not_deleted(self):
+        self.drop_receipt(2)
+        plan = self.plan()
+        with open(str(self.files[2]) + '.r2-upload.lock', 'w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                prune.apply_plan(self.directory, plan)
+        self.assertTrue(all(p.exists() for p in self.files))
 
     def test_symlink_archive_rejected(self):
         original = self.files[0]
