@@ -5,7 +5,7 @@
 #
 #  tpix-rpc.test.mjs พิสูจน์ได้แค่ "ตรรกะ" ด้วยถังจำลอง ส่วนที่ขึ้นกับ njs ตัวจริง
 #  (ngx.shared, incr(), โซนข้ามรอบ reload) ต้องรันบน nginx — สคริปต์นี้ทำส่วนนั้น
-#  ด้วย nginx อีกตัวในโฟลเดอร์ชั่วคราว (พอร์ต 127.0.0.1:18545-18549) กับ upstream ปลอม
+#  ด้วย nginx อีกตัวในโฟลเดอร์ชั่วคราว (พอร์ต 127.0.0.1:18545-18550) กับ upstream ปลอม
 #  ไม่มีโหนดจริง ไม่มีธุรกรรมจริง
 #
 #  สิ่งที่พิสูจน์ (เดินตามลำดับของ RUNBOOK-flood-gate.md ขั้น 1b):
@@ -17,6 +17,10 @@
 #    5. ทาง restart แทน reload                        → ใช้ได้เหมือนกัน แต่ตัวนับทุก IP ถูกล้าง
 #    6. โซนเต็ม                                        → evict ทำงาน ไม่ใช่ทุกธุรกรรมได้ 500
 #    7. ธุรกรรม ~100KB                                 → ถอดแก๊สได้ถูกบน njs จริง
+#    8. กุญแจถังของ IPv6 = /64 (ด่าน njs)              → สองที่อยู่ใน /64 เดียวใช้โควตาจำนวนใบและงบแก๊สร่วมกัน
+#       อีก /64 มีของตัวเอง · ::ffff:a.b.c.d ใช้ถังของ a.b.c.d · ด่านเดิมให้ถังใหม่ทุกที่อยู่ (ช่องที่ปิด)
+#    9. กุญแจ /64 ของชั้นหยาบ (map $rpc_client_net)    → limit_req นับต่อ /64 จริง รวมที่อยู่ที่มีไบต์ 0x00 0x0a 0xff
+#       ลงผิดลำดับ nginx -t ฟ้อง · เปลี่ยนกุญแจของโซนเดิมแล้ว reload ถูกปฏิเสธเงียบ ๆ (RUNBOOK ขั้น 1c)
 #
 #  ต้องมี: nginx + โมดูล njs รุ่นเดียวกับเครื่องจริง (Ubuntu 24.04: libnginx-mod-http-js 0.8.2),
 #          curl, git, python3 หรือ node (verify-rpc-gate.sh ใช้)
@@ -51,6 +55,8 @@ EXPECT_NJS="${EXPECT_NJS:-}"
 GATE_PORT=18545
 STUB_PORT=18546
 PROBE_PORT=18547
+NET_PORT=18548     # ขั้น 7: โซนเข้ม (1 คำขอ/นาที) ที่ใช้กุญแจ $rpc_client_net
+ADDR_PORT=18550    # ขั้น 7: โซนเข้มแบบเดียวกันที่ใช้กุญแจ $binary_remote_addr (ตัวเทียบ)
 GATE="http://127.0.0.1:$GATE_PORT"
 PROBE="http://127.0.0.1:$PROBE_PORT/probe"
 
@@ -101,6 +107,16 @@ cp "$INFRA/single-host/nginx-njs.conf" "$LAB/src/new.conf"
 
 grep -q 'rpc_gas_budget' "$LAB/src/old.conf" && die "OLD_CONF มีโซน rpc_gas_budget อยู่แล้ว — ไม่ใช่ของเดิมก่อน PR"
 grep -q 'rpc_gas_budget' "$LAB/src/new.conf" || die "nginx-njs.conf ใน working tree ไม่มีโซน rpc_gas_budget"
+
+# บรรทัด limit_req / limit_conn ของ vhost — เอาจากไฟล์จริง ไม่พิมพ์ซ้ำ จะได้พิสูจน์ของที่ deploy จริง
+LIMIT_LINES='^[[:space:]]*limit_(req|conn)'
+old_file infrastructure/single-host/nginx-rpc.conf | grep -E "$LIMIT_LINES" > "$LAB/src/old.limits"
+[ -s "$LAB/src/old.limits" ] || printf '%s\n' 'limit_req  zone=rpc_per_ip burst=60 nodelay;' 'limit_req_status 429;' \
+    'limit_conn rpc_conn_per_ip 10;' 'limit_conn_status 429;' > "$LAB/src/old.limits"
+grep -E "$LIMIT_LINES" "$INFRA/single-host/nginx-rpc.conf" > "$LAB/src/new.limits"
+grep -q 'zone=rpc_per_ip' "$LAB/src/old.limits"  || die "nginx-rpc.conf ของเดิมไม่ได้ใช้โซน rpc_per_ip"
+grep -q 'zone=rpc_per_net' "$LAB/src/new.limits" || die "nginx-rpc.conf ใน working tree ไม่ได้ใช้โซน rpc_per_net"
+grep -q 'rpc_conn_per_net' "$LAB/src/new.limits" || die "nginx-rpc.conf ใน working tree ไม่ได้ใช้โซน rpc_conn_per_net"
 
 # ไฟล์จริงชี้ js ที่ /etc/nginx/njs/ — lab แก้เฉพาะ path นี้ ที่เหลือใช้ตามไฟล์จริงทุกบรรทัด
 install_conf() { sed "s#/etc/nginx/njs/#$LAB/njs/#g" "$LAB/src/$1.conf" > "$LAB/conf.d/05-tpix-njs.conf"; }
@@ -291,6 +307,26 @@ reload() {
     fi
 }
 
+reload_rejected() {
+    # reload_rejected <ชื่อ> <ข้อความที่ต้องมีใน error log> — reload ที่ nginx ต้องปฏิเสธ:
+    # worker ชุดเดิมต้องยังอยู่ครบ และ error log ต้องบอกสาเหตุ (exit code ของ reload บอกไม่ได้)
+    local old new p kept=1 fresh
+    old="$(workers)"
+    kill -HUP "$(cat "$LAB/nginx.pid")"
+    sleep 2
+    new="$(workers)"
+    [ -z "${old// /}" ] && kept=0
+    for p in $old; do case " $new " in *" $p "*) ;; *) kept=0 ;; esac; done
+    fresh="$(tail -n +"$((LOGMARK + 1))" "$ERR")"
+    LOGMARK="$(wc -l < "$ERR")"
+    if [ "$kept" = "1" ] && printf '%s\n' "$fresh" | grep -qF -- "$2"; then
+        ok "$1: nginx ปฏิเสธ config ใหม่ worker ชุดเดิมวิ่งต่อ"
+        printf '%s\n' "$fresh" | grep -F -- "$2" | head -n 1 | sed 's/^/    │ /'
+    else
+        bad "$1: reload ควรถูกปฏิเสธ (worker เดิม: $old · หลัง reload: $new)" "$(printf '%s\n' "$fresh" | tail -n 3)"
+    fi
+}
+
 LOGMARK=0
 log_clean() {
     # log_clean <ชื่อ> — error log ตั้งแต่เช็กครั้งก่อนต้องไม่มี emerg/alert/crit/error หรือ js exception
@@ -356,6 +392,27 @@ expect() {
     fi
 }
 
+burst() {
+    # burst <IP ผู้ใช้> <จำนวน> → พิมพ์จำนวนใบที่ได้ 200 (ส่งโอน 21k ทีละใบ)
+    local n=0 code
+    for _ in $(seq 1 "$2"); do
+        code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$GATE/" -H 'Content-Type: application/json' \
+            -H "CF-Connecting-IP: $1" --data "$(tx 21000)" 2>/dev/null)" || code="000"
+        [ "$code" = "200" ] && n=$((n + 1))
+    done
+    printf '%s' "$n"
+}
+count_is() {
+    # count_is <ชื่อ> <ที่ได้> <ที่ต้องได้>
+    if [ "$2" = "$3" ]; then ok "$1 ($2)"; else bad "$1" "ได้ $2 (ควรได้ $3)"; fi
+}
+hit() {
+    # hit <ชื่อ> <รหัส HTTP> <พอร์ต> <IP ผู้ใช้> — GET เปล่า ๆ ใช้กับโซนเข้มของขั้น 7
+    local got
+    got="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$3/" -H "CF-Connecting-IP: $4" 2>/dev/null)" || got="000"
+    if [ "$got" = "$2" ]; then ok "$1 ($got)"; else bad "$1" "ได้ $got (ควรได้ $2)"; fi
+}
+
 probe() { curl -s -m 10 "$PROBE?$1" 2>/dev/null; }
 field() { printf '%s\n' "$1" | sed -n "s/^$2=//p" | head -n 1; }
 probe_is() {
@@ -412,6 +469,11 @@ expect "อ่านผ่าน" 200 - 10.0.0.1 "$READ"
 expect "โอน 21k ผ่าน" 200 - 10.0.0.1 "$(tx 21000)"
 expect "ด่านเดิมไม่มีงบแก๊ส: ขยะใบแรกผ่าน" 200 - 10.0.0.2 "$JUNK"
 expect "ด่านเดิมไม่มีงบแก๊ส: ขยะใบที่สองก็ผ่าน" 200 - 10.0.0.2 "$JUNK"
+# ช่องที่กุญแจ /64 ปิด — ด่านเดิมใช้ที่อยู่เต็ม (/128) เป็นกุญแจ: เปลี่ยนที่อยู่ใน /64 เดิม = ได้ถังใหม่
+align 10 4
+count_is "ด่านเดิม: IPv6 ที่อยู่เดียว 10 ใบแรกผ่าน" "$(burst 2001:db8:0:1::1 10)" 10
+expect "ด่านเดิม: ใบที่ 11 จากที่อยู่เดิมโดนตัด" 429 'write rate limit exceeded' 2001:db8:0:1::1 "$(tx 21000)"
+expect "ด่านเดิม (ช่องโหว่): ที่อยู่อื่นใน /64 เดียวกันได้ถังใหม่" 200 - 2001:db8:0:1::2 "$(tx 21000)"
 log_clean "ของเดิม"
 
 say "1b. verify-rpc-gate.sh ต้องฟ้องว่าด่านเดิมไม่มีงบแก๊ส"
@@ -473,6 +535,25 @@ done
 if [ "$WRITE_OK" = "1" ]; then ok "โควตาจำนวนใบ: 10 ใบแรกผ่าน"; else bad "โควตาจำนวนใบ: 10 ใบแรกต้องผ่านทั้งหมด"; fi
 expect "โควตาจำนวนใบ: ใบที่ 11 โดนตัด" 429 'write rate limit exceeded' 10.1.4.1 "$(tx 21000)"
 expect "อ่านยังผ่านหลังโควตาเต็ม" 200 - 10.1.4.1 "$READ"
+
+# ── กุญแจถังของ IPv6 = /64 — ทั้งโควตาจำนวนใบและงบแก๊ส (addressKey ใน tpix-rpc.js) ──
+align 10 4
+count_is "IPv6 /64: 10 ใบแรกจากที่อยู่แรกผ่าน" "$(burst 2001:db8:64:1::1 10)" 10
+expect "IPv6 /64: ที่อยู่อื่นใน /64 เดียวกันใช้โควตาจำนวนใบร่วมกัน" 429 'write rate limit exceeded' 2001:db8:64:1:aaaa:bbbb:cccc:dddd "$(tx 21000)"
+expect "IPv6 /64: อีก /64 มีโควตาจำนวนใบของตัวเอง" 200 - 2001:db8:64:2::1 "$(tx 21000)"
+
+align 60 5
+expect "IPv6 /64: ที่อยู่แรกใช้ 10M" 200 - 2001:db8:a:1::1 "$JUNK"
+expect "IPv6 /64: ที่อยู่ที่สองใน /64 เดียวกันโดนงบแก๊สเดียวกันตัด" 429 'gas rate limit exceeded' 2001:db8:a:1:aaaa:bbbb:cccc:dddd "$JUNK"
+expect "IPv6 /64: รูปเต็ม + ตัวใหญ่ ของ /64 เดียวกันก็ถังเดียวกัน" 429 'gas rate limit exceeded' 2001:0DB8:000A:0001:0000:0000:0000:0003 "$JUNK"
+expect "IPv6 /64: งบ 2M ที่เหลือของ /64 ใช้จากที่อยู่อื่นได้" 200 - 2001:db8:a:1::4 "$(tx 2000000)"
+expect "IPv6 /64: แล้วงบก็หมดพร้อมกันทั้ง /64" 429 'gas rate limit exceeded' 2001:db8:a:1::1 "$(tx 21000)"
+expect "IPv6 /64: /64 ที่ติดกันมีงบของตัวเอง" 200 - 2001:db8:a:2::1 "$JUNK"
+expect "IPv6 /64: 2001:db8:a::1 อยู่ใน /64 ของ 2001:db8:a:0 ไม่ใช่ a:1 — งบของตัวเอง" 200 - 2001:db8:a::1 "$JUNK"
+expect "IPv4 ที่ห่อเป็น IPv6: IPv4 ใช้ 10M" 200 - 10.1.6.1 "$JUNK"
+expect "IPv4 ที่ห่อเป็น IPv6: ::ffff: ของ IPv4 เดิมใช้งบเดียวกัน" 429 'gas rate limit exceeded' ::ffff:10.1.6.1 "$JUNK"
+expect "IPv4 ที่ห่อเป็น IPv6: ::ffff: ของ IPv4 อื่นไม่โดนหางเลข" 200 - ::ffff:10.1.6.2 "$JUNK"
+expect "header ที่ไม่ใช่ที่อยู่ไม่ทำให้ด่านพัง" 200 - 'not:an:ip' "$(tx 21000)"
 
 say "3b. incr() บน njs ตัวจริง"
 INCR="$(probe "op=incr&k=n$$")"
@@ -583,16 +664,192 @@ http {
     include $LAB/alt/10-tpix-http.conf;
     server {
         listen 127.0.0.1:18549;
+        # บรรทัด limit_* ของ nginx-rpc.conf จริง — โซนที่มันเรียกต้องมีใน nginx-http-tpix.conf
+        include $LAB/src/new.limits;
         location / { js_content tpix.gate; }
         location = /__rpc_upstream { internal; proxy_pass http://tpix_rpc; }
     }
 }
 EOF
 if "$NGINX" -p "$LAB/alt" -c "$LAB/alt/nginx.conf" -e "$LAB/alt/error.log" -t >"$LAB/t.out" 2>&1; then
-    ok "nginx-http-tpix.conf: nginx -t ผ่าน"
+    ok "nginx-http-tpix.conf + บรรทัด limit ของ nginx-rpc.conf: nginx -t ผ่าน"
 else
-    bad "nginx-http-tpix.conf: nginx -t ไม่ผ่าน" "$(tail -n 3 "$LAB/t.out")"
+    bad "nginx-http-tpix.conf + บรรทัด limit ของ nginx-rpc.conf: nginx -t ไม่ผ่าน" "$(tail -n 3 "$LAB/t.out")"
 fi
+
+# map $rpc_client_net มีสองสำเนา (ไฟล์ที่ deploy จริง กับฉบับตั้งเครื่องใหม่) — ขั้น 7 พิสูจน์สำเนาใน nginx-njs.conf
+# สำเนาใน nginx-http-tpix.conf ต้องเหมือนกันทุกบรรทัด ไม่งั้นผลของขั้น 7 ใช้กับมันไม่ได้
+map_block() { sed -n '/^# >>> rpc_client_net/,/^# <<< rpc_client_net/p' "$1" | grep -v '^#'; }
+MAP_NJS="$(map_block "$INFRA/single-host/nginx-njs.conf")"
+MAP_HTTP="$(map_block "$INFRA/single-host/nginx-http-tpix.conf")"
+if [ -n "$MAP_NJS" ] && [ "$MAP_NJS" = "$MAP_HTTP" ]; then
+    ok "map \$rpc_client_net ใน nginx-http-tpix.conf ตรงกับ nginx-njs.conf"
+else
+    bad "map \$rpc_client_net ใน nginx-http-tpix.conf ไม่ตรงกับ nginx-njs.conf (หรือหาบล็อกไม่เจอ)"
+fi
+
+# ══ 7. ชั้นหยาบ: limit_req / limit_conn นับ IPv6 ต่อ /64 (RUNBOOK ขั้น 1c) ════════════════
+# nginx ตัวเดิม (หยุดไปแล้ว) ถูกแทนด้วย config ที่แยก "ของที่อยู่บนเครื่อง" ออกเป็นไฟล์ตามจริง:
+#   conf.d/05-tpix-njs.conf   ไฟล์จริงจาก repo (ของเดิม → ของใหม่ที่มี map + โซน rpc_per_net)
+#   net/host-zones.conf       แทน 10-tpix-http.conf ของเครื่อง: โซนเดิมที่กุญแจ = $binary_remote_addr
+#   net/vhost-limits.conf     บรรทัด limit_* ของ nginx-rpc.conf จริง (ของเดิม → ของใหม่)
+#   net/strict.conf           เฉพาะ lab: โซน 1 คำขอ/นาที ไม่มี burst ใช้กุญแจเดียวกับของจริง
+#                             → คำขอที่สองที่ตกถังเดียวกันได้ 429 แน่นอน ไม่ต้องยิงแข่งกับ 30 r/s
+say "7. ชั้นหยาบ — เครื่องวันนี้ (โซนเดิม กุญแจ = ที่อยู่เต็ม)"
+mkdir -p "$LAB/net"
+cat > "$LAB/net/host-zones.conf" <<'EOF'
+limit_req_zone  $binary_remote_addr zone=rpc_per_ip:10m rate=30r/s;
+limit_conn_zone $binary_remote_addr zone=rpc_conn_per_ip:10m;
+EOF
+cp "$LAB/src/old.limits" "$LAB/net/vhost-limits.conf"
+: > "$LAB/net/strict.conf"
+cat > "$LAB/nginx.conf" <<EOF
+load_module $NJS_MODULE;
+worker_processes 2;
+pid $LAB/nginx.pid;
+error_log $ERR notice;
+events { worker_connections 256; }
+http {
+    client_body_temp_path $LAB/tmp/body;
+    proxy_temp_path       $LAB/tmp/proxy;
+    fastcgi_temp_path     $LAB/tmp/fastcgi;
+    uwsgi_temp_path       $LAB/tmp/uwsgi;
+    scgi_temp_path        $LAB/tmp/scgi;
+
+    set_real_ip_from 127.0.0.1;
+    real_ip_header   CF-Connecting-IP;
+
+    include $LAB/conf.d/*.conf;
+    include $LAB/net/host-zones.conf;
+    include $LAB/net/strict.conf;
+
+    server {
+        listen 127.0.0.1:$GATE_PORT;
+
+        client_max_body_size         128k;
+        client_body_buffer_size      128k;
+        client_body_in_single_buffer on;
+        subrequest_output_buffer_size 1m;
+
+        include $LAB/net/vhost-limits.conf;
+
+        access_log $LAB/access.log tpixgate;
+
+        location = /health {
+            access_log off;
+            default_type application/json;
+            return 200 '{"status":"ok"}';
+        }
+        location / {
+            js_content tpix.gate;
+        }
+        location = /__rpc_upstream {
+            internal;
+            access_log off;
+            proxy_pass http://127.0.0.1:$STUB_PORT;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+        }
+    }
+
+    server {
+        listen 127.0.0.1:$STUB_PORT;
+        access_log off;
+        location / {
+            default_type application/json;
+            return 200 '{"jsonrpc":"2.0","id":1,"result":"0x1"}';
+        }
+    }
+}
+EOF
+install_conf old; install_js old
+config_test "เครื่องวันนี้"
+start
+expect "เครื่องวันนี้: IPv6 อ่านผ่าน" 200 - 2001:db8:70:1::1 "$READ"
+log_clean "เครื่องวันนี้"
+
+say "7b. ผิดลำดับ — vhost ใหม่ขึ้นก่อน conf ที่ประกาศโซน"
+cp "$LAB/src/new.limits" "$LAB/net/vhost-limits.conf"
+if ngx -t >"$LAB/t.out" 2>&1; then
+    bad "vhost ใหม่บน conf เดิม: nginx -t ควรไม่ผ่าน (โซน rpc_per_net ยังไม่มี)"
+elif grep -q 'rpc_per_net' "$LAB/t.out"; then
+    ok "vhost ใหม่บน conf เดิม: nginx -t ไม่ผ่านและบอกชื่อโซน (พลาดแบบนี้ไม่เงียบ)"
+    tail -n 2 "$LAB/t.out" | sed 's/^/    │ /'
+else
+    bad "vhost ใหม่บน conf เดิม: nginx -t ไม่ผ่าน แต่ไม่ได้บอกว่าเพราะโซน rpc_per_net" "$(tail -n 3 "$LAB/t.out")"
+fi
+cp "$LAB/src/old.limits" "$LAB/net/vhost-limits.conf"
+
+say "7c. ขั้น 1c ข้อ 1: conf ใหม่ (map + โซน rpc_per_net) + reload — vhost ยังใช้โซนเดิม"
+install_conf new
+config_test "conf ใหม่"
+reload "conf ใหม่"
+expect "conf ใหม่ vhost เดิม: IPv6 อ่านผ่าน" 200 - 2001:db8:70:1::1 "$READ"
+install_js new
+reload "js ใหม่"
+log_clean "conf ใหม่ vhost เดิม"
+
+say "7d. ขั้น 1c ข้อ 2: vhost ใหม่ (limit_req zone=rpc_per_net) + reload"
+cp "$LAB/src/new.limits" "$LAB/net/vhost-limits.conf"
+cat > "$LAB/net/strict.conf" <<EOF
+limit_req_zone \$rpc_client_net     zone=lab_net:1m  rate=1r/m;
+limit_req_zone \$binary_remote_addr zone=lab_addr:1m rate=1r/m;
+server {
+    listen 127.0.0.1:$NET_PORT;
+    access_log off;
+    limit_req zone=lab_net;
+    limit_req_status 429;
+    location / { proxy_pass http://127.0.0.1:$STUB_PORT; }
+}
+server {
+    listen 127.0.0.1:$ADDR_PORT;
+    access_log off;
+    limit_req zone=lab_addr;
+    limit_req_status 429;
+    location / { proxy_pass http://127.0.0.1:$STUB_PORT; }
+}
+EOF
+config_test "vhost ใหม่"
+reload "vhost ใหม่"
+expect "vhost ใหม่: IPv6 อ่านผ่าน" 200 - 2001:db8:70:1::1 "$READ"
+expect "vhost ใหม่: IPv6 ส่งธุรกรรมผ่าน" 200 - 2001:db8:70:1::1 "$(tx 21000)"
+expect "vhost ใหม่: IPv4 อ่านผ่าน" 200 - 10.7.9.1 "$READ"
+
+say "7e. กุญแจเดิม (\$binary_remote_addr) — ที่อยู่ใหม่ใน /64 เดิมได้ถังใหม่"
+hit "กุญแจเดิม: ที่อยู่แรกผ่าน" 200 "$ADDR_PORT" 2001:db8:78:1::1
+hit "กุญแจเดิม: ที่อยู่เดิมซ้ำโดนตัด (โซนเข้มทำงาน)" 429 "$ADDR_PORT" 2001:db8:78:1::1
+hit "กุญแจเดิม (ช่องโหว่): ที่อยู่อื่นใน /64 เดียวกันผ่าน" 200 "$ADDR_PORT" 2001:db8:78:1::2
+
+say "7f. กุญแจใหม่ (\$rpc_client_net) — IPv6 นับต่อ /64"
+hit "IPv6: ที่อยู่แรกผ่าน" 200 "$NET_PORT" 2001:db8:77:1::1
+hit "IPv6: ที่อยู่อื่นใน /64 เดียวกันโดนตัด" 429 "$NET_PORT" 2001:db8:77:1:aaaa:bbbb:cccc:dddd
+hit "IPv6: /64 ที่ติดกันผ่าน" 200 "$NET_PORT" 2001:db8:77:2::1
+hit "IPv6: /64 ที่ต่างกันบิตเดียวผ่าน" 200 "$NET_PORT" 2001:db8:77:3::1
+hit "ไบต์ 0x0a ใน /64: ที่อยู่แรกผ่าน" 200 "$NET_PORT" 2001:db8:a0a:a0a::1
+hit "ไบต์ 0x0a ใน /64: ที่อยู่อื่นใน /64 เดียวกันโดนตัด" 429 "$NET_PORT" 2001:db8:a0a:a0a::2
+hit "ไบต์ 0x0a ในครึ่งหลัง: ที่อยู่แรกผ่าน" 200 "$NET_PORT" 2001:db8:77:4:a0a:a0a:a0a:a0a
+hit "ไบต์ 0x0a ในครึ่งหลัง: ที่อยู่อื่นใน /64 เดียวกันโดนตัด" 429 "$NET_PORT" 2001:db8:77:4::1
+hit "ไบต์ 0xff: ที่อยู่แรกผ่าน" 200 "$NET_PORT" fd00:ffff:ffff:ffff::1
+hit "ไบต์ 0xff: ที่อยู่อื่นใน /64 เดียวกันโดนตัด" 429 "$NET_PORT" fd00:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+hit "IPv4: ที่อยู่แรกผ่าน" 200 "$NET_PORT" 10.7.0.1
+hit "IPv4: ที่อยู่ถัดไปผ่าน (IPv4 นับต่อที่อยู่เหมือนเดิม)" 200 "$NET_PORT" 10.7.0.2
+hit "IPv4: ที่อยู่เดิมซ้ำโดนตัด" 429 "$NET_PORT" 10.7.0.1
+hit "IPv4 ที่มีไบต์ 0x0a: ผ่าน" 200 "$NET_PORT" 10.10.10.10
+hit "IPv4 ที่มีไบต์ 0x0a: ซ้ำโดนตัด" 429 "$NET_PORT" 10.10.10.10
+hit "::ffff: ของ IPv4 ที่ใช้ไปแล้วโดนตัด (ถังเดียวกับ IPv4 ตัวนั้น)" 429 "$NET_PORT" ::ffff:10.7.0.1
+hit "::ffff: ของ IPv4 อื่นผ่าน" 200 "$NET_PORT" ::ffff:10.7.0.3
+hit "::ffff: ของ IPv4 อีกตัวก็ผ่าน (ไม่กองรวมใน ::/64)" 200 "$NET_PORT" ::ffff:10.7.0.4
+log_clean "ชั้นหยาบ กุญแจใหม่"
+
+say "7g. กับดัก — แก้กุญแจของโซนเดิม (rpc_per_ip) แทนการเพิ่มโซนชื่อใหม่ แล้ว reload"
+cat > "$LAB/net/host-zones.conf" <<'EOF'
+limit_req_zone  $rpc_client_net     zone=rpc_per_ip:10m rate=30r/s;
+limit_conn_zone $binary_remote_addr zone=rpc_conn_per_ip:10m;
+EOF
+config_test "แก้กุญแจโซนเดิม (nginx -t ไม่ช่วยจับ)"
+reload_rejected "แก้กุญแจโซนเดิม" 'while previously it used'
+expect "หลัง reload ที่ถูกปฏิเสธ: ด่านยังตอบด้วย config เดิม" 200 - 2001:db8:70:1::1 "$READ"
+stop
 
 echo
 echo "══ ผ่าน $PASS · ไม่ผ่าน $FAIL ══"

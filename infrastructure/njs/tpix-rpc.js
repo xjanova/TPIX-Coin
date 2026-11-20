@@ -336,18 +336,163 @@ function classify(bodyText) {
     return { ok: true, writes: writes, gas: gas, methods: methods };
 }
 
+var DEC_RE = /^[0-9]+$/;
+
+/**
+ * IPv4 แบบจุด ("1.2.3.4") → เลข 4 ตัว หรือ null ถ้าไม่ใช่
+ * ใช้กับส่วนท้ายของ IPv6 ที่ฝัง IPv4 เท่านั้น — IPv4 ล้วนไม่ผ่านฟังก์ชันนี้ (ดู addressKey)
+ */
+function ipv4Octets(s) {
+    var parts = s.split('.');
+    if (parts.length !== 4) {
+        return null;
+    }
+
+    var out = [];
+    for (var i = 0; i < 4; i++) {
+        var p = parts[i];
+        if (p.length < 1 || p.length > 3 || !DEC_RE.test(p)) {
+            return null;
+        }
+        var n = parseInt(p, 10);
+        if (n > 255) {
+            return null;
+        }
+        out.push(n);
+    }
+    return out;
+}
+
+/**
+ * กลุ่ม hex ของ IPv6 (คั่นด้วย ':') → เลข 16 บิต ต่อท้ายลง out
+ * กลุ่มสุดท้ายเป็น IPv4 แบบจุดได้เมื่อ allowV4Tail (::ffff:1.2.3.4) — นับเป็น 2 กลุ่ม
+ *
+ * @returns {boolean} false = มีกลุ่มที่ไม่ใช่ hex 1-4 หลัก
+ */
+function ipv6Push(out, parts, allowV4Tail) {
+    for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+
+        if (allowV4Tail && i === parts.length - 1 && p.indexOf('.') !== -1) {
+            var v4 = ipv4Octets(p);
+            if (v4 === null) {
+                return false;
+            }
+            out.push(v4[0] * 256 + v4[1]);
+            out.push(v4[2] * 256 + v4[3]);
+            continue;
+        }
+
+        /* ตรวจก่อน parseInt เสมอ — parseInt('1z', 16) ได้ 1 ไม่ใช่ NaN (เหตุผลเดียวกับ hexInt) */
+        if (p.length < 1 || p.length > 4 || !HEX_RE.test(p)) {
+            return false;
+        }
+        out.push(parseInt(p, 16));
+    }
+    return true;
+}
+
+/**
+ * IPv6 แบบข้อความ → เลข 16 บิต 8 กลุ่ม หรือ null ถ้าไม่ใช่ IPv6 ที่ถูกต้อง
+ * รับ '::' (ได้ครั้งเดียว แทนกลุ่มศูนย์อย่างน้อย 1 กลุ่ม), ตัวใหญ่/เล็ก, เลขศูนย์นำหน้า, IPv4 ฝังท้าย
+ * ไม่รับ zone id (fe80::1%eth0), วงเล็บ ([::1]), หรือ /prefix — ของพวกนี้ไม่ควรมาใน CF-Connecting-IP
+ */
+function ipv6Groups(s) {
+    var head = [];
+    var tail = [];
+    var dbl = s.indexOf('::');
+
+    if (dbl === -1) {
+        if (!ipv6Push(head, s.split(':'), true)) {
+            return null;
+        }
+        return head.length === 8 ? head : null;
+    }
+
+    if (s.indexOf('::', dbl + 1) !== -1) {
+        return null;          // '::' สองครั้ง หรือ ':::'
+    }
+
+    var left = s.substring(0, dbl);
+    var right = s.substring(dbl + 2);
+    if (left.length > 0 && !ipv6Push(head, left.split(':'), false)) {
+        return null;
+    }
+    if (right.length > 0 && !ipv6Push(tail, right.split(':'), true)) {
+        return null;
+    }
+    if (head.length + tail.length > 7) {
+        return null;
+    }
+
+    while (head.length + tail.length < 8) {
+        head.push(0);
+    }
+    return head.concat(tail);
+}
+
+/**
+ * กุญแจของถังโควตาจากที่อยู่ผู้ใช้
+ *
+ *   IPv4                    → ตัวมันเอง                     "1.2.3.4"
+ *   IPv6                    → /64 ที่มันอยู่ (รูปเดียวเสมอ)   "2001:db8:0:1::/64"
+ *   IPv4 ที่ห่อเป็น IPv6     → IPv4 ตัวนั้น                   "::ffff:1.2.3.4" → "1.2.3.4"
+ *   อย่างอื่น                → สตริงเดิม (ไม่โยน error)
+ *
+ * ทำไม IPv6 ต้องตัดที่ /64
+ * ─────────────────────────
+ * ผู้ใช้ IPv6 หนึ่งราย (สายบ้าน, VPS, มือถือ) ได้ทั้ง /64 = 2^64 ที่อยู่ และเปลี่ยนที่อยู่ต้นทางได้เองทุกคำขอ
+ * ถ้ากุญแจเป็นที่อยู่เต็ม (/128) แต่ละที่อยู่ได้ถังใหม่: โควตาเขียน 10 ใบ/10 วิ และงบแก๊ส 12M/นาที
+ * กลายเป็น "ต่อที่อยู่" ไม่ใช่ "ต่อผู้ใช้" — ราว 25 ที่อยู่จาก /64 เดียวก็ถึงความจุเชน
+ * rpc.tpix.online มี AAAA ที่ Cloudflare จึงรับผู้ใช้ IPv6 จริง และ CF-Connecting-IP เป็น IPv6 ได้
+ *
+ * ⚠️ /64 คือหน่วยเล็กสุดที่ผู้ให้บริการแจก ไม่ใช่หน่วยใหญ่สุด — ผู้ที่ถือ /56 มี 256 ถัง, /48 มี 65,536 ถัง
+ *    (tunnel broker แจก /48 ฟรี) ด่านนี้ยกต้นทุนจาก "ฟรี" เป็น "ต้องมีบล็อกที่ใหญ่กว่า /64" ไม่ได้ปิดสนิท
+ *    ยังไม่ได้ตัดที่ /48 เพราะผู้ให้บริการมือถือแจก /64 ต่อเครื่องจากบล็อกเดียวกัน — ตัดกว้างไปผู้ใช้จริงล็อกกันเอง
+ *
+ * ทำไมต้องแปลงเป็นรูปเดียว: "2001:db8::1" กับ "2001:0DB8:0:0:0:0:0:1" คือที่อยู่เดียวกัน
+ * ถ้าใช้ข้อความดิบเป็นกุญแจ รูปเขียนต่างกัน = คนละถัง
+ */
+function addressKey(addr) {
+    /* ไม่มี ':' = IPv4 หรือไม่ใช่ที่อยู่ — คืนตามเดิมทุกตัวอักษร */
+    if (typeof addr !== 'string' || addr.indexOf(':') === -1) {
+        return addr;
+    }
+
+    try {
+        var g = ipv6Groups(addr);
+        if (g === null) {
+            return addr;
+        }
+
+        /* ::ffff:a.b.c.d — ต้องตกถังเดียวกับ a.b.c.d ไม่งั้น IPv4 ทุกตัวที่ถูกห่อมา
+         * จะไปกองรวมกันใน ::/64 ถังเดียว (8 ไบต์แรกเป็นศูนย์หมด) = ผู้ใช้จริงล็อกกันเอง */
+        if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0xffff) {
+            return (g[6] >> 8) + '.' + (g[6] & 255) + '.' + (g[7] >> 8) + '.' + (g[7] & 255);
+        }
+
+        return g[0].toString(16) + ':' + g[1].toString(16) + ':'
+            + g[2].toString(16) + ':' + g[3].toString(16) + '::/64';
+    } catch (e) {
+        /* ไม่ควรมาถึงตรงนี้ — กันไว้เพราะ error ในฟังก์ชันนี้ = ทุกคำขอได้ 500 */
+        return addr;
+    }
+}
+
 /**
  * ที่อยู่ผู้ใช้จริง — หลัง Cloudflare ตัว $remote_addr คือ edge ของ CF ทุกคน
  * ถ้าใช้ค่านั้นเป็นกุญแจ ทุกคนทั้งโลกจะแชร์ถังใบเดียว = ผู้ใช้จริงล็อกกันเอง
  *
  * header ปลอมได้ถ้ายิงตรงเข้า origin → ต้องปิดทางนั้นที่ไฟร์วอลล์ก่อนเสมอ
+ *
+ * คืน "กุญแจถัง" ไม่ใช่ที่อยู่ดิบ — IPv6 ถูกตัดเหลือ /64 (ดู addressKey)
  */
 function clientKey(r) {
     var cf = r.headersIn['CF-Connecting-IP'];
     if (cf && cf.length > 0 && cf.length < 64) {
-        return cf;
+        return addressKey(cf);
     }
-    return r.remoteAddress;
+    return addressKey(r.remoteAddress);
 }
 
 /**
@@ -477,12 +622,14 @@ async function gate(r) {
         return;
     }
 
-    if (!spendWrites(ngx.shared.rpc_write_budget, clientKey(r), verdict.writes)) {
+    var key = clientKey(r);
+
+    if (!spendWrites(ngx.shared.rpc_write_budget, key, verdict.writes)) {
         fail(r, 429, 'write rate limit exceeded');
         return;
     }
 
-    if (!spendGas(ngx.shared.rpc_gas_budget, clientKey(r), verdict.gas)) {
+    if (!spendGas(ngx.shared.rpc_gas_budget, key, verdict.gas)) {
         fail(r, 429, 'gas rate limit exceeded');
         return;
     }
@@ -501,6 +648,7 @@ export default {
     spendGas,
     rawTxGas,
     clientKey,
+    addressKey,
     WRITE_PER_WINDOW,
     WINDOW_SECONDS,
     MAX_BATCH,
