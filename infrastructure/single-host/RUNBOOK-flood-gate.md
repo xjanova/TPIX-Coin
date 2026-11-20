@@ -34,11 +34,38 @@
 | jail ของ fail2ban แบนที่ชั้นไฟร์วอลล์ (`iptables-multiport`, `nftables`, `ufw` …) บนเครื่องที่อยู่หลัง Cloudflare | `fail2ban-client status` ขึ้นว่าแบนแล้ว กฎ iptables มีจริง แต่**คำขอของคนนั้นยังได้ 200** — แพ็กเก็ตทุกใบมีต้นทางเป็น IP ของ Cloudflare กฎที่ระบุ IP ผู้ใช้ไม่ตรงกับแพ็กเก็ตใดเลย (ตัวนับแพ็กเก็ตของกฎเป็น 0) ทั้ง IPv4 และ IPv6 (เห็นบน `lab/rpc-ban-lab.sh` ขั้น 2) | แบนที่ชั้นที่เห็น IP ผู้ใช้จริง: action `nginx-tpix-banned` เขียน `tpix-banned.map` ให้ `geo $banned_ip` (ขั้น 3) · พิสูจน์ด้วยการยิงจริงจากที่อยู่ที่ถูกแบน อย่าดูแค่ status |
 | ลง vhost ที่ใช้ `log_format tpixban` ก่อน `tpix-rpc.js` ที่มี `banKey` | `nginx -t` ผ่าน ด่านทำงานปกติ แต่ช่องแรกของ access log เป็น `-` → fail2ban ไม่แมตช์สักบรรทัด = ไม่แบนใครเลย และ error log ก็ไม่ฟ้อง (เห็นบน lab ขั้น 6b) | ลำดับ conf → js → vhost (ขั้น 3) แล้ว `tail -n 3` access log ดูช่องแรกทุกครั้ง |
 | copy vhost ไปที่ `/etc/nginx/sites-available/tpix-rpc.conf` | ไม่มีอะไรเปลี่ยน `nginx -t` ผ่าน reload สำเร็จ — บน `tpixserver` ไฟล์ `sites-enabled/tpix-rpc.conf` เป็น**ไฟล์จริง ไม่ใช่ symlink** (แก้ล่าสุด 2026-10-21) nginx โหลดไฟล์นั้น ส่วน `sites-available/tpix-rpc.conf` เป็นสำเนาค้างจาก 2026-08-28 (ยังใช้ใบรับรอง self-signed และ body 32k) ที่ไม่มีใครโหลด (เห็นบนเครื่อง 2026-11-20) | วางที่ `/etc/nginx/sites-enabled/tpix-rpc.conf` (ถ้าวันหน้ากลับเป็น symlink `cp` ก็เขียนทะลุไปไฟล์ปลายทางให้) · เช็กก่อนทุกครั้ง: `stat -c '%F' /etc/nginx/sites-enabled/tpix-rpc.conf` |
+| ลง `05-tpix-njs.conf` รุ่นที่มี `map` บนเครื่องที่ `08-tpix-verify-gate.conf` ยังตั้ง `map_hash_bucket_size` | `nginx -t` **ไม่ผ่าน**: `"map_hash_bucket_size" directive is duplicate in .../08-tpix-verify-gate.conf` — nginx ล็อกค่านี้ตอนเจอ `map` ตัวแรก และ 05 มาก่อน 08 (เจอบน `tpixserver` 2026-11-20 · lab ไม่มีไฟล์ 08 จึงไม่เห็น) | ค่าอยู่ใน `01-tpix-map-hash.conf` (`single-host/nginx-map-hash.conf`) ไฟล์เดียว และ 08 ไม่ตั้งซ้ำ — ลงสองไฟล์นี้ + reload ก่อนลง 05 |
 | เห็น `[crit] ngx_slab_alloc() failed: no memory in js shared zone` ใน error log | ไม่ใช่ด่านพัง — โซนเต็ม nginx ลงบรรทัดนี้ทุกครั้งที่จองไม่ได้ แล้ว njs เขี่ยกุญแจเก่าสุดออก (`evict`) และนับต่อ (ยืนยันบน lab: 20,000 กุญแจในโซน 64k ไม่มี error) | ปล่อยได้ ถ้าขึ้นถี่จน log โตค่อยขยายโซน (ต้อง `restart` เพราะเปลี่ยนขนาดโซนเดิม — ยังไม่ได้ลอง) |
 
 ---
 
-## ขั้น 1b — งบแก๊สต่อ IP (เพิ่ม 2026-11-13 · ผ่าน lab 2026-11-20 · **ยังไม่ได้ลงเครื่องจริง**)
+## บันทึกการลงจริง — `tpixserver` 2026-11-20 06:07–06:14 UTC
+
+ลงขั้น 1b + 1c + 3 ครบจาก `main` (`e05e95a`) ตามลำดับ: map hash → conf → js → geo include → vhost → fail2ban
+ทุกขั้น `nginx -t` ก่อน `reload` · สำรองไว้ที่ `/etc/nginx/backup-20261120-060737/` และ `/etc/fail2ban/backup-20261120-060737/`
+
+| ขั้น | ที่ทำ | ผล |
+|---|---|---|
+| 0 | `01-tpix-map-hash.conf` ใหม่ + `08-tpix-verify-gate.conf` ตัดบรรทัด `map_hash_bucket_size` | config เท่าเดิม · explorer 200 · ด่าน verify ยังตอบ 403 เมื่อไม่มีกุญแจ |
+| 1 | `05-tpix-njs.conf` | ครั้งแรก `nginx -t` ไม่ผ่าน (ตารางกับดัก แถว map hash) คืนไฟล์เดิมโดยยังไม่ reload · หลังขั้น 0 ผ่าน |
+| 2 | `tpix-rpc.js` | ธุรกรรมขอ 10,000,001 gas → 400 `transaction gas limit above block gas limit` · raw tx ที่ถอดไม่ออกใบที่สองในนาทีเดียว → 429 `gas rate limit exceeded` · การอ่านยังผ่านตอนเกินงบ |
+| 3 | `tpix-banned.map` + บรรทัด `include` ใน `geo $banned_ip` (`10-tpix-http.conf` เพิ่ม 1 บรรทัด) | ไฟล์ว่าง ไม่มีใครถูกบล็อก |
+| 4 | vhost → `/etc/nginx/sites-enabled/tpix-rpc.conf` | ช่องแรกของ log เป็นที่อยู่ (IPv6 ลงท้าย `::`) ไม่มีบรรทัด `-` |
+| 5 | fail2ban: สคริปต์ + action + filter + jail (`ignoreip` มี `.252` และ `.251`) แล้ว `restart` | action = `nginx-tpix-banned` · กฎ iptables ของ jail หายไป · การแบนที่ค้างอยู่ 1 รายถูกเขียนลง map |
+| พิสูจน์ | แบนที่อยู่ของเครื่องทดสอบ (IPv6 → เขียนเป็น /64) | 403 ทันที · เลิกแบนแล้วกลับเป็น 200 หลัง reload ที่เลื่อนไว้ ~4 วิ · คำขอที่โดนบล็อกลง `tpix-rpc.banned.log` |
+
+หลังลง: `123.253.62.251` (เว็บ) 66 คำขอแรกได้ 200 ทั้งหมด · เชนเดิน ~30 บล็อก/นาที · error log ของ vhost ไม่มีบรรทัดใหม่
+
+ที่ไม่ได้ทำ: `verify-rpc-gate.sh` กับ `https://rpc.tpix.online` (มันส่งธุรกรรมที่เซ็นจริงเข้าเชน — ยังไม่ได้รัน)
+การตรวจข้างบนใช้เฉพาะคำขอที่ไม่ลงเชน จึงยังไม่ได้เห็นโควตาจำนวนใบ 10 tx / 10 วิ กับด่านใหม่บนเครื่องจริง
+
+⚠ ระหว่างลง (06:11:14–06:11:26) `unattended-upgrades` อัป nginx `1.24.0-2ubuntu7.19` → `7.20` แล้ว **restart** nginx เอง
+ไม่เกี่ยวกับการลงครั้งนี้ แต่ `restart` ล้างตัวนับทุกโซน และถ้ามันมาตอนไฟล์ครึ่ง ๆ กลาง ๆ ที่ `nginx -t` ไม่ผ่าน nginx จะไม่ขึ้น
+ก่อนลงครั้งหน้าดู `systemctl list-timers apt-daily-upgrade.timer` แล้วเลี่ยงช่วงนั้น
+
+---
+
+## ขั้น 1b — งบแก๊สต่อ IP (เพิ่ม 2026-11-13 · ผ่าน lab 2026-11-20 · **ลงเครื่องจริงแล้ว 2026-11-20** — ดู "บันทึกการลงจริง")
 
 โควตาเดิมนับจำนวนใบ (10 ใบ / 10 วิ / IP) — ธุรกรรม 21,000 gas กับ 10,000,000 gas กิน 1 หน่วยเท่ากัน
 IP เดียวที่ส่งใบละ 5M gas วินาทีละใบจึงทำให้ทุกบล็อกเต็มได้ (เชนรับ 5M gas/วินาที)
@@ -70,6 +97,7 @@ sudo mkdir -p /etc/nginx/backup-$TS
 sudo cp /etc/nginx/njs/tpix-rpc.js /etc/nginx/conf.d/05-tpix-njs.conf /etc/nginx/backup-$TS/
 
 # 1) โซนก่อน — ไฟล์ js เก่ายังไม่ใช้โซนนี้ จึงไม่มีอะไรเปลี่ยนสำหรับผู้ใช้ (reload ไม่ล้างโควตาที่นับอยู่)
+ls /etc/nginx/conf.d/01-tpix-map-hash.conf   # ต้องมี — ไม่มีให้หยุด: ลง 01 + 08 รุ่นใหม่ + reload ก่อน (ตารางกับดัก แถว map hash)
 sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo tail -n 20 /var/log/nginx/error.log        # ต้องไม่มี [emerg] — reload คืน exit 0 แม้ config ถูกปฏิเสธ
@@ -99,7 +127,7 @@ Cloudflare ที่อยู่ข้างหน้า, โหนดจริ�
 
 ---
 
-## ขั้น 1c — "ต่อ IP" ของ IPv6 คือต่อ /64 (เพิ่ม 2026-11-20 · ผ่าน lab · **ยังไม่ได้ลงเครื่องจริง**)
+## ขั้น 1c — "ต่อ IP" ของ IPv6 คือต่อ /64 (เพิ่ม 2026-11-20 · ผ่าน lab · **ลงเครื่องจริงแล้ว 2026-11-20** — ดู "บันทึกการลงจริง")
 
 `rpc.tpix.online` มี AAAA ที่ Cloudflare จึงรับผู้ใช้ IPv6 และ `CF-Connecting-IP` เป็น IPv6 ได้
 ผู้ใช้ IPv6 หนึ่งราย (สายบ้าน, VPS, มือถือ) ถือทั้ง /64 = 2^64 ที่อยู่ และเปลี่ยนที่อยู่ต้นทางได้เองทุกคำขอ
@@ -139,6 +167,7 @@ sudo cp /etc/nginx/njs/tpix-rpc.js /etc/nginx/conf.d/05-tpix-njs.conf /etc/nginx
 
 # 1) conf ก่อน — โซน rpc_gas_budget, map $rpc_client_net, โซน rpc_per_net / rpc_conn_per_net เกิด
 #    ยังไม่มีอะไรเปลี่ยนสำหรับผู้ใช้ (js เดิมกับ vhost เดิมไม่ได้เรียกของใหม่)
+ls /etc/nginx/conf.d/01-tpix-map-hash.conf   # ต้องมี — ไม่มีให้หยุด: ลง 01 + 08 รุ่นใหม่ + reload ก่อน (ตารางกับดัก แถว map hash)
 sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo tail -n 20 /var/log/nginx/error.log        # ต้องไม่มี [emerg]
@@ -207,6 +236,7 @@ sudo cp /etc/nginx/sites-enabled/tpix-rpc.conf /etc/nginx/backup-$TS/
 sudo cp /etc/nginx/conf.d/10-tpix-http.conf     /etc/nginx/backup-$TS/
 
 sudo cp infrastructure/njs/tpix-rpc.js /etc/nginx/njs/
+ls /etc/nginx/conf.d/01-tpix-map-hash.conf   # ต้องมี — ไม่มีให้หยุด: ลง 01 + 08 รุ่นใหม่ + reload ก่อน (ตารางกับดัก แถว map hash)
 sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
 sudo cp infrastructure/single-host/nginx-rpc.conf /etc/nginx/sites-enabled/tpix-rpc.conf
 
@@ -252,7 +282,7 @@ curl -s -m 12 https://rpc.tpix.online/health -H 'User-Agent: Mozilla/5.0'   # �
 
 ---
 
-## ขั้น 3 — fail2ban (เขียนใหม่ 2026-11-20 · ผ่าน lab · **ยังไม่ได้ลงเครื่องจริง**)
+## ขั้น 3 — fail2ban (เขียนใหม่ 2026-11-20 · ผ่าน lab · **ลงเครื่องจริงแล้ว 2026-11-20** — ดู "บันทึกการลงจริง")
 
 jail `tpix-rpc` ที่ติดตั้งเมื่อ 2026-08-28 แบนด้วย `iptables-multiport` — มันแบนไม่ถึงคำขอที่ผ่าน Cloudflare
 (อ่านจาก repo → ทำซ้ำบน lab → **ยืนยันบน `tpixserver` แล้ว 2026-11-20** ดู "สถานะจริงบนเครื่อง" ข้างล่าง):
@@ -374,6 +404,7 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo tail -n 20 /var/log/nginx/error.log        # ต้องไม่มี [emerg] · ไฟล์ยังไม่มีบรรทัดแบน จึงยังไม่มีอะไรเปลี่ยนสำหรับผู้ใช้
 
 # 1) conf — log_format tpixban + js_set $rpc_ban_key (ยังไม่มีใครเรียก ไม่มีอะไรเปลี่ยน)
+ls /etc/nginx/conf.d/01-tpix-map-hash.conf   # ต้องมี — ไม่มีให้หยุด: ลง 01 + 08 รุ่นใหม่ + reload ก่อน (ตารางกับดัก แถว map hash)
 sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo tail -n 20 /var/log/nginx/error.log        # ต้องไม่มี [emerg]
@@ -530,7 +561,7 @@ TPIX_BLOCK_FULL_PCT=80
 | กุญแจ /64 สำหรับ IPv6 (njs + `limit_req`/`limit_conn`) | /64 เดียวหมุนที่อยู่เพื่อเอาถังใหม่ | ⏳ ขั้น 1c — ผ่าน lab ยังไม่ได้ลง |
 | `--max-enqueued 16` | 1 address จองได้ 16 ช่อง (เดิม 128) | ✅ |
 | `--block-gas-target 10M` | ครึ่งเดียวของอัตราถมดิสก์สูงสุด | ✅ |
-| fail2ban | ปฏิเสธ 10 ครั้ง/60 วิ → แบน 1 ชม. เพิ่มเท่าตัวถ้าซ้ำ | ⚠️ jail ติดตั้งแล้ว (2026-08-28) แต่ action เป็น `iptables-multiport` ซึ่งแบนไม่ถึงคำขอที่ผ่าน Cloudflare (ยืนยันบนเครื่อง 2026-11-20: ที่อยู่ที่ถูกแบนยังได้ 200 ตัวนับแพ็กเก็ตของกฎเป็น 0 — ขั้น 3) · ⏳ action ใหม่ + นับ IPv6 ต่อ /64: ผ่าน lab ยังไม่ได้ลง |
+| fail2ban | ปฏิเสธ 10 ครั้ง/60 วิ → แบน 1 ชม. เพิ่มเท่าตัวถ้าซ้ำ | ✅ ลงแล้ว 2026-11-20 — action `nginx-tpix-banned` (แบนที่ `geo $banned_ip`) · พิสูจน์ด้วยการยิงจริงแล้ว (ขั้น 3 ข้อ 2) · เกณฑ์แบนยังไม่เคยถูกปรับจากการใช้งานจริง |
 | watchdog | ดิสก์ 75/88% · mempool ค้าง · บล็อกเต็ม | ✅ |
 
 **คนยิงถล่มต้องมี ~240 IP จริงที่ผ่าน Cloudflare** ถึงจะได้ปริมาณเท่าที่ IP เดียวเคยทำได้
