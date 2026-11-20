@@ -1,0 +1,47 @@
+name: RPC gate lab
+# ด่าน RPC (njs) บน nginx จริง — รุ่นเดียวกับเครื่องเชน (Ubuntu 24.04: libnginx-mod-http-js 0.8.2)
+# ไม่แตะเครื่องเชน: nginx รันบน runner กับ upstream ปลอม (infrastructure/lab/rpc-gate-lab.sh)
+on:
+  pull_request:
+    paths:
+      - 'infrastructure/njs/**'
+      - 'infrastructure/single-host/nginx-njs.conf'
+      - 'infrastructure/single-host/nginx-http-tpix.conf'
+      - 'infrastructure/single-host/tpix-banned.map'
+      - 'infrastructure/scripts/verify-rpc-gate.sh'
+      - 'infrastructure/lab/rpc-gate-lab.sh'
+      - '.github/workflows/rpc-gate-lab.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/njs/**'
+      - 'infrastructure/single-host/nginx-njs.conf'
+      - 'infrastructure/single-host/nginx-http-tpix.conf'
+      - 'infrastructure/single-host/tpix-banned.map'
+      - 'infrastructure/scripts/verify-rpc-gate.sh'
+      - 'infrastructure/lab/rpc-gate-lab.sh'
+      - '.github/workflows/rpc-gate-lab.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gate:
+    # ตรึงรุ่น image — ubuntu-latest ขยับเมื่อไร njs จะขยับตาม แล้ว lab จะพิสูจน์คนละรุ่นกับเครื่องจริง
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # lab อ่าน "ของเดิมบนเครื่อง" จาก commit ก่อน PR #25
+      - name: Unit tests (decision logic)
+        run: node --test infrastructure/njs/tpix-rpc.test.mjs
+      - name: Install nginx + njs
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx libnginx-mod-http-js
+          sudo systemctl stop nginx || true
+          dpkg-query -W nginx libnginx-mod-http-js
+      - name: Gate on real nginx + njs
+        env:
+          EXPECT_NJS: '0.8.2'
+        run: bash infrastructure/lab/rpc-gate-lab.sh
