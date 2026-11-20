@@ -52,16 +52,20 @@ and `/etc/nginx/snippets/tpix-verify-gate-locations.conf`, runs `nginx -t`, relo
 backup if the test fails. It refuses to switch to a backend that does not answer.
 Repo copies of those two files: `../single-host/nginx-explorer.conf`, `../blockscout/tpix-verify-gate-locations.conf`.
 
-## Old stack and rollback
+## Old stack: removed 2026-11-20, no rollback
 
-The 6.10.1 services (`blockscout-db/backend/sc-verifier/stats/frontend`) in `/opt/tpix/docker-compose.yml`
-are stopped and carry `profiles: ["legacy-explorer"]`, so the chain watchdog's `compose up -d` does not start
-them again. Images 6.10.1 and frontend v1.38.0 are kept on the host for rollback:
+The 6.10.1 stack was kept stopped for 13 days after the switch and then removed from the chain host:
 
-```bash
-cd /opt/tpix && sudo docker compose --profile legacy-explorer up -d   # backend needs ~2 min
-sudo /opt/tpix-bs/switch-nginx.sh old
-```
+- containers `blockscout-db/backend/sc-verifier/stats/frontend`
+- volumes `tpix_blockscout-db-data` (4.0 GB) and `tpix_sc-verifier-compilers`
+- images `blockscout/blockscout:6.10.1`, `frontend:v1.38.0`, and the unpinned `sig-provider`,
+  `smart-contract-verifier:latest`, `stats:latest`
+- the five services and the `volumes:` block in `/opt/tpix/docker-compose.yml`
+  (host backup: `docker-compose.yml.bak-20261120-pre-bs6-removal`)
 
-Contracts verified on the old database after the 2026-11-06T16:05Z snapshot would need verifying again on
-the new one; at the switch both sides had the same 19 verified contracts.
+`blockscout-visualizer` still runs from `/opt/tpix/docker-compose.yml`: nginx `/visualize-api/` proxies to
+`127.0.0.1:8154`. Removing those services did not change the compose config hash of the validators or the
+visualizer, so `compose up -d` there recreates nothing.
+
+`switch-nginx.sh old` has nothing to switch to any more and refuses. A rollback would mean restoring a
+Postgres dump into a fresh 6.10.1 stack; there is no such dump on the host.
