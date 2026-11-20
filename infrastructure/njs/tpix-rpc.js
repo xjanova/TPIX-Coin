@@ -398,7 +398,8 @@ function spendGas(dict, key, gas, nowMs) {
 
     /* โซนหาย = fail-closed เหมือน spendWrites
      * ⛔ ลำดับ deploy: ต้องลง nginx-njs.conf (ที่ประกาศ rpc_gas_budget) **ก่อน** ไฟล์นี้
-     *    ลงไฟล์นี้อย่างเดียว = ธุรกรรมทุกใบได้ 429 */
+     *    ลงไฟล์นี้อย่างเดียว = ธุรกรรมทุกใบได้ 429 (การอ่านยังผ่าน) — ยืนยันบน lab ขั้น 4
+     *    ngx.shared.<โซนที่ไม่มี> บน njs 0.8.2 คืน undefined ไม่โยน error */
     if (dict === undefined || dict === null) {
         return false;
     }
@@ -411,7 +412,8 @@ function spendGas(dict, key, gas, nowMs) {
         return true;
     }
 
-    /* ยังไม่ได้ยืนยันบน njs 0.8.2 ว่า incr รับค่าลบ — ถ้าโยน error ให้ถือว่าไม่ได้คืนงบ
+    /* incr รับค่าลบบน njs 0.8.2 — ยืนยันบน nginx จริงแล้ว (lab/rpc-gate-lab.sh ขั้น 3 และ 3b)
+     * try/catch เก็บไว้กันรุ่นอื่น: ถ้าวันหนึ่งมันโยน error ให้ถือว่าไม่ได้คืนงบ
      * (ผลคือเข้มขึ้น ไม่ใช่หลวมลง) ดีกว่าปล่อยให้คำขอที่ควรได้ 429 กลายเป็น 500 */
     try {
         dict.incr(slot, -gas, 0);

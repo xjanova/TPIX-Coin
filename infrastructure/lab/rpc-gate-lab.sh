@@ -16,6 +16,7 @@
 #    4. ลง js ก่อนโซน (ผิดลำดับ)                      → ธุรกรรมทุกใบ 429, การอ่านยังผ่าน, ลง conf แล้วหาย
 #    5. ทาง restart แทน reload                        → ใช้ได้เหมือนกัน แต่ตัวนับทุก IP ถูกล้าง
 #    6. โซนเต็ม                                        → evict ทำงาน ไม่ใช่ทุกธุรกรรมได้ 500
+#    7. ธุรกรรม ~100KB                                 → ถอดแก๊สได้ถูกบน njs จริง
 #
 #  ต้องมี: nginx + โมดูล njs รุ่นเดียวกับเครื่องจริง (Ubuntu 24.04: libnginx-mod-http-js 0.8.2),
 #          curl, git, python3 หรือ node (verify-rpc-gate.sh ใช้)
@@ -317,6 +318,14 @@ rawtx() {
     body="8080$(printf '%02x' $(( 0x80 + ${#g} / 2 )))${g}94000000000000000000000000000000000000dead8080010101"
     printf '0x%02x%s' $(( 0xc0 + ${#body} / 2 )) "$body"
 }
+bigtx() {
+    # bigtx <gas> → ธุรกรรม legacy ที่ data ยาว 50,000 ไบต์ — JSON ราว 100KB ใกล้เพดาน body 128k ของ vhost
+    # (gas ต้องเป็นเลข 3 ไบต์: 65,536 – 16,777,215)
+    local g body
+    g="$(printf '%06x' "$1")"
+    body="808083${g}94000000000000000000000000000000000000dead80b9c350$(printf '%0100000d' 0)010101"
+    printf '0xf9%04x%s' $(( ${#body} / 2 )) "$body"
+}
 send()  { printf '{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":["%s"],"id":1}' "$1"; }
 tx()    { send "$(rawtx "$1")"; }
 batch() {
@@ -334,9 +343,10 @@ JUNK="$(send 0xdeadbeef)"
 expect() {
     # expect <ชื่อ> <รหัส HTTP> <ข้อความใน body หรือ -> <IP ผู้ใช้> <payload>
     local name="$1" want="$2" sub="$3" ip="$4" data="$5" got body
+    printf '%s' "$data" > "$LAB/req"       # ผ่านไฟล์ — ธุรกรรม ~100KB ยาวเกินจะส่งเป็นอาร์กิวเมนต์
     got="$(curl -s -m 10 -o "$LAB/reply" -w '%{http_code}' -X POST "$GATE/" \
-        -H 'Content-Type: application/json' -H "CF-Connecting-IP: $ip" --data "$data" 2>/dev/null)" || got="000"
-    body="$(cat "$LAB/reply" 2>/dev/null)"
+        -H 'Content-Type: application/json' -H "CF-Connecting-IP: $ip" --data-binary @"$LAB/req" 2>/dev/null)" || got="000"
+    body="$(head -c 300 "$LAB/reply" 2>/dev/null)"
     if [ "$got" != "$want" ]; then
         bad "$name" "ได้ $got (ควรได้ $want) $body"
     elif [ "$sub" != "-" ] && [ "${body#*"$sub"}" = "$body" ]; then
@@ -402,7 +412,6 @@ expect "อ่านผ่าน" 200 - 10.0.0.1 "$READ"
 expect "โอน 21k ผ่าน" 200 - 10.0.0.1 "$(tx 21000)"
 expect "ด่านเดิมไม่มีงบแก๊ส: ขยะใบแรกผ่าน" 200 - 10.0.0.2 "$JUNK"
 expect "ด่านเดิมไม่มีงบแก๊ส: ขยะใบที่สองก็ผ่าน" 200 - 10.0.0.2 "$JUNK"
-probe_is "ฝากค่าไว้ในโซน rpc_write_budget ก่อน reload" "$(probe 'op=put&zone=rpc_write_budget&k=labkeep&v=7')" put 7
 log_clean "ของเดิม"
 
 say "1b. verify-rpc-gate.sh ต้องฟ้องว่าด่านเดิมไม่มีงบแก๊ส"
@@ -412,10 +421,14 @@ run_verify "verify กับด่านเดิม: ไม่ผ่าน" 1 '
 say "2. conf ใหม่ + reload (js เดิม)"
 install_conf new
 config_test "conf ใหม่"
+# ฝากค่าชิด reload — โซนนี้ timeout=10s และ get() มองไม่เห็นกุญแจที่หมดอายุ
+# ถ้าฝากไว้นานกว่านั้นจะอ่านผลผิดว่า reload ล้างโซน
+probe_is "ฝากค่าไว้ในโซน rpc_write_budget ก่อน reload" "$(probe 'op=put&zone=rpc_write_budget&k=labkeep&v=7')" put 7
 reload "conf ใหม่"
+probe_is "ตัวนับใน rpc_write_budget ไม่หายข้ามรอบ reload" "$(probe 'op=get&zone=rpc_write_budget&k=labkeep')" get 7
+probe_is "และนับต่อจากค่าเดิม" "$(probe 'op=put&zone=rpc_write_budget&k=labkeep&v=1')" put 8
 INFO="$(probe 'op=info')"
 probe_is "โซน rpc_gas_budget เกิดด้วย reload (ไม่ต้อง restart)" "$INFO" gas object
-probe_is "ตัวนับใน rpc_write_budget ไม่หายข้ามรอบ reload" "$(probe 'op=get&zone=rpc_write_budget&k=labkeep')" get 7
 expect "js เดิมยังรับธุรกรรมตามปกติ" 200 - 10.0.1.1 "$(tx 21000)"
 expect "js เดิม: ขยะสองใบยังผ่าน (ยังไม่มีอะไรเปลี่ยนสำหรับผู้ใช้)" 200 - 10.0.1.2 "$JUNK"
 expect "js เดิม: ขยะใบที่สอง" 200 - 10.0.1.2 "$JUNK"
@@ -445,6 +458,11 @@ expect "batch 5M+5M ผ่าน" 200 - 10.1.3.1 "$(batch 5000000 5000000)"
 expect "batch 21k+5M เกินงบ โดนตัดทั้งชุด" 429 'gas rate limit exceeded' 10.1.3.1 "$(batch 21000 5000000)"
 expect "batch ที่โดนตัดคืนงบ: 21k ยังผ่าน" 200 - 10.1.3.1 "$(tx 21000)"
 
+align 60 5
+expect "ธุรกรรม ~100KB (5M gas) ผ่าน" 200 - 10.1.5.1 "$(send "$(bigtx 5000000)")"
+expect "ธุรกรรม ~100KB ถูกคิด 5M จริง: 7,000,001 เกินงบ" 429 'gas rate limit exceeded' 10.1.5.1 "$(tx 7000001)"
+expect "ธุรกรรม ~100KB ถูกคิด 5M จริง: 7,000,000 พอดีงบ" 200 - 10.1.5.1 "$(tx 7000000)"
+
 align 10 4
 WRITE_OK=1
 for _ in $(seq 1 10); do
@@ -464,13 +482,24 @@ probe_is "incr ค่าลบ (ทางคืนงบ) ไม่โยน err
 probe_is "incr ค่าลบจนต่ำกว่า 0" "$INCR" below -21000
 probe_is "incr ค่าลบบนกุญแจใหม่" "$INCR" fresh -5
 
+log_clean "js ใหม่"
+
 say "3c. โซนเต็ม — ต้อง evict ไม่ใช่โยน error (error = ธุรกรรมทุกใบได้ 500)"
 FILL="$(probe "op=fill&k=f$$x&n=20000")"
 printf '%s\n' "$FILL" | sed 's/^/    │ /'
 probe_is "สร้าง 20,000 กุญแจในโซน 64k ครบโดยไม่มี error" "$FILL" firstErr none
 probe_is "กุญแจเก่าสุดถูก evict" "$FILL" oldest undefined
 probe_is "กุญแจใหม่สุดยังอยู่" "$FILL" newest 1
-log_clean "js ใหม่"
+# โซนเต็ม nginx ลง [crit] "no memory in js shared zone" ทุกครั้งที่จองไม่ได้ ก่อน njs จะ evict แล้วลองใหม่
+# = เสียงรบกวนใน error log ไม่ใช่ความเสียหาย — ที่ต้องไม่มีคืออย่างอื่นนอกจากบรรทัดนี้
+FRESH="$(tail -n +"$((LOGMARK + 1))" "$ERR")"
+LOGMARK="$(wc -l < "$ERR")"
+NOMEM="$(printf '%s\n' "$FRESH" | grep -c 'no memory in js shared zone "lab_fill"')"
+OTHER="$(printf '%s\n' "$FRESH" | grep -E '\[(emerg|alert|crit|error)\]|js exception' | grep -vc 'no memory in js shared zone "lab_fill"')"
+echo "    │ [crit] no memory in js shared zone: $NOMEM บรรทัด"
+if [ "$OTHER" = "0" ]; then ok "โซนเต็ม: error log มีแต่ [crit] no memory ของ nginx (ไม่มี js exception)"; else
+    bad "โซนเต็ม: error log มีข้อผิดพลาดอื่น" "$(printf '%s\n' "$FRESH" | grep -E '\[(emerg|alert|error)\]|js exception' | head -n 3)"
+fi
 
 say "3d. verify-rpc-gate.sh ต้องผ่านกับด่านใหม่"
 run_verify "verify กับด่านใหม่: ผ่าน" 0 -
@@ -550,6 +579,7 @@ http {
     fastcgi_temp_path     $LAB/tmp/fastcgi;
     uwsgi_temp_path       $LAB/tmp/uwsgi;
     scgi_temp_path        $LAB/tmp/scgi;
+    access_log off;
     include $LAB/alt/10-tpix-http.conf;
     server {
         listen 127.0.0.1:18549;

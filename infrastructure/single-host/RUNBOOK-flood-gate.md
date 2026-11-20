@@ -28,11 +28,12 @@
 | `grep -r load_module /etc/nginx/modules-enabled/` | ได้ผลว่าง แล้วสรุปผิดว่าโมดูล njs ไม่ได้โหลด | `-r` ไม่ตาม symlink ต้องใช้ `-R` |
 | curl ไม่ส่ง UA | Cloudflare bot rule ตอบ **403** ทำให้นึกว่าด่านเราพัง | ส่ง `User-Agent` แบบเบราว์เซอร์เสมอ |
 | copy watchdog ไป `/usr/local/bin` | cron เรียก `/usr/local/sbin/tpix-chain-watchdog` (ไม่มี `.sh`) — ตัวใหม่ไม่เคยถูกเรียก | ตรวจ `/etc/cron.d/tpix-chain-watchdog` ก่อนเสมอ |
-| ลง `tpix-rpc.js` รุ่นงบแก๊สก่อนโซน `rpc_gas_budget` | **ธุรกรรมทุกใบได้ 429** (`gas rate limit exceeded`) เพราะด่าน fail-closed เมื่อโซนหาย | ลง `05-tpix-njs.conf` + reload ให้โซนเกิดก่อน แล้วค่อยลง `tpix-rpc.js` (ขั้น 1b) |
+| ลง `tpix-rpc.js` รุ่นงบแก๊สก่อนโซน `rpc_gas_budget` | **ธุรกรรมทุกใบได้ 429** (`gas rate limit exceeded`) เพราะด่าน fail-closed เมื่อโซนหาย การอ่านยังผ่าน และ `nginx -t` ผ่านฉลุย (ยืนยันบน lab) | ลง `05-tpix-njs.conf` + reload ให้โซนเกิดก่อน แล้วค่อยลง `tpix-rpc.js` (ขั้น 1b) · ถ้าพลาดไปแล้ว ลง conf + reload ตามหลังก็หาย |
+| เห็น `[crit] ngx_slab_alloc() failed: no memory in js shared zone` ใน error log | ไม่ใช่ด่านพัง — โซนเต็ม nginx ลงบรรทัดนี้ทุกครั้งที่จองไม่ได้ แล้ว njs เขี่ยกุญแจเก่าสุดออก (`evict`) และนับต่อ (ยืนยันบน lab: 20,000 กุญแจในโซน 64k ไม่มี error) | ปล่อยได้ ถ้าขึ้นถี่จน log โตค่อยขยายโซน (ต้อง `restart` เพราะเปลี่ยนขนาดโซนเดิม — ยังไม่ได้ลอง) |
 
 ---
 
-## ขั้น 1b — งบแก๊สต่อ IP (เพิ่ม 2026-11-13 · **ยังไม่ได้ลงเครื่องจริง**)
+## ขั้น 1b — งบแก๊สต่อ IP (เพิ่ม 2026-11-13 · ผ่าน lab 2026-11-20 · **ยังไม่ได้ลงเครื่องจริง**)
 
 โควตาเดิมนับจำนวนใบ (10 ใบ / 10 วิ / IP) — ธุรกรรม 21,000 gas กับ 10,000,000 gas กิน 1 หน่วยเท่ากัน
 IP เดียวที่ส่งใบละ 5M gas วินาทีละใบจึงทำให้ทุกบล็อกเต็มได้ (เชนรับ 5M gas/วินาที)
@@ -46,13 +47,23 @@ IP เดียวที่ส่งใบละ 5M gas วินาทีละ
 
 ค่า 12M / 60 วิ เป็นค่าตั้งต้นจากการคำนวณ ยังไม่ได้ยืนยันด้วยโหลดจริงบน `infrastructure/lab`
 
+ลำดับข้างล่างเดินครบแล้วบน lab (`infrastructure/lab/rpc-gate-lab.sh` — nginx 1.24.0 + njs 0.8.2 ของ Ubuntu 24.04
+กับ upstream ปลอม รันใน CI ทุกครั้งที่ไฟล์ด่านเปลี่ยน) ทั้งทางถูก ทางผิดลำดับ และทาง `restart`
+
 ```bash
 cd ~/TPIX-Coin && git pull
+
+# 0) อ่านอย่างเดียว — เครื่องต้องตรงกับที่ lab ทดสอบ ข้อไหนไม่ตรงให้หยุดก่อน
+dpkg-query -W nginx libnginx-mod-http-js       # lab: nginx 1.24.0-2ubuntu7.x · libnginx-mod-http-js 0.8.2-1ubuntu1
+BASE=38eb23b587a50ae810f17f67ad237882b80cd5c6   # main ก่อนมีงบแก๊ส = "ของเดิม" ที่ lab ใช้
+diff <(git show $BASE:infrastructure/njs/tpix-rpc.js) /etc/nginx/njs/tpix-rpc.js && echo "js บนเครื่องตรงกับ repo"
+diff <(git show $BASE:infrastructure/single-host/nginx-njs.conf) /etc/nginx/conf.d/05-tpix-njs.conf && echo "conf บนเครื่องตรงกับ repo"
+
 TS=$(date +%Y%m%d-%H%M%S)
 sudo mkdir -p /etc/nginx/backup-$TS
 sudo cp /etc/nginx/njs/tpix-rpc.js /etc/nginx/conf.d/05-tpix-njs.conf /etc/nginx/backup-$TS/
 
-# 1) โซนก่อน — ไฟล์ js เก่ายังไม่ใช้โซนนี้ จึงไม่มีอะไรเปลี่ยนสำหรับผู้ใช้
+# 1) โซนก่อน — ไฟล์ js เก่ายังไม่ใช้โซนนี้ จึงไม่มีอะไรเปลี่ยนสำหรับผู้ใช้ (reload ไม่ล้างโควตาที่นับอยู่)
 sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo tail -n 20 /var/log/nginx/error.log        # ต้องไม่มี [emerg] — reload คืน exit 0 แม้ config ถูกปฏิเสธ
@@ -69,8 +80,16 @@ bash infrastructure/scripts/verify-rpc-gate.sh https://rpc.tpix.online
 ถอยกลับ: `sudo cp /etc/nginx/backup-$TS/tpix-rpc.js /etc/nginx/njs/ && sudo nginx -t && sudo systemctl reload nginx`
 (โซน `rpc_gas_budget` ปล่อยไว้ได้ ไฟล์ js เก่าไม่แตะมัน)
 
-ยังไม่ได้ยืนยันบน njs 0.8.2 ของเครื่องจริง: `incr()` รับค่าลบ (ใช้คืนงบของใบที่ไม่ผ่าน — ถ้าไม่รับ ด่านจะเข้มขึ้นเฉย ๆ ไม่พัง)
-และการเพิ่มโซนใหม่ด้วย `reload` (ถ้าไม่ขึ้นให้ `restart` ตามกับดักแถวที่ 2)
+ยืนยันบน lab แล้ว (2026-11-20, njs 0.8.2):
+
+- `incr()` รับค่าลบ — ใบที่โดน 429 ไม่กินงบ ใบเล็กที่ตามมายังผ่าน และใช้ได้ครบ 12M พอดี
+- เพิ่มโซนใหม่ด้วย `reload` ได้ ไม่ต้อง `restart` · ตัวนับของ `rpc_write_budget` ไม่หายข้ามรอบ reload (`restart` ล้างทุก IP)
+- ลงผิดลำดับ (js ก่อนโซน): ธุรกรรมทุกใบ 429 การอ่านยังผ่าน `nginx -t` ไม่ฟ้อง — ลง conf + reload ตามหลังแล้วหาย
+- `verify-rpc-gate.sh`: ผ่าน 18/0 กับด่านใหม่ · ฟ้อง "ส่ง 3 ใบไม่โดนตัดเลย" กับ js เดิม · ฟ้อง "โดนตัดตั้งแต่ใบแรก" กับการลงผิดลำดับ
+- ธุรกรรม ~100KB ถอดแก๊สได้ถูก · งบเริ่มใหม่เมื่อขึ้นนาทีใหม่ · โซนเต็มแล้ว evict ไม่ใช่ 500
+
+ที่ lab พิสูจน์ไม่ได้ ต้องดูตอนลงจริง: ไฟล์อื่นใน `/etc/nginx/conf.d` ของเครื่อง (`10-tpix-http.conf`, `99-tpix-debug.conf`),
+Cloudflare ที่อยู่ข้างหน้า, โหนดจริงเป็น upstream และรุ่น njs ของเครื่อง (ข้อ 0 ข้างบนเช็กให้)
 
 ---
 
