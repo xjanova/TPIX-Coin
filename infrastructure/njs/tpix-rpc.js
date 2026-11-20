@@ -496,6 +496,30 @@ function clientKey(r) {
 }
 
 /**
+ * กุญแจที่ fail2ban นับและแบน — ช่องแรกของ log_format tpixban (js_set $rpc_ban_key)
+ *
+ * หน่วยเดียวกับถังโควตา (addressKey): IPv4 ต่อที่อยู่ · IPv6 ต่อ /64 · ::ffff:a.b.c.d = a.b.c.d
+ * ไม่งั้นคนที่หมุนที่อยู่ใน /64 เดียวถูกปฏิเสธที่อยู่ละครั้ง ไม่มีที่อยู่ไหนถึงเกณฑ์แบนเลย
+ *
+ * ต่างจาก clientKey สองข้อ:
+ *   1. อ่าน r.remoteAddress อย่างเดียว ไม่อ่าน header — ตัวที่บล็อกคือ geo $banned_ip ซึ่งเทียบกับ
+ *      $remote_addr (ค่าหลัง real_ip) ของที่นับกับของที่บล็อกต้องเป็นค่าเดียวกัน และคนที่ต่อเข้ามา
+ *      โดยไม่ผ่าน Cloudflare ต้องใส่ header ปลอมเพื่อให้คนอื่นโดนแบนแทนไม่ได้
+ *   2. IPv6 คืนเป็น "ที่อยู่เครือข่าย" (2001:db8:0:1::) ไม่มี /64 ต่อท้าย — <HOST> ของ fail2ban
+ *      รับได้เฉพาะที่อยู่ ตัวเติม /64 คือ scripts/tpix-nginx-ban.py ตอนเขียน tpix-banned.map
+ */
+function banKey(r) {
+    var k = addressKey(r.remoteAddress);
+    if (typeof k !== 'string' || k.length === 0) {
+        return '-';
+    }
+    if (k.length > 5 && k.slice(-5) === '::/64') {
+        return k.slice(0, -3);
+    }
+    return k;
+}
+
+/**
  * ถังโควตาเขียน — หน้าต่างคงที่ WINDOW_SECONDS วินาที ผูกเลขหน้าต่างไว้ในกุญแจ
  *
  * ⚠️ เดิมใช้กุญแจ = IP อย่างเดียว แล้วหวังให้ timeout ของ js_shared_dict_zone ล้างค่าเอง
@@ -649,6 +673,7 @@ export default {
     rawTxGas,
     clientKey,
     addressKey,
+    banKey,
     WRITE_PER_WINDOW,
     WINDOW_SECONDS,
     MAX_BATCH,

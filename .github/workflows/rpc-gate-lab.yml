@@ -11,6 +11,10 @@ on:
       - 'infrastructure/single-host/tpix-banned.map'
       - 'infrastructure/scripts/verify-rpc-gate.sh'
       - 'infrastructure/lab/rpc-gate-lab.sh'
+      - 'infrastructure/lab/rpc-ban-lab.sh'
+      - 'infrastructure/fail2ban/**'
+      - 'infrastructure/scripts/tpix-nginx-ban.py'
+      - 'infrastructure/scripts/tests/test_tpix_nginx_ban.py'
       - '.github/workflows/rpc-gate-lab.yml'
   push:
     branches: [main]
@@ -22,6 +26,10 @@ on:
       - 'infrastructure/single-host/tpix-banned.map'
       - 'infrastructure/scripts/verify-rpc-gate.sh'
       - 'infrastructure/lab/rpc-gate-lab.sh'
+      - 'infrastructure/lab/rpc-ban-lab.sh'
+      - 'infrastructure/fail2ban/**'
+      - 'infrastructure/scripts/tpix-nginx-ban.py'
+      - 'infrastructure/scripts/tests/test_tpix_nginx_ban.py'
       - '.github/workflows/rpc-gate-lab.yml'
   workflow_dispatch:
 permissions:
@@ -47,3 +55,25 @@ jobs:
         env:
           EXPECT_NJS: '0.8.2'
         run: bash infrastructure/lab/rpc-gate-lab.sh
+
+  ban:
+    # fail2ban หลัง Cloudflare: ของเดิม (iptables) แบนไม่ถึงคำขอ · ของใหม่ (geo $banned_ip) แบนถึง และนับ IPv6 ต่อ /64
+    # nginx + fail2ban + iptables ตัวจริงบน runner — ไม่แตะเครื่องเชน (infrastructure/lab/rpc-ban-lab.sh)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # lab อ่าน jail / filter / vhost ของเดิมจาก commit ก่อน PR #25
+      - name: Unit tests (map writer)
+        run: python3 -m unittest -v infrastructure/scripts/tests/test_tpix_nginx_ban.py
+      - name: Install nginx + njs + fail2ban
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx libnginx-mod-http-js fail2ban
+          sudo systemctl stop nginx fail2ban || true
+          dpkg-query -W nginx libnginx-mod-http-js fail2ban iptables
+      - name: fail2ban ban behind "Cloudflare"
+        env:
+          REQUIRE_IPTABLES: '1'
+        run: bash infrastructure/lab/rpc-ban-lab.sh
