@@ -19,6 +19,9 @@ case "$1" in
  cat)
    target="$REMOTE_DIR/${2##*/}"
    if [[ "${MODE:-}" == read_fail ]]; then cat "$target"; exit 1; fi
+   if [[ "${MODE:-}" == read_fail_once && "$target" != *.sha256 && ! -f "$REMOTE_DIR.failed-once" ]]; then
+     : > "$REMOTE_DIR.failed-once"; cat "$target"; exit 1
+   fi
    if [[ "${MODE:-}" == bad_manifest && "$target" == *.sha256 ]]; then
      printf wrong
    else cat "$target"; fi ;;
@@ -28,9 +31,9 @@ MOCK
 chmod +x "$WORK/bin/rclone"
 export PATH="$WORK/bin:$PATH" REMOTE_DIR="$WORK/remote"
 export TPIX_R2_ACCOUNT_ID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-export TPIX_R2_ACCESS_KEY_ID=test TPIX_R2_SECRET_ACCESS_KEY=test TPIX_R2_RETRIES=1
+export TPIX_R2_ACCESS_KEY_ID=test TPIX_R2_SECRET_ACCESS_KEY=test TPIX_R2_RETRIES=1 TPIX_R2_RETRY_SLEEP=0
 FILE="$WORK/tpix-chain-test.tar.gz.gpg"
-reset_case() { rm -f "$WORK/remote/"* "$FILE.r2-verified"; printf abcdef > "$FILE"; unset MODE; }
+reset_case() { rm -f "$WORK/remote/"* "$WORK/remote.failed-once" "$FILE.r2-verified"; printf abcdef > "$FILE"; unset MODE; }
 expect_failure() {
     if bash "$SCRIPT" "$FILE" > "$WORK/log" 2>&1; then
         cat "$WORK/log"; echo 'Expected failure' >&2; exit 1
@@ -53,6 +56,13 @@ expect_failure
 echo 'PASS: different-size collision rejected'
 reset_case; export MODE=read_fail; expect_failure
 echo 'PASS: incomplete read-back fails even when digest bytes match'
+reset_case; export MODE=read_fail_once
+TPIX_R2_RETRIES=2 bash "$SCRIPT" "$FILE" > "$WORK/log" 2>&1 || { cat "$WORK/log"; exit 1; }
+[[ -f "$FILE.r2-verified" && -f "$WORK/remote.failed-once" ]]
+grep -q 'read-back attempt 1/2 failed' "$WORK/log"
+echo 'PASS: one reset connection during read-back is retried and verified'
+reset_case; export MODE=read_fail_once; expect_failure
+echo 'PASS: with a single attempt the same reset still writes no receipt'
 reset_case; export MODE=bad_manifest; expect_failure
 echo 'PASS: corrupt manifest rejected'
 reset_case; export MODE=upload_fail; expect_failure

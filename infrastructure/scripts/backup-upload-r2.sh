@@ -10,10 +10,12 @@ FILE="${1:-}"
 BUCKET="${TPIX_R2_BUCKET:-tpix-chain-backup}"
 RETRIES="${TPIX_R2_RETRIES:-3}"
 BW_LIMIT="${TPIX_R2_BWLIMIT:-10M}"
+RETRY_SLEEP="${TPIX_R2_RETRY_SLEEP:-10}"
 log() { printf '[R2] %s %s\n' "$(date -Is)" "$*"; }
 fail() { log "$*" >&2; exit 1; }
 [[ -n "$FILE" && -f "$FILE" && ! -L "$FILE" ]] || fail 'Expected a regular backup file'
 [[ "$RETRIES" =~ ^[1-9][0-9]*$ && "$RETRIES" -le 10 ]] || fail 'Invalid retry count'
+[[ "$RETRY_SLEEP" =~ ^[0-9]+$ && "$RETRY_SLEEP" -le 300 ]] || fail 'Invalid retry delay'
 for cmd in rclone sha256sum stat mktemp cmp flock install; do
     command -v "$cmd" >/dev/null || fail "Missing command: $cmd"
 done
@@ -56,7 +58,24 @@ upload() {
             --s3-chunk-size 32M --transfers 1 --stats-one-line --stats 30s "${COMMON[@]}"; then
             return 0
         fi
-        if (( attempt < RETRIES )); then sleep "$((attempt * 10))"; fi
+        if (( attempt < RETRIES )); then sleep "$((attempt * RETRY_SLEEP))"; fi
+    done
+    return 1
+}
+
+# The read-back is a multi-GB download and a reset connection is the common
+# failure. On 2026-11-18 a single reset left the archive without a receipt, so
+# retry it like the upload. Each attempt reads the whole object again; with
+# pipefail a short read fails the pipeline even though sha256sum printed a digest.
+read_back_hash() {
+    local attempt hash
+    for ((attempt=1; attempt<=RETRIES; attempt++)); do
+        if hash="$(rclone cat "$REMOTE" "${COMMON[@]}" | sha256sum | cut -d ' ' -f 1)"; then
+            printf '%s' "$hash"
+            return 0
+        fi
+        log "Remote read-back attempt $attempt/$RETRIES failed" >&2
+        if (( attempt < RETRIES )); then sleep "$((attempt * RETRY_SLEEP))"; fi
     done
     return 1
 }
@@ -64,8 +83,7 @@ upload() {
 log "Uploading $NAME ($LOCAL_SIZE bytes)"
 upload "$FILE" "$REMOTE" || fail 'Archive upload failed; local copy retained'
 log 'Reading back the entire remote object for SHA-256 verification'
-REMOTE_HASH="$(rclone cat "$REMOTE" "${COMMON[@]}" | sha256sum | cut -d ' ' -f 1)" \
-    || fail 'Remote read-back failed; local copy retained'
+REMOTE_HASH="$(read_back_hash)" || fail 'Remote read-back failed; local copy retained'
 [[ "$REMOTE_HASH" == "$LOCAL_HASH" ]] || fail 'Remote SHA-256 mismatch; local copy retained'
 [[ "$(sha256sum "$FILE" | cut -d ' ' -f 1)" == "$LOCAL_HASH" ]] \
     || fail 'Local archive changed during upload; no verification receipt written'
