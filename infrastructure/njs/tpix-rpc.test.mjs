@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import gate from './tpix-rpc.js';
 
 const {
-    classify, spendWrites, spendGas, rawTxGas, clientKey, addressKey,
+    classify, spendWrites, spendGas, rawTxGas, clientKey, addressKey, banKey,
     WRITE_PER_WINDOW, WINDOW_SECONDS,
     GAS_PER_WINDOW, GAS_WINDOW_SECONDS, MAX_TX_GAS, MIN_TX_GAS,
 } = gate;
@@ -557,4 +557,52 @@ test('IPv4 กับ IPv4 ตัวเดียวกันที่ห่อเ
     assert.equal(spendGas(dict, clientKey(req('203.0.113.7')), GAS_PER_WINDOW, t0), true);
     assert.equal(spendGas(dict, clientKey(req('::ffff:203.0.113.7')), 21000, t0 + 1), false);
     assert.equal(spendGas(dict, clientKey(req('::ffff:203.0.113.8')), 21000, t0 + 1), true);
+});
+
+// ── กุญแจแบน: ช่องแรกของ log ที่ fail2ban อ่าน ─────────────────────────────────
+//
+// fail2ban นับ "ถูกปฏิเสธกี่ครั้ง" ต่อค่าช่องแรกของ log — ถ้าช่องนั้นเป็นที่อยู่เต็ม
+// คนที่หมุนที่อยู่ใน /64 เดียวถูกนับที่อยู่ละครั้ง ไม่มีวันถึงเกณฑ์
+
+test('banKey: IPv6 ทั้ง /64 ได้ค่าเดียวกัน และเป็นที่อยู่ที่ fail2ban <HOST> รับได้ (ไม่มี /64 ต่อท้าย)', () => {
+    const k = banKey(req(undefined, '2001:db8:1:2::1'));
+    assert.equal(k, '2001:db8:1:2::');
+    for (const a of ['2001:db8:1:2:aaaa:bbbb:cccc:dddd', '2001:DB8:1:2::FFFF', '2001:0db8:0001:0002:0000:0000:0000:0009']) {
+        assert.equal(banKey(req(undefined, a)), k, a);
+    }
+    assert.notEqual(banKey(req(undefined, '2001:db8:1:3::1')), k, '/64 ถัดไป');
+    assert.ok(!k.includes('/'));
+    assert.equal(banKey(req(undefined, '::1')), '0:0:0:0::');
+});
+
+test('banKey: IPv4 คืนตามเดิม · IPv4 ที่ห่อเป็น IPv6 คืนเป็น IPv4 ตัวนั้น', () => {
+    assert.equal(banKey(req(undefined, '203.0.113.7')), '203.0.113.7');
+    assert.equal(banKey(req(undefined, '::ffff:203.0.113.7')), '203.0.113.7');
+});
+
+test('banKey อ่าน remoteAddress อย่างเดียว — header ปลอมทำให้คนอื่นโดนแบนแทนไม่ได้', () => {
+    assert.equal(banKey(req('198.51.100.99', '203.0.113.7')), '203.0.113.7');
+    assert.equal(banKey(req('2001:db8:dead::1', '2001:db8:1:2::5')), '2001:db8:1:2::');
+});
+
+test('banKey: 30 ที่อยู่จาก /64 เดียว = ค่าเดียว (ที่อยู่เต็มได้ 30 ค่า ไม่มีค่าไหนถึง maxretry)', () => {
+    const keys = new Set();
+    const full = new Set();
+    for (let i = 1; i <= 30; i++) {
+        const a = '2001:db8:1:2::' + i.toString(16);
+        keys.add(banKey(req(undefined, a)));
+        full.add(a);
+    }
+    assert.equal(keys.size, 1);
+    assert.equal(full.size, 30);
+});
+
+test('banKey ไม่โยน exception กับของที่ไม่ใช่ที่อยู่', () => {
+    for (const j of [undefined, null, '', 'unix:', 'abc', ':::', 123]) {
+        const r = { headersIn: {}, remoteAddress: j };
+        assert.doesNotThrow(() => banKey(r), JSON.stringify(j));
+    }
+    assert.equal(banKey({ headersIn: {}, remoteAddress: undefined }), '-');
+    assert.equal(banKey({ headersIn: {}, remoteAddress: '' }), '-');
+    assert.equal(banKey({ headersIn: {}, remoteAddress: 'unix:' }), 'unix:');
 });
