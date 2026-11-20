@@ -329,10 +329,12 @@ reload_rejected() {
 
 LOGMARK=0
 log_clean() {
-    # log_clean <ชื่อ> — error log ตั้งแต่เช็กครั้งก่อนต้องไม่มี emerg/alert/crit/error หรือ js exception
+    # log_clean <ชื่อ> [ข้อความของบรรทัดที่ตั้งใจให้เกิด] — error log ตั้งแต่เช็กครั้งก่อนต้องไม่มี
+    # emerg/alert/crit/error หรือ js exception นอกจากบรรทัดที่มีข้อความนั้น
     local fresh
     fresh="$(tail -n +"$((LOGMARK + 1))" "$ERR")"
     LOGMARK="$(wc -l < "$ERR")"
+    [ -n "${2:-}" ] && fresh="$(printf '%s\n' "$fresh" | grep -vF -- "$2")"
     if printf '%s\n' "$fresh" | grep -E '\[(emerg|alert|crit|error)\]|js exception' > "$LAB/log.bad"; then
         bad "$1: error log มีข้อผิดพลาด" "$(head -n 3 "$LAB/log.bad")"
     else
@@ -779,6 +781,7 @@ else
     bad "vhost ใหม่บน conf เดิม: nginx -t ไม่ผ่าน แต่ไม่ได้บอกว่าเพราะโซน rpc_per_net" "$(tail -n 3 "$LAB/t.out")"
 fi
 cp "$LAB/src/old.limits" "$LAB/net/vhost-limits.conf"
+LOGMARK="$(wc -l < "$ERR")"      # nginx -t ที่ไม่ผ่านเมื่อครู่ลง [emerg] ไว้ใน error log — ตั้งใจให้เกิด ไม่นับ
 
 say "7c. ขั้น 1c ข้อ 1: conf ใหม่ (map + โซน rpc_per_net) + reload — vhost ยังใช้โซนเดิม"
 install_conf new
@@ -839,7 +842,8 @@ hit "IPv4 ที่มีไบต์ 0x0a: ซ้ำโดนตัด" 429 "$N
 hit "::ffff: ของ IPv4 ที่ใช้ไปแล้วโดนตัด (ถังเดียวกับ IPv4 ตัวนั้น)" 429 "$NET_PORT" ::ffff:10.7.0.1
 hit "::ffff: ของ IPv4 อื่นผ่าน" 200 "$NET_PORT" ::ffff:10.7.0.3
 hit "::ffff: ของ IPv4 อีกตัวก็ผ่าน (ไม่กองรวมใน ::/64)" 200 "$NET_PORT" ::ffff:10.7.0.4
-log_clean "ชั้นหยาบ กุญแจใหม่"
+# limit_req ลง [error] "limiting requests" ทุกครั้งที่ตัด — คือ 429 ที่ตั้งใจข้างบน ที่ต้องไม่มีคืออย่างอื่น
+log_clean "ชั้นหยาบ กุญแจใหม่" 'limiting requests, excess'
 
 say "7g. กับดัก — แก้กุญแจของโซนเดิม (rpc_per_ip) แทนการเพิ่มโซนชื่อใหม่ แล้ว reload"
 cat > "$LAB/net/host-zones.conf" <<'EOF'
