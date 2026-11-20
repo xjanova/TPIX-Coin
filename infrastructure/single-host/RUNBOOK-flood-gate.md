@@ -33,6 +33,7 @@
 | ตัด `(?s)` ออกจาก `map $binary_remote_addr $rpc_client_net` | `.` ไม่จับไบต์ `0x0a` → IPv6 ที่มีไบต์นั้น (เช่น `2001:db8:a0a::1`) หลุดไป `default` = กลับไปนับต่อที่อยู่เต็มเงียบ ๆ ไม่มี error | ห้ามตัด — lab ขั้น 7f มีที่อยู่แบบนี้คุมอยู่ |
 | jail ของ fail2ban แบนที่ชั้นไฟร์วอลล์ (`iptables-multiport`, `nftables`, `ufw` …) บนเครื่องที่อยู่หลัง Cloudflare | `fail2ban-client status` ขึ้นว่าแบนแล้ว กฎ iptables มีจริง แต่**คำขอของคนนั้นยังได้ 200** — แพ็กเก็ตทุกใบมีต้นทางเป็น IP ของ Cloudflare กฎที่ระบุ IP ผู้ใช้ไม่ตรงกับแพ็กเก็ตใดเลย (ตัวนับแพ็กเก็ตของกฎเป็น 0) ทั้ง IPv4 และ IPv6 (เห็นบน `lab/rpc-ban-lab.sh` ขั้น 2) | แบนที่ชั้นที่เห็น IP ผู้ใช้จริง: action `nginx-tpix-banned` เขียน `tpix-banned.map` ให้ `geo $banned_ip` (ขั้น 3) · พิสูจน์ด้วยการยิงจริงจากที่อยู่ที่ถูกแบน อย่าดูแค่ status |
 | ลง vhost ที่ใช้ `log_format tpixban` ก่อน `tpix-rpc.js` ที่มี `banKey` | `nginx -t` ผ่าน ด่านทำงานปกติ แต่ช่องแรกของ access log เป็น `-` → fail2ban ไม่แมตช์สักบรรทัด = ไม่แบนใครเลย และ error log ก็ไม่ฟ้อง (เห็นบน lab ขั้น 6b) | ลำดับ conf → js → vhost (ขั้น 3) แล้ว `tail -n 3` access log ดูช่องแรกทุกครั้ง |
+| copy vhost ไปที่ `/etc/nginx/sites-available/tpix-rpc.conf` | ไม่มีอะไรเปลี่ยน `nginx -t` ผ่าน reload สำเร็จ — บน `tpixserver` ไฟล์ `sites-enabled/tpix-rpc.conf` เป็น**ไฟล์จริง ไม่ใช่ symlink** (แก้ล่าสุด 2026-10-21) nginx โหลดไฟล์นั้น ส่วน `sites-available/tpix-rpc.conf` เป็นสำเนาค้างจาก 2026-08-28 (ยังใช้ใบรับรอง self-signed และ body 32k) ที่ไม่มีใครโหลด (เห็นบนเครื่อง 2026-11-20) | วางที่ `/etc/nginx/sites-enabled/tpix-rpc.conf` (ถ้าวันหน้ากลับเป็น symlink `cp` ก็เขียนทะลุไปไฟล์ปลายทางให้) · เช็กก่อนทุกครั้ง: `stat -c '%F' /etc/nginx/sites-enabled/tpix-rpc.conf` |
 | เห็น `[crit] ngx_slab_alloc() failed: no memory in js shared zone` ใน error log | ไม่ใช่ด่านพัง — โซนเต็ม nginx ลงบรรทัดนี้ทุกครั้งที่จองไม่ได้ แล้ว njs เขี่ยกุญแจเก่าสุดออก (`evict`) และนับต่อ (ยืนยันบน lab: 20,000 กุญแจในโซน 64k ไม่มี error) | ปล่อยได้ ถ้าขึ้นถี่จน log โตค่อยขยายโซน (ต้อง `restart` เพราะเปลี่ยนขนาดโซนเดิม — ยังไม่ได้ลอง) |
 
 ---
@@ -130,11 +131,11 @@ cd ~/TPIX-Coin && git pull
 sudo grep -RnE 'limit_(req|conn)(_zone)?[[:space:]]' /etc/nginx/     # โซนเดิมประกาศที่ไฟล์ไหน vhost ไหนเรียกใช้บ้าง
 sudo grep -Rn 'rpc_per_net\|rpc_conn_per_net\|rpc_client_net' /etc/nginx/ ; echo "ต้องว่าง (ชื่อยังไม่ถูกใช้)"
 BASE=38eb23b587a50ae810f17f67ad237882b80cd5c6
-diff <(git show $BASE:infrastructure/single-host/nginx-rpc.conf) /etc/nginx/sites-available/tpix-rpc.conf && echo "vhost บนเครื่องตรงกับ repo"
+diff <(git show $BASE:infrastructure/single-host/nginx-rpc.conf) /etc/nginx/sites-enabled/tpix-rpc.conf && echo "vhost บนเครื่องตรงกับ repo"
 
 TS=$(date +%Y%m%d-%H%M%S)
 sudo mkdir -p /etc/nginx/backup-$TS
-sudo cp /etc/nginx/njs/tpix-rpc.js /etc/nginx/conf.d/05-tpix-njs.conf /etc/nginx/sites-available/tpix-rpc.conf /etc/nginx/backup-$TS/
+sudo cp /etc/nginx/njs/tpix-rpc.js /etc/nginx/conf.d/05-tpix-njs.conf /etc/nginx/sites-enabled/tpix-rpc.conf /etc/nginx/backup-$TS/
 
 # 1) conf ก่อน — โซน rpc_gas_budget, map $rpc_client_net, โซน rpc_per_net / rpc_conn_per_net เกิด
 #    ยังไม่มีอะไรเปลี่ยนสำหรับผู้ใช้ (js เดิมกับ vhost เดิมไม่ได้เรียกของใหม่)
@@ -151,7 +152,7 @@ sudo tail -n 20 /var/log/nginx/error.log
 #    ถ้าข้อ 0 บอกว่า vhost บนเครื่องไม่ตรงกับ repo: อย่าทับทั้งไฟล์ แก้เฉพาะสองบรรทัด
 #      limit_req  zone=rpc_per_ip ...   →  zone=rpc_per_net
 #      limit_conn rpc_conn_per_ip 10;   →  rpc_conn_per_net 10;
-sudo cp infrastructure/single-host/nginx-rpc.conf /etc/nginx/sites-available/tpix-rpc.conf
+sudo cp infrastructure/single-host/nginx-rpc.conf /etc/nginx/sites-enabled/tpix-rpc.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo tail -n 20 /var/log/nginx/error.log
 
@@ -202,12 +203,12 @@ sudo docker run --rm 0xpolygon/polygon-edge:0.9.0 server --help \
 cd ~/TPIX-Coin && git pull
 TS=$(date +%Y%m%d-%H%M%S)
 sudo mkdir -p /etc/nginx/njs /etc/nginx/backup-$TS
-sudo cp /etc/nginx/sites-available/tpix-rpc.conf /etc/nginx/backup-$TS/
+sudo cp /etc/nginx/sites-enabled/tpix-rpc.conf /etc/nginx/backup-$TS/
 sudo cp /etc/nginx/conf.d/10-tpix-http.conf     /etc/nginx/backup-$TS/
 
 sudo cp infrastructure/njs/tpix-rpc.js /etc/nginx/njs/
 sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
-sudo cp infrastructure/single-host/nginx-rpc.conf /etc/nginx/sites-available/tpix-rpc.conf
+sudo cp infrastructure/single-host/nginx-rpc.conf /etc/nginx/sites-enabled/tpix-rpc.conf
 
 sudo nginx -t && sudo systemctl restart nginx     # restart ไม่ใช่ reload
 sudo tail -20 /var/log/nginx/error.log            # ต้องไม่มี [emerg] / js exception
@@ -253,18 +254,37 @@ curl -s -m 12 https://rpc.tpix.online/health -H 'User-Agent: Mozilla/5.0'   # �
 
 ## ขั้น 3 — fail2ban (เขียนใหม่ 2026-11-20 · ผ่าน lab · **ยังไม่ได้ลงเครื่องจริง**)
 
-jail `tpix-rpc` ที่ติดตั้งเมื่อ 2026-08-28 แบนด้วย `iptables-multiport` — อ่านจาก repo แล้วมันแบนไม่ถึงคำขอที่ผ่าน Cloudflare:
+jail `tpix-rpc` ที่ติดตั้งเมื่อ 2026-08-28 แบนด้วย `iptables-multiport` — มันแบนไม่ถึงคำขอที่ผ่าน Cloudflare
+(อ่านจาก repo → ทำซ้ำบน lab → **ยืนยันบน `tpixserver` แล้ว 2026-11-20** ดู "สถานะจริงบนเครื่อง" ข้างล่าง):
 
 | ทางแบน | เทียบกับอะไร | คำขอที่มาทาง Cloudflare — IPv4 | IPv6 |
 |---|---|---|---|
 | iptables / ip6tables (`iptables-multiport` ของ jail เดิม) | ต้นทางของแพ็กเก็ต = IP ของ Cloudflare เสมอ (ขั้น 2 เปิด 80/443 ให้เฉพาะช่วงนั้น) | **ไม่มีผล** — กฎที่ระบุ IP ผู้ใช้ไม่ตรงกับแพ็กเก็ตใด | **ไม่มีผล** เหตุผลเดียวกัน |
-| nginx `geo $banned_ip` + `if ($banned_ip) { return 403; }` ใน vhost | `$remote_addr` หลัง `real_ip` = IP ผู้ใช้จริง | มีผล แต่**ไม่มีอะไรเขียน `tpix-banned.map`** (มีผลเฉพาะบรรทัดที่คนใส่มือ) | เหมือนกัน · รับ CIDR จึงแบนทั้ง /64 ได้ |
+| nginx `geo $banned_ip` + `if ($banned_ip) { return 403; }` ใน vhost | `$remote_addr` หลัง `real_ip` = IP ผู้ใช้จริง | มีผล แต่**ไม่มีอะไรเขียน `tpix-banned.map`** — และบนเครื่อง `geo` ไม่ได้ include ไฟล์นั้นด้วยซ้ำ (บล็อกว่าง ไฟล์ไม่มี) | เหมือนกัน · รับ CIDR จึงแบนทั้ง /64 ได้ |
 | รายการ IP ที่ Cloudflare (`cloudflare-tpix` + `cf-ban-ip`) | IP ผู้ใช้ที่ขอบ Cloudflare | มีผลถ้ามี jail เรียก — **jail `tpix-rpc` ไม่เคยเรียก** (`install-cf-autoban.sh` ผูกให้เฉพาะ jail apache ของเครื่องเก่า และ `decommission-old-chain.sh` ลบ action นี้ทิ้ง) | เหมือนกัน · `cf-ban-ip` ส่งที่อยู่เดี่ยว ไม่ได้ส่ง /64 |
 
 และ jail นับ "ถูกปฏิเสธ 10 ครั้ง/60 วิ" ต่อช่องแรกของ log ซึ่งเป็นที่อยู่เต็ม — ผู้ใช้ IPv6 ที่หมุนที่อยู่ใน /64 เดียวจึงไม่ถึงเกณฑ์เลย
 
-สองข้อนี้เห็นบน lab แล้ว (`infrastructure/lab/rpc-ban-lab.sh` ขั้น 2-3: nginx + fail2ban + iptables ตัวจริง, jail/filter/vhost ชุดที่ commit `38eb23b`)
-**แต่ยังไม่ได้ดูบนเครื่องจริง** — ข้อ 0 ข้างล่างคือคำสั่งอ่านอย่างเดียวที่ยืนยันได้
+สองข้อนี้เห็นบน lab (`infrastructure/lab/rpc-ban-lab.sh` ขั้น 2-3: nginx + fail2ban + iptables ตัวจริง, jail/filter/vhost ชุดที่ commit `38eb23b`)
+
+### สถานะจริงบนเครื่อง (อ่านอย่างเดียว 2026-11-20 05:57–06:00 UTC ด้วยคำสั่งในข้อ 0 — ไม่ได้แก้อะไร)
+
+| ที่ดู | ที่เห็น |
+|---|---|
+| jail | ทำงาน อ่าน `tpix-rpc.access.log` ("File list:") · action `iptables-multiport` · ต่างจาก repo แค่ `ignoreip` (มี `123.253.62.252` เพิ่ม) |
+| การแบนมีผลไหม | **ไม่มี** — `130.49.9.49` ถูกแบน 19 พ.ย. 17:18:12 แล้วใน 3 ชม. 16 นาทีถัดมามีคำขอถึง nginx 31 ครั้ง (200 × 25, 413 × 6) · กฎ REJECT ของที่อยู่นั้นนับได้ **0 แพ็กเก็ต** ขณะที่ 14.6 ล้านแพ็กเก็ตผ่านเชนเดียวกัน · fail2ban ลง "already banned" 12,908 ครั้ง (`85.137.252.37` ที่อยู่เดียว 10,583 ครั้ง) |
+| เคย "แบน" ไปเท่าไร | 120 ครั้งตั้งแต่ 2026-10-18 (ราว 3.6 ครั้ง/วัน) · ซ้ำมากสุด `54.37.78.36` 13 ครั้ง · 13 ครั้งเป็น IPv6 (สองที่อยู่ของ VPS) — คือปริมาณที่จะโดนจริงเมื่อการแบนมีผล |
+| ถูกปฏิเสธเพราะอะไร (2 วัน, 419k คำขอ) | 413 × 1,793 · 405 × 369 · 403 × 150 · 429 × 8 — การแบนส่วนใหญ่มาจาก 413 (batch เกิน 20 / body ใหญ่) ไม่ใช่การยิงรัว |
+| ผู้ใช้ IPv6 | มีจริง — 46,285 บรรทัดใน 2 วัน (11%) จาก ~51 prefix · หลาย /64 มีมากกว่าหนึ่งที่อยู่ (มากสุด 10) |
+| `real_ip` | ทำงาน — ช่องแรกของ log เป็น IP ผู้ใช้ ไม่ใช่ของ Cloudflare |
+| ufw | 80/443 เปิดให้ช่วงของ Cloudflare · **443 เปิดตรงให้ `123.253.62.251`** (เว็บ tpix.online ยิง RPC ข้าม Cloudflare, UA `TPIX-Bridge/1.0`, ~22,580 คำขอ/6 ชม. ได้ 200 ทั้งหมด) · 80 เปิดให้ทุกคน (ACME) |
+| ⚠ `geo $banned_ip` | อยู่ใน `10-tpix-http.conf` บรรทัด 62 เป็น**บล็อกว่าง ไม่มี `include`** · `/etc/nginx/conf.d/tpix-banned.map` **ไม่มีอยู่** → ต้องเพิ่มทั้งสองอย่างก่อน (ข้อ 1 ขั้น 0) |
+| ⚠ vhost ที่ nginx โหลด | `/etc/nginx/sites-enabled/tpix-rpc.conf` เป็นไฟล์จริง ไม่ใช่ symlink — เนื้อหาตรงกับ repo (`main`) ยกเว้นเส้นคั่นใน comment บรรทัด 22 · `sites-available/tpix-rpc.conf` เป็นสำเนาค้างจาก 28 ส.ค. ที่ไม่ถูกโหลด (ตารางกับดัก) |
+| ไฟล์อื่น | `05-tpix-njs.conf`, `tpix-rpc.js`, filter ตรงกับ repo (`main` = `38eb23b`) ทุกไบต์ · unit ของ fail2ban ไม่ได้จำกัดสิทธิ์เขียน · `python3` 3.12 มี `ipaddress` + `fcntl` · logrotate ครอบ `/var/log/nginx/*.log` · clone `~/TPIX-Coin` ยังไม่มี commit `38eb23b` |
+| รุ่น | fail2ban 1.0.2-3ubuntu0.1, njs 0.8.2-1ubuntu1, iptables 1.8.10 = เท่ากับ lab · nginx 1.24.0-2ubuntu7.19 (lab 7.20) |
+
+`123.253.62.251` เป็นที่อยู่เดียวที่ต่อ**ตรง** — การแบนมีผลกับมันทั้งแบบเดิม (iptables) และแบบใหม่ ยังไม่เคยถูกแบน (ได้ 200 ทั้งหมด)
+แต่ถ้าวันหนึ่งมันถูกปฏิเสธ 10 ครั้งใน 60 วิ เว็บ tpix.online จะใช้ RPC ไม่ได้ 1 ชม. — ข้อ 1 ใส่มันใน `ignoreip` ให้
 
 ### ของใหม่
 
@@ -277,12 +297,12 @@ jail `tpix-rpc` ที่ติดตั้งเมื่อ 2026-08-28 แบ�
 
 | สิ่งที่ผู้ใช้จะเห็นต่างจากเดิม | |
 |---|---|
-| **การแบนมีผลจริงเป็นครั้งแรก** | ใครถูกปฏิเสธ (403/405/413/429) 10 ครั้งใน 60 วิ ใช้ RPC ไม่ได้ 1 ชม. (ถูกแบนซ้ำแล้วนานขึ้นเรื่อย ๆ สูงสุด 24 ชม.) — ได้ 403 ทุกคำขอ รวมการอ่าน เกณฑ์นี้ตั้งไว้ตั้งแต่ ส.ค. แต่ไม่เคยมีผลกับใคร จึง**ยังไม่เคยเห็นว่าผู้ใช้จริงโดนกี่ราย** — ข้อ 0 ข. นับจาก log ย้อนหลังได้ก่อนตัดสินใจ |
+| **การแบนมีผลจริงเป็นครั้งแรก** | ใครถูกปฏิเสธ (403/405/413/429) 10 ครั้งใน 60 วิ ใช้ RPC ไม่ได้ 1 ชม. (ถูกแบนซ้ำแล้วนานขึ้นเรื่อย ๆ สูงสุด 24 ชม.) — ได้ 403 ทุกคำขอ รวมการอ่าน เกณฑ์นี้ตั้งไว้ตั้งแต่ ส.ค. แต่ไม่เคยมีผลกับใคร — จาก log ของเครื่อง: ราว 3.6 ครั้ง/วัน ส่วนใหญ่เพราะ 413 (batch เกิน 20) และมีรายที่คำขอส่วนใหญ่ปกติ (`130.49.9.49`: 200 × 25 กับ 413 × 6) จะถูกตัดทั้งหมด |
 | ผู้ใช้หลายคนหลังที่อยู่เดียว (NAT / CGNAT ของมือถือ, IPv6 /64 เดียว, Cloudflare Workers) | ถูกแบนพร้อมกันเมื่อคนใดคนหนึ่งถึงเกณฑ์ — หน่วยเดียวกับโควตาของด่าน |
 | หลังถูกแบน | คำขอระหว่างถูกแบนไม่ถูกนับ พอหมดเวลาใช้ได้ทันที ไม่โดนแบนต่อเองเพราะเปิดหน้าเว็บค้างไว้ |
 | ความล่าช้า | การแบน/เลิกแบนมีผลหลัง nginx reload — ช้าสุดราว 5 วิ |
 
-### 0) อ่านอย่างเดียว — ต้องรันบน `tpixserver` (ยังไม่ได้รัน รอเจ้าของสั่ง)
+### 0) อ่านอย่างเดียว — รันบน `tpixserver` แล้ว 2026-11-20 (ผลอยู่ในตารางข้างบน) · รันซ้ำก่อนลงทุกครั้ง
 
 ไม่มีคำสั่งไหนแก้ไฟล์ของระบบ reload หรือแบนใคร (`git fetch` เขียนเฉพาะใน `.git` ของ clone และรันก็ต่อเมื่อยังไม่มี commit `38eb23b`)
 
@@ -313,20 +333,22 @@ sudo ufw status numbered | head -n 40                                     # 80/4
 # ง. ตัวชี้ขาด: ที่อยู่ที่ถูกแบนล่าสุด ยังมีบรรทัดใน access log หลังเวลาที่ถูกแบนไหม
 LAST=$(sudo zgrep -h '\[tpix-rpc\] Ban ' /var/log/fail2ban.log* | sort | tail -n 1); echo "$LAST"
 IP=${LAST##* }
-sudo grep "^$IP " /var/log/nginx/tpix-rpc.access.log | tail -n 5         # มีบรรทัดหลังเวลาใน $LAST = แบนแล้วยังเข้าได้
+sudo zcat -f /var/log/nginx/tpix-rpc.access.log.1 /var/log/nginx/tpix-rpc.access.log | grep "^$IP " | tail -n 5   # มีบรรทัดหลังเวลาใน $LAST = แบนแล้วยังเข้าได้ (log หมุนทุกเที่ยงคืน จึงต้องดู .1 ด้วย)
+sudo zgrep -h 'tpix-rpc\].*already banned' /var/log/fail2ban.log* | wc -l   # ที่อยู่ที่ถูกแบนอยู่ยังถูกปฏิเสธครบเกณฑ์อีกกี่รอบ
 
 # จ. nginx: geo $banned_ip อยู่ไหม include ไฟล์ไหน vhost ใช้ไหม ไฟล์มีอะไร
 sudo nginx -T 2>/dev/null | grep -n -B1 -A6 'geo \$banned_ip'
 sudo nginx -T 2>/dev/null | grep -nE 'banned_ip|log_format|access_log|real_ip_header' | head -n 40
 ls -l /etc/nginx/conf.d/tpix-banned.map && grep -vcE '^[[:space:]]*(#|$)' /etc/nginx/conf.d/tpix-banned.map   # จำนวนบรรทัดที่แบนอยู่
-diff <(git show 38eb23b:infrastructure/single-host/nginx-rpc.conf) /etc/nginx/sites-available/tpix-rpc.conf && echo "vhost ตรงกับ repo"
+diff <(git show 38eb23b:infrastructure/single-host/nginx-rpc.conf) /etc/nginx/sites-enabled/tpix-rpc.conf && echo "vhost ตรงกับ repo"
 sudo tail -n 3 /var/log/nginx/tpix-rpc.access.log                         # ช่องแรกต้องเป็น IP ผู้ใช้ ไม่ใช่ของ Cloudflare
 sudo awk '$1 ~ /:/' /var/log/nginx/tpix-rpc.access.log | wc -l            # มีผู้ใช้ IPv6 จริงกี่บรรทัด
 head -n 3 /etc/logrotate.d/nginx                                          # /var/log/nginx/*.log = ครอบ tpix-rpc.banned.log ด้วย
 python3 -c 'import ipaddress, fcntl; print("python ok")'
 ```
 
-หยุดก่อนถ้า: ไม่มี `geo $banned_ip` หรือมัน include ไฟล์อื่น · vhost บนเครื่องไม่ตรงกับ repo · ช่องแรกของ access log เป็น IP ของ Cloudflare
+หยุดก่อนถ้า: ไม่มี `geo $banned_ip` เลย หรือมัน include ไฟล์อื่นที่ไม่ใช่ `tpix-banned.map` (บล็อกว่างแบบวันนี้ = ทำข้อ 1 ขั้น 0)
+· vhost ที่ nginx โหลดไม่ตรงกับ repo · ช่องแรกของ access log เป็น IP ของ Cloudflare
 (`real_ip` ไม่ทำงาน — ลง jail นี้แล้วจะแบน edge ของ Cloudflare = ตัดผู้ใช้ทั้งก้อน) · unit ของ fail2ban ถูกจำกัดสิทธิ์เขียน
 
 ### 1) ลง — ต่อจากขั้น 1b + 1c (ไฟล์ของ branch นี้มีของสองขั้นนั้นอยู่ด้วย)
@@ -337,9 +359,19 @@ python3 -c 'import ipaddress, fcntl; print("python ok")'
 cd ~/TPIX-Coin && git pull
 TS=$(date +%Y%m%d-%H%M%S)
 sudo mkdir -p /etc/nginx/backup-$TS /etc/fail2ban/backup-$TS
-sudo cp /etc/nginx/njs/tpix-rpc.js /etc/nginx/conf.d/05-tpix-njs.conf /etc/nginx/sites-available/tpix-rpc.conf \
-        /etc/nginx/conf.d/tpix-banned.map /etc/nginx/backup-$TS/
+sudo cp /etc/nginx/njs/tpix-rpc.js /etc/nginx/conf.d/05-tpix-njs.conf /etc/nginx/conf.d/10-tpix-http.conf \
+        /etc/nginx/sites-enabled/tpix-rpc.conf /etc/nginx/backup-$TS/
 sudo cp /etc/fail2ban/jail.d/tpix-rpc.conf /etc/fail2ban/filter.d/tpix-rpc.conf /etc/fail2ban/backup-$TS/
+
+# 0) ไฟล์รายชื่อ + ให้ geo $banned_ip อ่านมัน — บนเครื่องวันนี้ geo เป็นบล็อกว่างและไฟล์ยังไม่มี (2026-11-20)
+#    ไฟล์ต้องมาก่อนบรรทัด include เสมอ ไม่งั้น nginx -t ไม่ผ่าน (open() ... failed)
+#    นี่คือการแก้ 10-tpix-http.conf บรรทัดเดียว (เพิ่ม include ก่อนปีกกาปิดของ geo) ไม่ใช่การทับไฟล์
+[ -e /etc/nginx/conf.d/tpix-banned.map ] || sudo install -m 0644 -o root -g root infrastructure/single-host/tpix-banned.map /etc/nginx/conf.d/tpix-banned.map
+sudo grep -q 'tpix-banned.map' /etc/nginx/conf.d/10-tpix-http.conf || \
+  sudo sed -i '/^geo \$banned_ip {/,/^}/ s|^}|    include /etc/nginx/conf.d/tpix-banned.map;\n}|' /etc/nginx/conf.d/10-tpix-http.conf
+sudo nginx -T 2>/dev/null | grep -n -A6 'geo \$banned_ip'      # ต้องเห็นบรรทัด include อยู่ในบล็อก และมีบรรทัดเดียว
+sudo nginx -t && sudo systemctl reload nginx
+sudo tail -n 20 /var/log/nginx/error.log        # ต้องไม่มี [emerg] · ไฟล์ยังไม่มีบรรทัดแบน จึงยังไม่มีอะไรเปลี่ยนสำหรับผู้ใช้
 
 # 1) conf — log_format tpixban + js_set $rpc_ban_key (ยังไม่มีใครเรียก ไม่มีอะไรเปลี่ยน)
 sudo cp infrastructure/single-host/nginx-njs.conf /etc/nginx/conf.d/05-tpix-njs.conf
@@ -353,7 +385,8 @@ sudo tail -n 20 /var/log/nginx/error.log
 
 # 3) vhost — access_log เปลี่ยนเป็น tpixban + แยก log ของคนที่ถูกแบน
 #    ⛔ ต้องหลังข้อ 2 เสมอ (ตารางกับดัก) · ถ้าข้อ 0 บอกว่า vhost บนเครื่องไม่ตรงกับ repo อย่าทับทั้งไฟล์
-sudo cp infrastructure/single-host/nginx-rpc.conf /etc/nginx/sites-available/tpix-rpc.conf
+#    ⛔ ปลายทางคือ sites-enabled (ไฟล์ที่ nginx โหลดจริงบนเครื่องนี้) ไม่ใช่ sites-available — ตารางกับดัก
+sudo cp infrastructure/single-host/nginx-rpc.conf /etc/nginx/sites-enabled/tpix-rpc.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo tail -n 20 /var/log/nginx/error.log
 sudo tail -n 3 /var/log/nginx/tpix-rpc.access.log   # ช่องแรก: IPv4 = ที่อยู่ · IPv6 = ลงท้าย :: (เช่น 2001:db8:0:1::) · ต้องไม่ใช่ "-"
@@ -364,15 +397,17 @@ sudo install -m 0755 -o root -g root infrastructure/scripts/tpix-nginx-ban.py /u
 sudo cp infrastructure/fail2ban/action.d/nginx-tpix-banned.conf /etc/fail2ban/action.d/
 sudo cp infrastructure/fail2ban/filter.d/tpix-rpc.conf          /etc/fail2ban/filter.d/
 sudo cp infrastructure/fail2ban/jail.d/tpix-rpc.conf            /etc/fail2ban/jail.d/
-# กันแบนตัวเอง: IP สาธารณะของเครื่องนี้วนกลับผ่าน CF ตอนรัน verify
-sudo sed -i 's|^ignoreip = 127.0.0.1/8 ::1|ignoreip = 127.0.0.1/8 ::1 123.253.62.252|' /etc/fail2ban/jail.d/tpix-rpc.conf
+# กันแบนตัวเอง: .252 = IP สาธารณะของเครื่องนี้ (วนกลับผ่าน CF ตอนรัน verify)
+#               .251 = เว็บ tpix.online ที่ยิง RPC ตรงข้าม CF (ufw เปิด 443 ให้) — ถูกแบน = เว็บใช้ RPC ไม่ได้ 1 ชม.
+#               (.251 เป็นข้อเสนอ ยังไม่อยู่ใน ignoreip ของเครื่องวันนี้ — เจ้าของตัดสิน)
+sudo sed -i 's|^ignoreip = 127.0.0.1/8 ::1|ignoreip = 127.0.0.1/8 ::1 123.253.62.252 123.253.62.251|' /etc/fail2ban/jail.d/tpix-rpc.conf
 sudo fail2ban-regex /var/log/nginx/tpix-rpc.access.log /etc/fail2ban/filter.d/tpix-rpc.conf | grep -E "Failregex|Lines:"
 sudo fail2ban-client -t                              # config ของ fail2ban ต้องผ่าน
 sudo systemctl restart fail2ban                      # ตอนหยุด action เดิมเก็บกฎ iptables ของตัวเองไป · การแบนที่ยังไม่หมดเวลาถูกเขียนลง tpix-banned.map
 sudo fail2ban-client status tpix-rpc                 # "File list:" ไม่ใช่ "Journal matches:"
 sudo fail2ban-client get tpix-rpc actions            # nginx-tpix-banned
 sudo iptables -S | grep f2b-tpix-rpc ; echo "ต้องว่าง"
-grep -c '# tpix-nginx-ban ' /etc/nginx/conf.d/tpix-banned.map   # = จำนวนที่กำลังแบนอยู่
+grep -cE '^[0-9a-fA-F:./]+ 1; # tpix-nginx-ban ' /etc/nginx/conf.d/tpix-banned.map   # = จำนวนที่กำลังแบนอยู่
 ```
 
 ### 2) พิสูจน์ด้วยการยิงจริง — อย่าดูแค่ `status`
@@ -383,7 +418,7 @@ curl -s https://rpc.tpix.online/cdn-cgi/trace -H 'User-Agent: Mozilla/5.0' | gre
 
 # บน tpixserver: แบนที่อยู่นั้น
 sudo fail2ban-client set tpix-rpc banip <ที่อยู่จากบรรทัด ip=>
-grep '# tpix-nginx-ban ' /etc/nginx/conf.d/tpix-banned.map       # IPv4 = ที่อยู่ · IPv6 = /64
+grep -E '^[0-9a-fA-F:./]+ 1; # tpix-nginx-ban ' /etc/nginx/conf.d/tpix-banned.map       # IPv4 = ที่อยู่ · IPv6 = /64
 
 # บนเครื่องนอก: รอ 5 วิ
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://rpc.tpix.online/ -H 'User-Agent: Mozilla/5.0' \
@@ -397,6 +432,7 @@ sudo tail -n 20 /var/log/tpix-nginx-ban.log                      # ADD / RELOAD 
 
 ถอยกลับ: `sudo cp /etc/fail2ban/backup-$TS/* ` กลับที่เดิม (jail → `jail.d/`, filter → `filter.d/`) แล้ว `sudo systemctl restart fail2ban`
 (ตอนหยุด action ใหม่ลบบรรทัดของตัวเองออกจาก `tpix-banned.map` ให้) · vhost / js / conf คืนจาก `/etc/nginx/backup-$TS/` ตามลำดับย้อนกลับ vhost → js → conf
+(บรรทัด `include` ใน `10-tpix-http.conf` กับไฟล์ `tpix-banned.map` ปล่อยไว้ได้ — ไฟล์ที่ไม่มีบรรทัดแบนไม่มีผลอะไร ถ้าจะถอดต้องคืน `10-tpix-http.conf` ก่อนลบไฟล์)
 
 ### ยืนยันบน lab แล้ว (2026-11-20 · Ubuntu 24.04: nginx 1.24.0 + njs 0.8.2 + fail2ban 1.0.2 + iptables 1.8.10)
 
@@ -419,9 +455,10 @@ sudo tail -n 20 /var/log/tpix-nginx-ban.log                      # ADD / RELOAD 
 
 ### ที่ lab พิสูจน์ไม่ได้ / ยังไม่ได้ลอง
 
-- สถานะจริงของเครื่อง — ทุกอย่างในตารางบนสุดของขั้นนี้มาจากการอ่าน repo และจาก lab ไม่ได้มาจาก `tpixserver` (ข้อ 0)
+- ของใหม่บนเครื่องจริง — เครื่องถูก**อ่าน**อย่างเดียว (2026-11-20) ยังไม่มีไฟล์ไหนของขั้นนี้ถูกลง
 - Cloudflare ตัวจริง: lab ให้ 127.0.0.1 เป็น "Cloudflare" และใส่ `CF-Connecting-IP` เอง · ufw ของเครื่อง
-- `10-tpix-http.conf` ของเครื่อง — `geo $banned_ip` กับ path ที่มัน include มาจากไฟล์นั้น lab ใช้ไฟล์จำลอง (ข้อ 0 จ. เช็กให้)
+- `10-tpix-http.conf` ของเครื่องทั้งไฟล์ — lab ใช้ไฟล์จำลองที่มีบล็อก `geo $banned_ip` ว่างแบบเดียวกับเครื่อง (ลอกจากที่อ่านมา) แล้วรันคำสั่ง `sed`
+  ของข้อ 1 ขั้น 0 กับไฟล์นั้น · ส่วนอื่นของไฟล์จริง (map 16 KB, `99-tpix-debug.conf` ที่อ้าง `$banned_ip`) ไม่ได้อยู่ใน lab
 - `systemctl reload nginx` / `systemctl restart fail2ban` — lab ส่ง HUP และ stop-start เอง · fail2ban ภายใต้ systemd unit ของเครื่อง (สิทธิ์เขียน `/etc/nginx`, `/run`, `/var/log`)
 - `fail2ban-client reload` แทน restart ตอนเปลี่ยน action — ไม่ได้ลอง ใช้ restart
 - ต้นทุนของ `js_set $rpc_ban_key`: ทุกคำขอที่ลง access log เรียก njs หนึ่งครั้ง รวมคำขอที่ `limit_req` ตัดก่อนถึงด่าน — ไม่ได้วัดภายใต้โหลด
@@ -493,7 +530,7 @@ TPIX_BLOCK_FULL_PCT=80
 | กุญแจ /64 สำหรับ IPv6 (njs + `limit_req`/`limit_conn`) | /64 เดียวหมุนที่อยู่เพื่อเอาถังใหม่ | ⏳ ขั้น 1c — ผ่าน lab ยังไม่ได้ลง |
 | `--max-enqueued 16` | 1 address จองได้ 16 ช่อง (เดิม 128) | ✅ |
 | `--block-gas-target 10M` | ครึ่งเดียวของอัตราถมดิสก์สูงสุด | ✅ |
-| fail2ban | ปฏิเสธ 10 ครั้ง/60 วิ → แบน 1 ชม. เพิ่มเท่าตัวถ้าซ้ำ | ⚠️ jail ติดตั้งแล้ว (2026-08-28) แต่ action เป็น `iptables-multiport` ซึ่งแบนไม่ถึงคำขอที่ผ่าน Cloudflare (อ่านจาก repo + เห็นบน lab · ยังไม่ได้ดูบนเครื่อง — ขั้น 3 ข้อ 0) · ⏳ action ใหม่ + นับ IPv6 ต่อ /64: ผ่าน lab ยังไม่ได้ลง |
+| fail2ban | ปฏิเสธ 10 ครั้ง/60 วิ → แบน 1 ชม. เพิ่มเท่าตัวถ้าซ้ำ | ⚠️ jail ติดตั้งแล้ว (2026-08-28) แต่ action เป็น `iptables-multiport` ซึ่งแบนไม่ถึงคำขอที่ผ่าน Cloudflare (ยืนยันบนเครื่อง 2026-11-20: ที่อยู่ที่ถูกแบนยังได้ 200 ตัวนับแพ็กเก็ตของกฎเป็น 0 — ขั้น 3) · ⏳ action ใหม่ + นับ IPv6 ต่อ /64: ผ่าน lab ยังไม่ได้ลง |
 | watchdog | ดิสก์ 75/88% · mempool ค้าง · บล็อกเต็ม | ✅ |
 
 **คนยิงถล่มต้องมี ~240 IP จริงที่ผ่าน Cloudflare** ถึงจะได้ปริมาณเท่าที่ IP เดียวเคยทำได้
@@ -511,10 +548,12 @@ TPIX_BLOCK_FULL_PCT=80
   และ /48 มี 65,536 ถัง (tunnel broker แจก /48 ฟรี) ยังไม่ได้ตัดกว้างกว่านี้เพราะผู้ให้บริการมือถือแจก /64 ต่อเครื่อง
   จากบล็อกเดียวกัน ตัดที่ /48 = ผู้ใช้จริงหลายหมื่นรายใช้ถังเดียว ทางที่ยังไม่ได้ออกแบบ: ถังชั้นที่สองต่อ /48 ที่งบใหญ่กว่า
   หรือกฎ rate limit ของ Cloudflare ที่นับต่อ prefix
-- **fail2ban หลัง Cloudflare** — ขั้น 3 (action `nginx-tpix-banned` + นับ IPv6 ต่อ /64) ผ่าน lab แล้ว ยังไม่ได้ลง และยังไม่ได้ยืนยันบนเครื่องว่า
-  การแบนของ jail เดิมไม่มีผลจริง (ขั้น 3 ข้อ 0 — คำสั่งอ่านอย่างเดียว) ที่ยังเหลือหลังลง:
-  - **เกณฑ์แบนยังไม่เคยถูกใช้กับผู้ใช้จริง** — 10 ครั้ง/60 วิ → 1 ชม. ตั้งไว้ตอนที่การแบนไม่มีผล หน้าเว็บที่ยิงอ่านพร้อมกันเกิน 30 r/s
-    ได้ 429 เป็นชุดและถึงเกณฑ์ได้ในวินาทีเดียว ดูจำนวนจากขั้น 3 ข้อ 0 ข. ก่อน ถ้ามากให้ปรับ `maxretry` / ตัด 429 ของ `limit_req` ออกจาก filter
+- **fail2ban หลัง Cloudflare** — ยืนยันบนเครื่องแล้ว (2026-11-20) ว่าการแบนของ jail เดิมไม่มีผล · ขั้น 3 (action `nginx-tpix-banned` + นับ IPv6 ต่อ /64)
+  ผ่าน lab แล้ว ยังไม่ได้ลง ที่ต้องตัดสินก่อนลง / ยังเหลือหลังลง:
+  - **เกณฑ์แบนยังไม่เคยถูกใช้กับผู้ใช้จริง** — 10 ครั้ง/60 วิ → 1 ชม. ตั้งไว้ตอนที่การแบนไม่มีผล จาก log ของเครื่อง: jail "แบน" ราว 3.6 ครั้ง/วัน
+    และการถูกปฏิเสธส่วนใหญ่เป็น 413 (batch เกิน 20 / body ใหญ่ — 1,793 ครั้งใน 2 วัน) ไม่ใช่ 429 (8 ครั้ง) คือโปรแกรมที่ส่ง batch ใหญ่ ไม่ใช่คนยิงถล่ม
+    มีรายที่คำขอส่วนใหญ่ปกติแต่จะถูกตัดทั้งหมด ทางเลือก: ปล่อยตามเกณฑ์เดิม · เอา 413 ออกจาก filter · เพิ่ม `maxretry` — ยังไม่ได้เปลี่ยน รอตัดสิน
+  - **`123.253.62.251` (เว็บ tpix.online ยิง RPC ตรง)** ยังไม่อยู่ใน `ignoreip` ของเครื่อง — ขั้น 3 ข้อ 1 เสนอให้ใส่ รอตัดสิน
   - **ถ้า `real_ip` หยุดทำงาน** ช่องแรกของ log กลายเป็น IP ของ Cloudflare แล้ว jail จะแบน edge ของ Cloudflare = ตัดผู้ใช้ทั้งก้อน
     (action เดิมก็เป็นแบบเดียวกัน) กันได้ด้วยการใส่ช่วง IP ของ Cloudflare กลับเข้า `ignoreip` — เมื่อ `real_ip` ทำงาน ที่อยู่ผู้ใช้ไม่อยู่ในช่วงนั้น
     จึงไม่กระทบการแบนปกติ แต่ comment ใน jail ห้ามไว้ (2026-08-28) และจะทำให้คำขอจาก Cloudflare Workers แบนไม่ได้ — ยังไม่ได้เปลี่ยน รอตัดสิน

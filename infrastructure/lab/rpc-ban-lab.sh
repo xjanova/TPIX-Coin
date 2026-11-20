@@ -13,7 +13,7 @@
 #    2. ของเดิม: fail2ban แบนด้วย iptables-multiport แล้วคำขอของที่อยู่นั้นยังได้ 200 — IPv4 และ IPv6
 #       (กฎ iptables มีจริง ตัวนับแพ็กเก็ตเป็น 0 · กฎเดียวกันบล็อกได้เมื่อ "ต้นทางของแพ็กเก็ต" ตรง)
 #    3. ของเดิม: 12 ที่อยู่ใน /64 เดียวถูกปฏิเสธที่อยู่ละครั้ง → ไม่มีที่อยู่ไหนถูกแบน
-#    4. ลงของใหม่ตามลำดับ conf → js → vhost → fail2ban (restart) — การแบนที่ค้างอยู่ถูกย้ายมาที่ nginx
+#    4. ลงของใหม่ตามลำดับ ไฟล์รายชื่อ + include ใน geo → conf → js → vhost → fail2ban (restart) — การแบนที่ค้างอยู่ถูกย้ายมาที่ nginx
 #       แล้วมีผลทันที: 403 · IPv6 โดนทั้ง /64
 #    5. ของใหม่: 12 ที่อยู่ใน /64 เดียว → แบนทั้ง /64 · /64 ข้าง ๆ ไม่โดน · IPv4 ต่อที่อยู่ · ::ffff: ไม่ใช่ทางหลบ
 #       คำขอของคนที่ถูกแบนไม่ถูกนับซ้ำ · เลิกแบนแล้วใช้ได้ · บรรทัดใส่มือไม่หาย · แบน 20 ที่อยู่ติดกัน reload ไม่กี่ครั้ง
@@ -142,20 +142,22 @@ lab_vhost() {
 }
 install_vhost() { lab_vhost "$LAB/src/$1.vhost" "$GATE_PORT" > "$LAB/vhost.conf"; }
 
-# tpix-banned.map จริง + หนึ่งบรรทัดที่ "คนใส่มือ" ไว้ — ต้องอยู่ครบตลอด lab
-cp "$INFRA/single-host/tpix-banned.map" "$MAP"
-printf '198.51.100.7 1;\n' >> "$MAP"
-
 # แทนไฟล์ที่มีอยู่บนเครื่องแต่ไม่อยู่ใน repo (00-cloudflare-realip.conf, 10-tpix-http.conf)
+# บล็อก geo ลอกจาก 10-tpix-http.conf ของ tpixserver ตามที่อ่านมา 2026-11-20: บล็อกว่าง ไม่มี include
+# และ /etc/nginx/conf.d/tpix-banned.map ยังไม่มี — lab จึงเริ่มโดยไม่มีไฟล์ $MAP เหมือนกัน (เพิ่มในขั้น 4)
 cat > "$LAB/host.conf" <<EOF
 set_real_ip_from 127.0.0.1;
 real_ip_header   CF-Connecting-IP;
 limit_req_zone  \$binary_remote_addr zone=rpc_per_ip:10m rate=30r/s;
 limit_conn_zone \$binary_remote_addr zone=rpc_conn_per_ip:10m;
+# Block list — IPs caught spamming (rebuild via fail2ban)
+# Auto-populated by fail2ban; bans expire after 1h
 geo \$banned_ip {
     default 0;
-    include $MAP;
+    # 0 = allowed, 1 = blocked
+    # ban entries appended here by fail2ban tpix-rpc jail action
 }
+
 map \$http_x_cf_origin_token \$origin_ok { default 1; }
 upstream tpix_rpc {
     server 127.0.0.1:$STUB_PORT;
@@ -195,6 +197,12 @@ http {
 EOF
 
 ngx() { "$NGINX" -p "$LAB" -c "$LAB/nginx.conf" -e "$ERR" "$@"; }
+
+# คำสั่งเดียวกับ RUNBOOK ขั้น 3 ข้อ 1 ขั้น 0 (ต่างแค่ path): เพิ่ม include ก่อนปีกกาปิดของ geo \$banned_ip
+add_geo_include() {
+    grep -q 'tpix-banned.map' "$LAB/host.conf" || \
+        sed -i '/^geo \$banned_ip {/,/^}/ s|^}|    include '"$MAP"';\n}|' "$LAB/host.conf"
+}
 
 # คำสั่งที่ action เรียกแทน `nginx -t` กับ `systemctl reload nginx` ของเครื่องจริง
 cat > "$LAB/bin/nginx-test" <<EOF
@@ -362,7 +370,9 @@ start
 expect "อ่านผ่าน (IPv4)" 200 10.9.0.1 "$READ"
 expect "อ่านผ่าน (IPv6)" 200 2001:db8:f2b:9::1 "$READ"
 expect "เมธอดต้องห้ามได้ 403" 403 10.9.0.1 "$DENIED"
-expect "ที่อยู่ที่คนใส่มือไว้ใน tpix-banned.map โดนบล็อก (geo \$banned_ip ทำงานกับ IP ผู้ใช้จริง)" 403 198.51.100.7 "$READ"
+if [ -e "$MAP" ] || grep -q 'include' "$LAB/host.conf"; then bad "lab ต้องเริ่มแบบเครื่องจริง: geo ว่าง ไม่มีไฟล์รายชื่อ"; else
+    ok "geo \$banned_ip ของเครื่องวันนี้เป็นบล็อกว่าง ไม่มี include และไม่มีไฟล์ tpix-banned.map"
+fi
 if grep -q '^2001:db8:f2b:9::1 ' "$ACCESS"; then ok "log เดิม: ช่องแรกของ IPv6 คือที่อยู่เต็ม"; else
     bad "log เดิม: ไม่พบบรรทัดที่ขึ้นต้นด้วย 2001:db8:f2b:9::1" "$(tail -n 2 "$ACCESS")"
 fi
@@ -437,7 +447,36 @@ else
 fi
 
 # ══ 4. ลงของใหม่ ══════════════════════════════════════════════════════════════════
-say "4. ลงของใหม่: conf → js → vhost (reload ทีละขั้น) → fail2ban"
+say "4. ลงของใหม่ ขั้น 0: ไฟล์รายชื่อ + include ใน geo \$banned_ip (vhost / js / conf ยังเป็นของเดิม)"
+cp "$LAB/host.conf" "$LAB/host.conf.orig"
+add_geo_include
+if ngx -t >"$LAB/t.out" 2>&1; then
+    bad "include ก่อนมีไฟล์: nginx -t ควรไม่ผ่าน"
+elif grep -q 'tpix-banned.map' "$LAB/t.out"; then
+    ok "ผิดลำดับ (include ก่อนมีไฟล์): nginx -t ไม่ผ่านและบอกชื่อไฟล์"
+    tail -n 2 "$LAB/t.out" | show
+else
+    bad "include ก่อนมีไฟล์: nginx -t ไม่ผ่าน แต่ไม่ได้บอกชื่อไฟล์" "$(tail -n 3 "$LAB/t.out")"
+fi
+cp "$LAB/host.conf.orig" "$LAB/host.conf"
+LOGMARK="$(wc -l < "$ERR")"      # nginx -t ที่ไม่ผ่านเมื่อครู่ลง [emerg] ไว้ใน error log — ตั้งใจให้เกิด ไม่นับ
+install -m 0644 "$INFRA/single-host/tpix-banned.map" "$MAP"
+add_geo_include
+add_geo_include                  # รันซ้ำต้องไม่เพิ่มบรรทัดที่สอง
+count_is "บรรทัด include ใน geo หลังรันคำสั่งสองรอบ" "$(grep -c "include $MAP;" "$LAB/host.conf")" 1
+sed -n '/^geo /,/^}/p' "$LAB/host.conf" | show
+config_test "ไฟล์รายชื่อ + include"
+reload "ไฟล์รายชื่อ + include"
+expect "ไฟล์รายชื่อยังไม่มีบรรทัดแบน: ไม่มีอะไรเปลี่ยน" 200 198.51.100.7 "$READ"
+# คนใส่มือหนึ่งบรรทัด (ตามหัวไฟล์: แก้แล้ว nginx -t && reload) — ต้องอยู่ครบตลอด lab
+printf '198.51.100.7 1;\n' >> "$MAP"
+config_test "บรรทัดใส่มือ"
+reload "บรรทัดใส่มือ"
+expect "ที่อยู่ที่คนใส่มือโดนบล็อก — geo เทียบกับ IP ผู้ใช้จริง และ vhost เดิมก็ใช้ \$banned_ip อยู่แล้ว" 403 198.51.100.7 "$READ"
+expect "ที่อยู่อื่นไม่โดน" 200 198.51.100.8 "$READ"
+log_clean "ขั้น 0"
+
+say "4a. conf → js → vhost (reload ทีละขั้น) → fail2ban"
 install_conf new
 config_test "conf ใหม่ (js กับ vhost ยังเป็นของเดิม)"
 reload "conf ใหม่"
