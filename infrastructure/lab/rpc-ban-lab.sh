@@ -345,7 +345,8 @@ jail_stat() { f2b status tpix-rpc 2>/dev/null | sed -n "s/.*$1:[[:space:]]*//p" 
 is_banned() { jail_stat 'Banned IP list' | tr ' \t' '\n\n' | grep -qxF -- "$1"; }
 failed_is() { [ "$(jail_stat 'Total failed')" = "$1" ]; }
 map_has()  { grep -qE "^$(printf '%s' "$1" | sed 's/[.]/\\./g') 1; # tpix-nginx-ban " "$MAP"; }
-map_own()  { grep -c '# tpix-nginx-ban ' "$MAP"; }
+OWN_LINE='^[0-9a-fA-F:./]+ 1; # tpix-nginx-ban '      # บรรทัดที่สคริปต์เขียน (หัวไฟล์มี comment ที่พูดถึงเครื่องหมายนี้ — ไม่นับ)
+map_own()  { grep -cE "$OWN_LINE" "$MAP"; }
 
 echo "══ lab การแบนของ fail2ban หลัง Cloudflare ══"
 "$NGINX" -v 2>&1 | sed 's/^/  /'
@@ -504,7 +505,7 @@ if wait_for 20 is_banned 2001:db8:f2b:2::; then ok "fail2ban แบน 2001:db8:
     bad "fail2ban ไม่ได้แบน /64 ที่หมุนที่อยู่" "$(f2b status tpix-rpc | tail -n 4)"
 fi
 if wait_for 10 map_has 2001:db8:f2b:2::/64; then ok "tpix-banned.map มี 2001:db8:f2b:2::/64"; else bad "tpix-banned.map ไม่มี 2001:db8:f2b:2::/64" "$(tail -n 5 "$MAP")"; fi
-grep '# tpix-nginx-ban ' "$MAP" | show
+grep -E "$OWN_LINE" "$MAP" | show
 eventually "ที่อยู่ที่ยังไม่เคยใช้ใน /64 นั้น → 403" 403 2001:db8:f2b:2:ffff::1 "$READ"
 expect "ที่อยู่ที่เคยใช้ → 403" 403 2001:db8:f2b:2:1::1 "$READ"
 expect "/64 ที่ติดกันไม่โดน" 200 2001:db8:f2b:3::1 "$READ"
@@ -619,7 +620,7 @@ if ngx -t >"$LAB/t.out" 2>&1; then
     start
     reject_from 2001:db8:f2b:6::1 2001:db8:f2b:6::1 2001:db8:f2b:6::1 >/dev/null
     tail -n 1 "$ACCESS" | show
-    grep -E 'banKey|js ' "$ERR" | tail -n 1 | show
+    echo "    │ error log พูดถึง banKey $(grep -c 'banKey' "$ERR") บรรทัด"
     if grep -q '^2001:db8:f2b:6::' "$ACCESS"; then bad "ช่องแรกของ log ยังเป็นที่อยู่ ทั้งที่ js ไม่มี banKey"; else ok "ช่องแรกของ log ไม่ใช่ที่อยู่"; fi
     fail2ban-regex "$ACCESS" "$LAB/src/new.filter" > "$LAB/regex.out" 2>&1
     grep -E '^Lines:' "$LAB/regex.out" | show
