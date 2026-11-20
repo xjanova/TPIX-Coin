@@ -63,6 +63,10 @@ BACKUP_LOCK="${TPIX_BACKUP_LOCK:-/run/tpix-backup.lock}"
 BACKUP_LOCK_MAX_AGE="${TPIX_BACKUP_LOCK_MAX_AGE:-1800}"   # 30 นาที
 # คิวบำรุงรักษาร่วมกับ backup-chain.sh — ต้องเป็น path เดียวกันทั้งสองสคริปต์
 MAINT_LOCK="${TPIX_MAINT_LOCK:-/run/tpix-chain-maint.lock}"
+# ระหว่างข้ามรอบเพราะงานบำรุงรักษา ยังส่ง heartbeat "ยังมีชีวิต" ได้ไม่เกินเพดานนี้ (วินาที)
+# เกินแล้วหยุดส่ง ให้หลังบ้านขึ้น heartbeat_missing เอง — งานที่ค้างนานผิดปกติต้องมีคนเห็น
+MAINT_HEARTBEAT_MAX="${TPIX_MAINT_HEARTBEAT_MAX:-2700}"   # 45 นาที
+MAINT_SKIP_STATE="${TPIX_MAINT_SKIP_STATE:-/run/tpix-watchdog-maint-since}"
 VALIDATORS=(tpix-validator-1 tpix-validator-2 tpix-validator-3 tpix-validator-4)
 
 # ── ด่าน validator แยกเชน / ตามไม่ทัน ─────────────────────────────────────────
@@ -156,6 +160,30 @@ backend_heartbeat() {
     for k in "${ACTIVE_ALERT_KEYS[@]}"; do keys+="${keys:+,}\"${k}\""; done
     [ -n "$keys" ] && extra=",\"active_keys\":[${keys}]"
     backend_post "/heartbeat" "{\"node\":\"${NODE_NAME}\",\"block\":${1:-0}${extra}}"
+}
+
+# heartbeat ระหว่างข้ามรอบเพราะงานบำรุงรักษา (backup ถือคิว) — 2026-11-16
+#
+# เดิมทางข้ามรอบส่งแค่ hc_ping ไม่ส่ง heartbeat เข้าหลังบ้าน backup ตอน 19:17 ถือคิวนานเกิน
+# 3 นาที หลังบ้านจึงขึ้น heartbeat_missing (critical) ทุกคืนเวลา 19:20 UTC ทั้งที่เชนเดินปกติ
+#
+# รอบนี้ไม่ได้ตรวจเชน จึงห้ามปิดเหตุร้ายอื่น: แนบทุก key ที่หลังบ้านปิดเองได้เป็น active_keys
+# ยกเว้น heartbeat_missing (หลังบ้านจะปิดเฉพาะตัวนั้น เพราะ watchdog ยังมีชีวิตจริง)
+# ส่งเฉพาะตอน RPC ยังตอบ และไม่เกิน MAINT_HEARTBEAT_MAX นับจากรอบแรกที่ข้าม
+maintenance_heartbeat() {
+    local now since="" block_hex
+    now=$(date +%s)
+    if [ -f "$MAINT_SKIP_STATE" ]; then
+        since=$(cat "$MAINT_SKIP_STATE" 2>/dev/null)
+    fi
+    case "$since" in ''|*[!0-9]*) since=$now; echo "$now" > "$MAINT_SKIP_STATE" 2>/dev/null ;; esac
+    if [ $(( now - since )) -gt "$MAINT_HEARTBEAT_MAX" ]; then
+        log "WARNING: ข้ามรอบเพราะงานบำรุงรักษามา $(( now - since ))s เกินเพดาน ${MAINT_HEARTBEAT_MAX}s — หยุดส่ง heartbeat ให้หลังบ้านเห็น"
+        return 0
+    fi
+    block_hex=$(check_rpc 2>/dev/null) || return 0
+    ACTIVE_ALERT_KEYS=(chain_stalled chain_down chain_restart_blocked validator_forked validator_lagging)
+    backend_heartbeat "$(hex_to_dec "$block_hex")"
 }
 
 # ยิงเหตุเข้าคาดแดง — key ซ้ำฝั่งหลังบ้านจะรวมเป็นรายการเดียว (นับ occurrences)
@@ -679,6 +707,7 @@ main() {
         if [ "$rc" -eq 75 ]; then
             log "SKIP: มีงานบำรุงรักษาถือคิวอยู่ (flock $MAINT_LOCK) — ข้ามรอบนี้"
             hc_ping
+            maintenance_heartbeat
             exit 0
         fi
         exit "$rc"
@@ -700,12 +729,16 @@ main() {
         if [ "$lock_age" -lt "$BACKUP_LOCK_MAX_AGE" ]; then
             log "SKIP: งานสำรองข้อมูลกำลังทำงาน (ล็อกอายุ ${lock_age}s) — ไม่ตรวจ/ไม่ restart รอบนี้"
             hc_ping
+            maintenance_heartbeat
             exit 0
         fi
         log "WARNING: ล็อกสำรองข้อมูลค้างมา ${lock_age}s เกินเพดาน ${BACKUP_LOCK_MAX_AGE}s — ตรวจตามปกติ"
         backend_alert "backup_lock_stale" "warning" \
             "ล็อกสำรองข้อมูลค้างเกิน ${BACKUP_LOCK_MAX_AGE}s — งานสำรองอาจตายกลางทาง ไปดูที่ $BACKUP_LOCK"
     fi
+
+    # ได้ตรวจจริงรอบนี้ = งานบำรุงรักษาจบแล้ว เริ่มนับเพดาน heartbeat ใหม่รอบหน้า
+    rm -f "$MAINT_SKIP_STATE" 2>/dev/null
 
     # Check 1: containers
     if ! check_containers; then
