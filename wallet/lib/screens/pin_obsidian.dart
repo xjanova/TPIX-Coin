@@ -32,7 +32,9 @@ extension _ObsidianPin on _PinScreenState {
               const ObsidianScrim.pin(),
               SingleChildScrollView(
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: box.maxHeight),
+                  // minWidth เต็มจอ: ลูกของ Stack ได้ความกว้างแบบหลวม → ถ้าไม่บังคับ Column จะหดเท่าลูกที่กว้างสุด
+                  // แล้วไปชิดซ้ายบน ทำให้แป้น PIN / จุด / หัวข้อดูเบี้ยวไม่อยู่กลางจอ
+                  constraints: BoxConstraints(minHeight: box.maxHeight, minWidth: box.maxWidth),
                   child: Padding(
                     // ไม่มีปุ่มหัว (ปลดล็อกยกเลิกไม่ได้) — เว้นที่เท่าแถวหัวของ mock ให้ตำแหน่งตรงกัน
                     padding: EdgeInsets.fromLTRB(24, max(52.0, topInset + 8) + 46 + 16, 24, 24),

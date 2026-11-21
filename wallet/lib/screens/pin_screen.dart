@@ -297,7 +297,8 @@ class _PinScreenState extends State<PinScreen> with SingleTickerProviderStateMix
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: row.map((key) {
-              if (key.isEmpty) return const SizedBox(width: 72);
+              // ช่องว่างต้องกว้างเท่าปุ่มจริง (72 + ขอบ 6×2) ไม่งั้นแถวล่างเลื่อนไม่ตรงกับแถวบน
+              if (key.isEmpty) return const SizedBox(width: 84, height: 84);
               if (key == 'BIO') {
                 return _buildKeyButton(
                   child: const Icon(Icons.fingerprint, color: AppTheme.primary, size: 28),

@@ -173,7 +173,8 @@ class _ObsidianPinVerifyPageState extends State<ObsidianPinVerifyPage> with Sing
               const ObsidianScrim.pin(),
               SingleChildScrollView(
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: box.maxHeight),
+                  // minWidth เต็มจอ: กัน Column หดแล้วไปชิดซ้ายของ Stack (แป้น PIN เบี้ยว)
+                  constraints: BoxConstraints(minHeight: box.maxHeight, minWidth: box.maxWidth),
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(24, math.max(52.0, topInset + 8), 24, 24),
                     child: Column(
