@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import '../core/themes/tokens.dart';
 import '../core/themes/theme_bundle.dart';
 import '../core/themes/widgets/luxe_texture.dart';
+import 'obsidian/obsidian_assets.dart';
 
 /// รายการเมนูหนึ่งช่อง
 class LiquidNavItem {
@@ -524,6 +525,7 @@ Future<ScanSheetAction?> showScanActionSheet(
                   Expanded(
                     child: _ScanChoiceCard(
                       icon: Icons.qr_code_scanner_rounded,
+                      asset: ObsidianIcons.scan,
                       color: t.brandPrimary,
                       label: scanLabel,
                       sub: scanSub,
@@ -535,6 +537,7 @@ Future<ScanSheetAction?> showScanActionSheet(
                   Expanded(
                     child: _ScanChoiceCard(
                       icon: Icons.qr_code_2_rounded,
+                      asset: ObsidianIcons.receive,
                       color: t.brandSecondary,
                       label: receiveLabel,
                       sub: receiveSub,
@@ -553,7 +556,11 @@ Future<ScanSheetAction?> showScanActionSheet(
 }
 
 class _ScanChoiceCard extends StatelessWidget {
+  /// ไอคอนสำรอง — ใช้เมื่อโหลดภาพ 3D ไม่ได้
   final IconData icon;
+
+  /// ไอคอน 3D (ชุดเดียวกับธีม Obsidian) แสดงบนแสงเรืองสีประจำการ์ด
+  final String asset;
   final Color color;
   final String label;
   final String sub;
@@ -561,6 +568,7 @@ class _ScanChoiceCard extends StatelessWidget {
 
   const _ScanChoiceCard({
     required this.icon,
+    required this.asset,
     required this.color,
     required this.label,
     required this.sub,
@@ -591,28 +599,59 @@ class _ScanChoiceCard extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color.lerp(color, Colors.white, 0.25)!,
-                      color,
-                    ],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.38),
-                      blurRadius: 14,
-                      offset: const Offset(0, 5),
+              // ไอคอน 3D ลอยบนแสงเรืองวงกลม (ไล่จากสีการ์ดจางออกขอบ)
+              SizedBox.square(
+                dimension: 76,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            color.withValues(alpha: 0.45),
+                            color.withValues(alpha: 0.12),
+                            color.withValues(alpha: 0),
+                          ],
+                          stops: const [0, 0.55, 1],
+                        ),
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Image.asset(
+                        asset,
+                        width: 60,
+                        height: 60,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 54,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color.lerp(color, Colors.white, 0.25)!, color],
+                            ),
+                          ),
+                          child: Icon(icon, color: Colors.white, size: 26),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                child: Icon(icon, color: Colors.white, size: 26),
               ),
               const SizedBox(height: TpixGap.md),
               Text(
