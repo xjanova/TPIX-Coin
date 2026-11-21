@@ -27,8 +27,11 @@ the chain host is too heavy. [xjanova/tpix-blockscout-build](https://github.com/
 builds the upstream tags unchanged on GitHub Actions; release `images-2026-11-07` holds backend
 10.2.6 / 11.3.3 / 12.0.4 and frontend v2.12.1 as `docker save | gzip` files with `.sha256`.
 
+tpix-blockscout-build is private since 2026-11-21, so its release links answer 404 without a login. Pass a
+read-only token (fine-grained, Contents: read on that repo) and the script downloads through the API:
+
 ```bash
-sudo /opt/tpix-bs/fetch-images.sh <asset-file-name> ...   # TAG=images-YYYY-MM-DD to pick another release
+sudo GITHUB_TOKEN=... /opt/tpix-bs/fetch-images.sh <asset-file-name> ...   # TAG=images-YYYY-MM-DD to pick another release
 ```
 
 New versions: edit `versions.env` in that repo and push.
