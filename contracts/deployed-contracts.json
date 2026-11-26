@@ -1,7 +1,7 @@
 {
   "_doc": "Registry of deployed contracts on TPIX Chain (4289). Keep in sync after each deploy. Feeds scripts/verify-sources.js and external explorers/aggregators.",
   "_schema_version": 2,
-  "updated": "2026-10-26",
+  "updated": "2026-11-26",
   "chain": {
     "chainId": 4289,
     "name": "TPIX Chain",
@@ -278,6 +278,96 @@
       "viaIR": true,
       "verified": true,
       "deployedAt": "2026-10-22"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "verified": false,
+      "deployedAt": "2026-11-02",
+      "name": "TPIXBridgeVault",
+      "category": "bridge",
+      "address": "0xB81076eC191312B5455854400f465E480c014C60",
+      "sourceFile": "contracts/src/bridge/TPIXBridgeVault.sol",
+      "description": "คลังล็อก TPIX ของสะพาน ↔ wTPIX (BSC) — ล็อก 10.0–100000.0 · ปล่อย 100000.0/ครั้ง 500000.0/วัน · ไม่มีทางถอนนอกจาก release()"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "category": "launchpad",
+      "verified": true,
+      "deployedAt": "2026-11-19",
+      "name": "LaunchVestingDeployer",
+      "address": "0xf26275F9080db94782143d9d6C923d28bABc0234",
+      "sourceFile": "contracts/src/launch/LaunchVestingDeployer.sol",
+      "description": "สร้าง TrancheVesting ให้ LaunchpadFactory (แยกออกมาเพื่อให้โรงงานไม่เกิน 24 KB) — ไม่มีเจ้าของ ไม่ถือเงิน"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "category": "launchpad",
+      "verified": true,
+      "deployedAt": "2026-11-19",
+      "name": "LaunchpadFactory",
+      "address": "0x2669602C0FA89Ce048798C875e1e844e5856f1E2",
+      "sourceFile": "contracts/src/launch/LaunchpadFactory.sol",
+      "description": "เปิดขายเหรียญลูกในธุรกรรมเดียว: FixedPriceSale + PoolFeeder (เงินขายเข้าพูลอัตโนมัติ LP ล็อก ≥180 วัน) + TrancheVesting — รับเฉพาะเหรียญจาก TPIXTokenFactoryV2 ที่ปิด mint/pause/blacklist/auto-burn, ≥50% เข้าพูล, ≥80% ของซัพพลายล็อก — ไม่มีเจ้าของ ไม่มีค่าธรรมเนียม"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "category": "launchpad",
+      "verified": true,
+      "deployedAt": "2026-11-26",
+      "name": "IDTC_LaunchpadSale",
+      "address": "0x40293b3622c360767C37a9D6E8a4F242aB5A9361",
+      "sourceFile": "contracts/src/launch/FixedPriceSale.sol",
+      "description": "presale IDTC ผ่าน LaunchpadFactory #0 — เจ้าของคือ PoolFeeder ตลอดไป"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "category": "launchpad",
+      "verified": true,
+      "deployedAt": "2026-11-26",
+      "name": "IDTC_PoolFeeder",
+      "address": "0x1b5cd17e44F28D5a82b9b0a04faa301a82477F10",
+      "sourceFile": "contracts/src/launch/PoolFeeder.sol",
+      "description": "รับเงินขาย IDTC แล้วเติมพูล IDTC/USDT_TPIX · LP ล็อกถึง 2028-02-29T03:00:00Z"
+    },
+    {
+      "compilerVersion": "0.8.24",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "evmVersion": "london",
+      "category": "launchpad",
+      "verified": true,
+      "deployedAt": "2026-11-26",
+      "name": "IDTC_LaunchpadVesting",
+      "address": "0x2e18f152Af452d20b7216c2cB02D6187b50aA194",
+      "sourceFile": "contracts/src/launch/TrancheVesting.sol",
+      "description": "IDTC ล็อกตามตาราง — สร้างโดย LaunchpadFactory #0"
     }
   ],
   "retired": [
